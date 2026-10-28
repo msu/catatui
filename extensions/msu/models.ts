@@ -2,7 +2,7 @@
 // /v1/model/info can give limits and features, but it can be hidden from students, so all of it is optional.
 
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
-import { CATCHAT_API, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from "./config.ts";
+import { CATCHAT_API, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, HIDDEN_MODELS, MODEL_NOTES } from "./config.ts";
 
 interface ModelInfo {
   model_name?: string;
@@ -27,11 +27,12 @@ export async function fetchModels(key: string, signal: AbortSignal): Promise<Pro
   const info = await getJson<{ data: ModelInfo[] }>("/v1/model/info", key, signal).catch(() => null);
   const byName = new Map((info?.data ?? []).map((m) => [m.model_name, m.model_info ?? {}]));
 
-  return list.data.map(({ id }) => {
+  const real = list.data.filter(({ id }) => !HIDDEN_MODELS.some((re) => re.test(id)));
+  return real.map(({ id }) => {
     const i = byName.get(id) ?? {};
     return {
       id,
-      name: id,
+      name: MODEL_NOTES[id] ? `${id}: ${MODEL_NOTES[id]}` : id,
       reasoning: i.supports_reasoning ?? /gpt-oss|qwen3|deepseek-r1/i.test(id),
       input: i.supports_vision ? ["text", "image"] : ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

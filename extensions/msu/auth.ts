@@ -6,7 +6,7 @@
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai/compat";
 import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import { CATCHAT_ACCESS, CATCHAT_API, CLIENT_NAME } from "./config.ts";
+import { AUTH_METHODS, CATCHAT_ACCESS, CATCHAT_API, CLIENT_NAME } from "./config.ts";
 
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 // A pasted key has no refresh token. Treat it as valid for 180 days (the catchat-access maximum).
@@ -184,22 +184,40 @@ async function keyWorks(key: string): Promise<boolean> {
   }
 }
 
+// Shown in the login dialog under the catchat-access URL.
+// TODO: Check the steps against the catchat-access page. Use its real button and field names.
+const KEY_STEPS = [
+  "I will open the CatChat key page (catchat-access) in your browser.",
+  "If the page does not open, Cmd+click or Ctrl+click the URL above.",
+  "",
+  "1. Sign in with your MSU account.",
+  "2. Make a new key.",
+  "3. Copy the key.",
+  "4. Paste the key below, then press Enter.",
+  "",
+  "If the page does not load, connect to the MSU VPN.",
+].join("\n");
+
 async function pasteLogin(cb: OAuthLoginCallbacks): Promise<OAuthCredentials> {
-  cb.onAuth({ url: CATCHAT_ACCESS, instructions: "Make a key at catchat-access, then paste it here." });
-  const key = cleanKey(await cb.onPrompt({ message: "Paste your CatChat key:" }));
+  cb.onAuth({ url: CATCHAT_ACCESS, instructions: KEY_STEPS });
+  const key = cleanKey(await cb.onPrompt({ message: "CatChat key:" }));
   if (!key) throw new Error("The key is empty. Copy your key from catchat-access, then paste it again.");
   if (!(await keyWorks(key))) throw new Error("CatChat did not accept the key. Make a new key at catchat-access, then try again.");
   return { access: key, refresh: "", expires: Date.now() + PASTED_KEY_LIFETIME_MS };
 }
 
+const METHOD_LABELS = {
+  paste: "Paste a CatChat key from catchat-access",
+  sso: "Sign in with MSU in a browser (needs RCI access)",
+};
+
 export async function login(cb: OAuthLoginCallbacks): Promise<OAuthCredentials> {
-  const method = await cb.onSelect({
-    message: "How do you want to sign in to CatChat?",
-    options: [
-      { id: "sso", label: "Sign in with MSU (opens a browser)" },
-      { id: "paste", label: "Paste a CatChat key from catchat-access" },
-    ],
-  });
+  const method = AUTH_METHODS.length === 1
+    ? AUTH_METHODS[0]
+    : await cb.onSelect({
+        message: "How do you want to sign in to CatChat?",
+        options: AUTH_METHODS.map((id) => ({ id, label: METHOD_LABELS[id] })),
+      });
   if (method === "sso") return ssoLogin(cb);
   if (method === "paste") return pasteLogin(cb);
   throw new Error("Sign-in cancelled.");

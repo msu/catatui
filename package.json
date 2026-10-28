@@ -3,16 +3,39 @@
   "version": "0.1.0",
   "description": "MSU CatChat coding agent for the terminal, built on pi",
   "type": "module",
-  "keywords": ["pi-package"],
-  "bin": { "catatui": "bin/catatui.js" },
-  "files": ["bin", "extensions", "themes", "README.md"],
-  "pi": {
-    "extensions": ["./extensions/msu/index.ts"],
-    "themes": ["./themes"]
+  "keywords": [
+    "pi-package"
+  ],
+  "bin": {
+    "catatui": "bin/catatui.js"
   },
-  "engines": { "node": ">=22" },
+  "files": [
+    "bin",
+    "extensions",
+    "themes",
+    "assets/bobcat-head.png",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/msu/index.ts"
+    ],
+    "themes": [
+      "./themes"
+    ]
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.4.0"
   },
-  "author": { "name": "Montana State University" }
+  "author": {
+    "name": "Montana State University"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/msu/catatui.git"
+  },
+  "homepage": "https://github.com/msu/catatui"
 }
