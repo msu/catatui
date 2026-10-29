@@ -6,17 +6,21 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { printVersion, update } from "./update.js";
 
 const root = (p) => fileURLToPath(new URL(`../${p}`, import.meta.url));
 const args = process.argv.slice(2);
 
-// pi prints its own version for --version. Print the CataTUI version and the pi version.
+// pi prints its own version for --version. Print the CataTUI version and the pi version, and check for a newer CataTUI.
 if (args.includes("--version") || args.includes("-v")) {
   const { version } = JSON.parse(readFileSync(root("package.json"), "utf8"));
   const { VERSION } = await import("@earendil-works/pi-coding-agent");
-  console.log(`CataTUI ${version} (pi ${VERSION})`);
+  await printVersion(version, VERSION);
   process.exit(0);
 }
+
+// "pi update" updates pi itself, which does not work for catatui. Use the CataTUI update for both words.
+if (args.includes("--update") || args[0] === "update") process.exit(update());
 
 process.env.CATATUI = "1";
 process.env.PI_CODING_AGENT_DIR ??= join(homedir(), ".catatui");

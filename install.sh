@@ -71,7 +71,7 @@ PATH="$APP/node/bin:$PATH" npm install --global --prefix "$APP/npm" --no-fund --
 mkdir -p "$APP/bin"
 cat >"$APP/bin/catatui" <<EOF
 #!/bin/sh
-exec "$APP/node/bin/node" "$APP/npm/lib/node_modules/catatui/bin/catatui.js" "\$@"
+CATATUI_APP="$APP" exec "$APP/node/bin/node" "$APP/npm/lib/node_modules/catatui/bin/catatui.js" "\$@"
 EOF
 chmod +x "$APP/bin/catatui"
 

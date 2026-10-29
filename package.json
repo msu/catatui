@@ -1,6 +1,6 @@
 {
   "name": "catatui",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "description": "MSU CatChat coding agent for the terminal, built on pi",
   "type": "module",
   "keywords": [

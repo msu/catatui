@@ -29,7 +29,9 @@ The installer puts CataTUI and its own copy of Node.js in the `~/.catatui/app` f
 
 After the install, open a new terminal. On macOS or Linux, you can also run the `source` command that the installer shows.
 
-To update CataTUI, run the same install command again.
+To see your version and check for a newer version, run `catatui --version`.
+
+To update CataTUI, run `catatui --update`. On Windows, this command shows the install command. Close CataTUI, then run the install command.
 
 If you use the fish shell, add `~/.catatui/app/bin` to your PATH yourself.
 
@@ -146,6 +148,7 @@ To use only the extension in pi, run `pi install /path/to/catatui`. The extensio
 | File | Content |
 |---|---|
 | `install.sh`, `install.ps1` | Installers for macOS and Linux, and for Windows |
+| `bin/update.js` | `--version` check and `--update` |
 | `bin/catatui.js` | Launcher. Runs pi with the extension, the themes, the skills, and `~/.catatui`. |
 | `extensions/msu/config.ts` | CatChat URLs, the default model, and model notes |
 | `extensions/msu/auth.ts` | `/login` with a pasted key from catchat-access |

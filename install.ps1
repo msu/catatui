@@ -76,7 +76,7 @@
     $bin = Join-Path $App "bin"
     New-Item -ItemType Directory -Force -Path $bin | Out-Null
     $script = Join-Path $App "npm\node_modules\catatui\bin\catatui.js"
-    Set-Content -Path (Join-Path $bin "catatui.cmd") -Encoding ASCII -Value "@echo off`r`n`"$node`" `"$script`" %*"
+    Set-Content -Path (Join-Path $bin "catatui.cmd") -Encoding ASCII -Value "@echo off`r`nsetlocal`r`nset `"CATATUI_APP=$App`"`r`n`"$node`" `"$script`" %*"
 
     # 4. The PATH. Add the bin folder to the user PATH one time only, and to this window.
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
