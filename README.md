@@ -6,9 +6,29 @@ A command line agent harness for MSU CSCI students
 
 <br clear="left">
 
-catatui is the Montana State Command Line Agent. It is an AI coding agent that runs in your terminal. It uses the MSU CatChat AI models. catatui is built as an extension to the excellent [pi harness](https://pi.dev).
+catatui is the Montana State Command Line Agent.
 
-The agent can read your code, run commands, and change files. It asks you before it changes a file or runs a command.
+It is an AI coding agent that runs in your terminal that uses the free (for MSU students & faculty) MSU CatChat AI
+models.
+
+catatui is built as an extension to the excellent [pi harness](https://pi.dev).
+
+Like all cosing agents, catatui can read your code, run commands, and write code for you.
+
+By default catatui runs in `ask` mode and will ask before making any changes. You can also run in `plan`, where it will
+create a plan file for you (typically in Markdown) before making a change. You can also run it in `yolo` where it will
+not ask permission to make changes.
+
+There is a `ta` mode that will have the agent teach you and offer hints, rather than writing code for you. We suggest
+you use this mode frequently.
+
+There is a very simple sandbox mechanism that will prevent the agent from modifying files outside of the directory you
+run the harness in. This is a defeatable sandbox by a determined agent.
+
+Finally, the default of the agent is to use Simplified Technical English // TODO link. This keeps the annoying
+chattieness of many AI models down. You may turn this off if you don't like the clipped responses it generates.
+
+All of the above can be configuredc with the `/mode` command.
 
 ## What you need
 
@@ -29,13 +49,15 @@ On Windows, run this in PowerShell:
 irm https://raw.githubusercontent.com/msu/catatui/master/install.ps1 | iex
 ```
 
-The installer puts catatui and its own copy of Node.js in the `~/.catatui/app` folder. It adds the `catatui` command to your PATH. It does not change the Node.js that you use for other work.
+The installer puts catatui and its own copy of Node.js in the `~/.catatui/app` folder. It adds the `catatui` command to
+your PATH. It does not change the Node.js that you use for other work.
 
-After the install, open a new terminal. On macOS or Linux, you can also run the `source` command that the installer shows.
+After the install, open a new terminal.
 
 To see your version and check for a newer version, run `catatui --version`.
 
-To update catatui, run `catatui --update`. On Windows, this command shows the install command. Close catatui, then run the install command.
+To update catatui, run `catatui --update`. On Windows, this command shows the install command. Close catatui, then run
+the install command.
 
 If you use the fish shell, add `~/.catatui/app/bin` to your PATH yourself.
 
@@ -61,15 +83,15 @@ catatui selects the model `Qwen3.8-27B`. To pick a different model, type `/model
 
 ## Commands
 
-| Command | Use |
-|---|---|
-| `/mode` | Pick the mode. Turn teaching assistant, the sandbox, and Simplified Technical English on or off. |
-| `/undo` | Put back the files that the agent changed for your last request |
-| `/model` | Pick a CatChat model |
-| `/login catchat` | Sign in to CatChat |
-| `/catchat` | Show your sign-in status and get the model list again |
-| `/catchat reset` | Sign out of CatChat and stop catatui |
-| `/hotkeys` | Show the keyboard keys |
+| Command          | Use                                                                                              |
+|------------------|--------------------------------------------------------------------------------------------------|
+| `/mode`          | Pick the mode. Turn teaching assistant, the sandbox, and Simplified Technical English on or off. |
+| `/undo`          | Put back the files that the agent changed for your last request                                  |
+| `/model`         | Pick a CatChat model                                                                             |
+| `/login catchat` | Sign in to CatChat                                                                               |
+| `/catchat`       | Show your sign-in status and get the model list again                                            |
+| `/catchat reset` | Sign out of CatChat and stop catatui                                                             |
+| `/hotkeys`       | Show the keyboard keys                                                                           |
 
 To stop the agent while it works, press Escape.
 
@@ -77,19 +99,20 @@ To stop the agent while it works, press Escape.
 
 The mode controls what the agent can do. The bottom line of the screen shows the mode.
 
-To change the mode or an option, type `/mode`. Use the up and down arrows to move. Press Space or Enter to change the line. Press Escape to close.
+To change the mode or an option, type `/mode`. Use the up and down arrows to move. Press Space or Enter to change the
+line. Press Escape to close.
 
-| Mode | What the agent does |
-|---|---|
-| `ask` | The agent will ask before each file change, command and http request. catatui starts in this mode. |
-| `plan` | Planning mode. The model will write a plan file (`PLAN.md`) for work but make no changes. |
-| `yolo` | The agent will make changes without asking you to approve them. Use this mode with care. |
+| Mode   | What the agent does                                                                                |
+|--------|----------------------------------------------------------------------------------------------------|
+| `ask`  | The agent will ask before each file change, command and http request. catatui starts in this mode. |
+| `plan` | Planning mode. The model will write a plan file (`PLAN.md`) for work but make no changes.          |
+| `yolo` | The agent will make changes without asking you to approve them. Use this mode with care.           |
 
-| Option | What it does | Start value |
-|---|---|---|
-| `ta` | Teaching assistant. The agent explains concepts and gives hints. It does not write your code. | off |
-| `sandbox` | The agent can use only the files in the project folder. | on |
-| `ste` | Simplified Technical English. The agent writes short, clear sentences. | on |
+| Option    | What it does                                                                                  | Start value |
+|-----------|-----------------------------------------------------------------------------------------------|-------------|
+| `ta`      | Teaching assistant. The agent explains concepts and gives hints. It does not write your code. | off         |
+| `sandbox` | The agent can use only the files in the project folder.                                       | on          |
+| `ste`     | Simplified Technical English. The agent writes short, clear sentences.                        | on          |
 
 `ta` works in all modes. When `ta` is on, the agent cannot change files, also in `yolo` mode.
 
@@ -110,13 +133,15 @@ The sandbox is not complete protection. A command can get around it. Read each c
 
 ## Simplified Technical English
 
-The agent writes in Simplified Technical English. It uses short sentences and simple words. This makes the answers easier to read, also for non-native English speakers.
+The agent writes in Simplified Technical English. It uses short sentences and simple words. This makes the answers
+easier to read, also for non-native English speakers.
 
 To turn it off, type `/mode`, then turn off `ste`. catatui keeps this choice for the next start.
 
 ## Undo
 
-If you do not like the agent's changes, type `/undo`. catatui shows the files that it will put back, then asks you to confirm.
+If you do not like the agent's changes, type `/undo`. catatui shows the files that it will put back, then asks you to
+confirm.
 
 Each `/undo` goes back one request.
 
@@ -129,11 +154,11 @@ Use git to keep your work safe.
 
 ## Problems
 
-| Problem | Cause | Fix |
-|---|---|---|
-| The CatChat key page does not load. | The key page works only on the MSU network. | Connect to the MSU VPN, then try again. |
-| catatui cannot connect to CatChat. | A network problem, or CatChat is down. | Check your network connection. If the problem continues, connect to the MSU VPN. |
-| The agent gives a bad answer. | Some models are weaker. | Type `/model` and pick `Qwen3.8-27B`. |
-| You want to sign in again. | Your key is old or wrong. | Type `/catchat reset`, then start catatui again. |
+| Problem                             | Cause                                       | Fix                                                                              |
+|-------------------------------------|---------------------------------------------|----------------------------------------------------------------------------------|
+| The CatChat key page does not load. | The key page works only on the MSU network. | Connect to the MSU VPN, then try again.                                          |
+| catatui cannot connect to CatChat.  | A network problem, or CatChat is down.      | Check your network connection. If the problem continues, connect to the MSU VPN. |
+| The agent gives a bad answer.       | Some models are weaker.                     | Type `/model` and pick `Qwen3.8-27B`.                                            |
+| You want to sign in again.          | Your key is old or wrong.                   | Type `/catchat reset`, then start catatui again.                                 |
 
 catatui keeps its settings and sessions in the `~/.catatui` folder.
