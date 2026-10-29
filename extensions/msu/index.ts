@@ -82,6 +82,16 @@ export default async function (pi: ExtensionAPI) {
     if (ctx.ui.getEditorText().trim() === `/login ${PROVIDER_ID}`) ctx.ui.setEditorText("");
   });
 
+  // Before the sign-in, pi answers a prompt with "No API key found ..." and links to pi docs.
+  // Show the next step in its place, and type "/login catchat" so Enter opens the sign-in.
+  pi.on("input", async (event, ctx) => {
+    if (!WRAPPED || !ctx.hasUI || event.source !== "interactive") return { action: "continue" };
+    if (ctx.model && ctx.modelRegistry.hasConfiguredAuth(ctx.model)) return { action: "continue" };
+    ctx.ui.notify(ctx.ui.theme.fg("warning", "Sign in to CatChat first. To open the sign-in, press Enter."), "info");
+    ctx.ui.setEditorText(`/login ${PROVIDER_ID}`);
+    return { action: "handled" };
+  });
+
   pi.registerCommand("catchat", {
     description: "Show CatChat sign-in status and reload the model list. \"/catchat reset\" signs you out.",
     handler: async (args, ctx) => {

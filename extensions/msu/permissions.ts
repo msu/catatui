@@ -1,5 +1,5 @@
-// Safety settings, like the permission modes in Claude Code. The footer shows "mode: ...".
-// "/safety" opens a panel. Space or Enter changes the line under the cursor. The panel stays open until Escape.
+// Modes and options, like the permission modes in Claude Code. The footer shows "mode: ...".
+// "/mode" opens a panel. Space or Enter changes the line under the cursor. The panel stays open until Escape.
 //   Mode (one of):
 //   - ask:  ask before each file change, bash command, and http request. This is the default.
 //   - plan: the model writes a plan to PLAN_FILE and changes no other files. Block http requests other than GET.
@@ -10,7 +10,7 @@
 //              Students can turn it off, so it is a learning aid, not an integrity control.
 //   - sandbox: sandbox.ts
 //   - ste:     Simplified Technical English, ste.ts
-// "/safety ask|plan|yolo" sets the mode. "/safety ta" turns ta on or off. Tab completes these words.
+// "/mode ask|plan|yolo" sets the mode. "/mode ta" turns ta on or off. Tab completes these words.
 // In ask and plan mode, risky commands and changes outside the project folder always ask.
 // The mode, ta, and the "do not ask again" choices last for one session only.
 
@@ -68,7 +68,7 @@ const TA_PROMPT = `The student turned on teaching assistant mode. You are a teac
   An example must not solve the student's task, and must not use the names from the student's code.
 - You can read files and run commands (for example tests and compilers) to understand the student's problem.
 - If the student asks for the full solution, say that teaching assistant mode is on, then give the next hint.
-  The student can turn it off with /safety.`;
+  The student can turn it off with /mode.`;
 
 const TA_BLOCK = "Teaching assistant mode is on. Do not change files. Give the student a hint.";
 const PLAN_BLOCK = `Plan mode is on. Do not change project files. Write the plan to ${PLAN_FILE}.`;
@@ -99,7 +99,7 @@ export function registerPermissions(pi: ExtensionAPI) {
     showStatus(ctx);
   };
 
-  // The /safety panel. Rows 0-2 are the modes, rows 3-5 are the flags.
+  // The /mode panel. Rows 0-2 are the modes, rows 3-5 are the flags.
   const panel = (ctx: ExtensionContext) =>
     ctx.ui.custom<void>((tui, theme: Theme, _kb, done) => {
       let row = MODES.indexOf(mode);
@@ -112,7 +112,7 @@ export function registerPermissions(pi: ExtensionAPI) {
       return {
         render(width: number) {
           const lines = [
-            theme.fg("accent", theme.bold("Safety")),
+            theme.fg("accent", theme.bold("Mode and options")),
             "",
             theme.fg("dim", "Mode (pick one)"),
             ...MODES.map((m, i) => line(i, m === mode ? "(*)" : "( )", m, MODE_HELP[m])),
@@ -147,7 +147,7 @@ export function registerPermissions(pi: ExtensionAPI) {
   });
 
   const WORDS = [...MODES, "ta"];
-  pi.registerCommand("safety", {
+  pi.registerCommand("mode", {
     description: "Pick the mode (ask, plan, yolo), and turn ta, the sandbox, and Simplified Technical English on or off",
     getArgumentCompletions: (prefix: string) =>
       WORDS.filter((w) => w.startsWith(prefix.trim())).map((w) => ({

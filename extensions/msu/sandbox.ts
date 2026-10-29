@@ -1,9 +1,9 @@
 // Sandbox: the agent can use only files in the folder where catatui started (the project folder).
-// "catatui --no-sandbox" turns the sandbox off at start. "/safety" (permissions.ts) can turn it on and off.
+// "catatui --no-sandbox" turns the sandbox off at start. "/mode" (permissions.ts) can turn it on and off.
 // - read, write, edit, grep, find, ls: block a path outside the project folder.
 // - bash, powershell: block a command with a path outside the project folder (/x, ~, $HOME, .., C:\).
 //   This check reads the command text only. It is not an OS sandbox, so a command can get around it.
-// The sandbox applies in all safety modes, also in yolo.
+// The sandbox applies in all modes, also in yolo.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, realpathSync } from "node:fs";
@@ -55,7 +55,7 @@ export function registerSandbox(pi: ExtensionAPI) {
     default: false,
   });
 
-  // Read the flag at the first start only, so a new session (/new) keeps the choice from /safety.
+  // Read the flag at the first start only, so a new session (/new) keeps the choice from /mode.
   pi.on("session_start", async (_event, ctx) => {
     if (started) return setSandbox(ctx, on);
     started = true;
@@ -67,7 +67,7 @@ export function registerSandbox(pi: ExtensionAPI) {
     if (!on) return;
     const reason = (what: string) => ({
       block: true,
-      reason: `Blocked: ${what} is outside the project folder (${ctx.cwd}). Use only files in the project folder. To turn off this limit, the student must use /safety or start catatui with --no-sandbox.`,
+      reason: `Blocked: ${what} is outside the project folder (${ctx.cwd}). Use only files in the project folder. To turn off this limit, the student must use /mode or start catatui with --no-sandbox.`,
     });
 
     if (FILE_TOOLS.includes(event.toolName)) {

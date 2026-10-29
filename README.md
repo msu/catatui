@@ -47,7 +47,7 @@ CataTUI selects the model `Qwen3.8-27B`. To pick a different model, type `/model
 
 | Command | Use |
 |---|---|
-| `/safety` | Pick the mode. Turn teaching assistant, the sandbox, and Simplified Technical English on or off. |
+| `/mode` | Pick the mode. Turn teaching assistant, the sandbox, and Simplified Technical English on or off. |
 | `/undo` | Put back the files that the agent changed for your last request |
 | `/model` | Pick a CatChat model |
 | `/login catchat` | Sign in to CatChat |
@@ -61,7 +61,7 @@ To stop the agent while it works, press Escape.
 
 The mode controls what the agent can do. The bottom line of the screen shows the mode.
 
-To change the mode or an option, type `/safety`. Use the up and down arrows to move. Press Space or Enter to change the line. Press Escape to close.
+To change the mode or an option, type `/mode`. Use the up and down arrows to move. Press Space or Enter to change the line. Press Escape to close.
 
 | Mode | What the agent does |
 |---|---|
@@ -87,7 +87,7 @@ The agent can use only the files in the folder where you start CataTUI. This is 
 
 To let the agent use other folders, do one of these steps:
 
-- Type `/safety`, then turn off `sandbox`.
+- Type `/mode`, then turn off `sandbox`.
 - Start CataTUI with `catatui --no-sandbox`.
 
 The sandbox is not complete protection. A command can get around it. Read each command before you allow it.
@@ -96,7 +96,7 @@ The sandbox is not complete protection. A command can get around it. Read each c
 
 The agent writes in Simplified Technical English. It uses short sentences and simple words. This makes the answers easier to read, also for non-native English speakers.
 
-To turn it off, type `/safety`, then turn off `ste`. CataTUI keeps this choice for the next start.
+To turn it off, type `/mode`, then turn off `ste`. CataTUI keeps this choice for the next start.
 
 ## Undo
 
@@ -141,7 +141,7 @@ To use only the extension in pi, type `pi install /path/to/catatui`. The extensi
 | `extensions/msu/models.ts` | Model list from CatChat |
 | `extensions/msu/banner.ts`, `logo.ts` | Header: bobcat logo and commands |
 | `extensions/msu/footer.ts` | Bottom status line |
-| `extensions/msu/permissions.ts` | `/safety` panel, modes, and `ta` |
+| `extensions/msu/permissions.ts` | `/mode` panel, modes, and `ta` |
 | `extensions/msu/sandbox.ts` | Sandbox |
 | `extensions/msu/ste.ts` | Puts the STE skill in the system prompt |
 | `extensions/msu/undo.ts` | `/undo` |

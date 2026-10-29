@@ -1,4 +1,4 @@
-// Simplified Technical English (STE): on by default. "/safety" (permissions.ts) can turn it on and off.
+// Simplified Technical English (STE): on by default. "/mode" (permissions.ts) can turn it on and off.
 // The choice stays after catatui stops: it is in <agent dir>/catatui.json (default ~/.catatui/catatui.json).
 // The rules are in the simplified-technical-english skill. A skill loads only when the model asks for it,
 // so while STE is on, this file puts the skill text in the system prompt for each request.
