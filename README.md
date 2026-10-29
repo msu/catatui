@@ -13,22 +13,22 @@ models.
 
 catatui is built as an extension to the excellent [pi harness](https://pi.dev).
 
-Like all cosing agents, catatui can read your code, run commands, and write code for you.
+Like all coding agents, catatui can read your code, run commands, and write code for you.
 
 By default catatui runs in `ask` mode and will ask before making any changes. You can also run in `plan`, where it will
-create a plan file for you (typically in Markdown) before making a change. You can also run it in `yolo` where it will
+write a plan to `PLAN.md` and make no other changes. Turn off `plan` to carry out the plan. You can also run it in `yolo` where it will
 not ask permission to make changes.
 
-There is a `ta` mode that will have the agent teach you and offer hints, rather than writing code for you. We suggest
-you use this mode frequently.
+There is a `ta` option, which works in any mode, that will have the agent teach you and offer hints, rather than writing code for you. We suggest
+you use this option frequently.
 
-There is a very simple sandbox mechanism that will prevent the agent from modifying files outside of the directory you
+There is a very simple sandbox mechanism that will prevent the agent from reading or modifying files outside of the directory you
 run the harness in. This is a defeatable sandbox by a determined agent.
 
-Finally, the default of the agent is to use Simplified Technical English // TODO link. This keeps the annoying
-chattieness of many AI models down. You may turn this off if you don't like the clipped responses it generates.
+Finally, the default of the agent is to use [Simplified Technical English](https://www.asd-ste100.org/). This keeps the annoying
+chattiness of many AI models down. You may turn this off if you don't like the clipped responses it generates.
 
-All of the above can be configuredc with the `/mode` command.
+All of the above can be configured with the `/mode` command.
 
 ## What you need
 
