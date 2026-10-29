@@ -13,13 +13,13 @@ The agent can read your code, run commands, and change files. It asks you before
 
 ## Install
 
-On macOS or Linux, type this in your terminal:
+On macOS or Linux, run this in your terminal:
 
 ```
 curl -fsSL https://raw.githubusercontent.com/msu/catatui/master/install.sh | sh
 ```
 
-On Windows, type this in PowerShell:
+On Windows, run this in PowerShell:
 
 ```
 irm https://raw.githubusercontent.com/msu/catatui/master/install.ps1 | iex
@@ -29,7 +29,7 @@ The installer puts CataTUI and its own copy of Node.js in the `~/.catatui/app` f
 
 After the install, open a new terminal.
 
-To update CataTUI, type the same install command again.
+To update CataTUI, run the same install command again.
 
 If you use the fish shell, add `~/.catatui/app/bin` to your PATH yourself.
 
@@ -37,13 +37,13 @@ If you use the fish shell, add `~/.catatui/app/bin` to your PATH yourself.
 
 If you have Node.js 22 or later and git, you can use npm:
 
-- To run CataTUI without an install, type `npx github:msu/catatui`.
-- To install the `catatui` command, type `npm install -g github:msu/catatui`.
+- To run CataTUI without an install, run `npx github:msu/catatui`.
+- To install the `catatui` command, run `npm install -g github:msu/catatui`.
 
 ## First use
 
 1. Go to your project folder in the terminal.
-2. Type `catatui`.
+2. Run `catatui`.
 3. CataTUI shows the steps to make an API key. Press Enter. CataTUI opens catchat access in your browser.
 4. Click "API Keys", then "+ Free Key". Give the key a unique name, select "gsoc" as your Team, then click "Create Key".
 5. Copy the key, paste it into CataTUI, then press Enter.
@@ -136,7 +136,7 @@ CataTUI keeps its settings and sessions in the `~/.catatui` folder.
 
 ## For developers
 
-To use only the extension in pi, type `pi install /path/to/catatui`. The extension adds the CatChat provider, the MSU header, the `http` tool, `/undo`, and the `simplified-technical-english` skill. It does not change your theme or model.
+To use only the extension in pi, run `pi install /path/to/catatui`. The extension adds the CatChat provider, the MSU header, the `http` tool, `/undo`, and the `simplified-technical-english` skill. It does not change your theme or model.
 
 | Task | Command |
 |---|---|
