@@ -11,7 +11,7 @@
   },
   "files": [
     "bin",
-    "extensions",
+    "src/ts",
     "themes",
     "skills",
     "assets/bobcat-head.png",
@@ -19,7 +19,7 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions/msu/index.ts"
+      "./src/ts/index.ts"
     ],
     "themes": [
       "./themes"

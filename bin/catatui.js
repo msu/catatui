@@ -25,7 +25,7 @@ if (args.includes("--update") || args[0] === "update") process.exit(update());
 process.env.CATATUI = "1";
 process.env.PI_CODING_AGENT_DIR ??= join(homedir(), ".catatui");
 
-const extra = ["-e", root("extensions/msu/index.ts"), "--theme", root("themes"), "--skill", root("skills")];
+const extra = ["-e", root("src/ts/index.ts"), "--theme", root("themes"), "--skill", root("skills")];
 // pi picks msu-light on a light terminal and msu on a dark terminal.
 if (!args.includes("--use-theme")) extra.push("--use-theme", "msu-light/msu");
 

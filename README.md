@@ -1,10 +1,6 @@
-<img src="assets/bobcat-head.png" alt="Montana State Bobcat" width="120" align="left">
-
-# catatui
+<h1><img src="assets/bobcat-head.png" alt="Montana State Bobcat" width="90" align="middle"> catatui</h1>
 
 A command line agent harness for MSU CSCI students
-
-<br clear="left">
 
 catatui is the Montana State Command Line Agent.
 
