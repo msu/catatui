@@ -8,32 +8,42 @@ The agent can read your code, run commands, and change files. It asks you before
 
 ## What you need
 
-- Node.js 22 or later. Get it at https://nodejs.org.
 - An MSU account.
 - A connection to the MSU network to make a key. If you are not on campus, connect to the MSU VPN.
 
 ## Install
 
-To run CataTUI without an install, type this in your terminal:
+On macOS or Linux, type this in your terminal:
 
 ```
-npx github:msu/catatui
+curl -fsSL https://raw.githubusercontent.com/msu/catatui/master/install.sh | sh
 ```
 
-The first run downloads CataTUI. This can take one minute.
-
-To install the `catatui` command, type this:
+On Windows, type this in PowerShell:
 
 ```
-npm install -g github:msu/catatui
+irm https://raw.githubusercontent.com/msu/catatui/master/install.ps1 | iex
 ```
+
+The installer puts CataTUI and its own copy of Node.js in the `~/.catatui/app` folder. It adds the `catatui` command to your PATH. It does not change the Node.js that you use for other work.
+
+After the install, open a new terminal.
 
 To update CataTUI, type the same install command again.
+
+If you use the fish shell, add `~/.catatui/app/bin` to your PATH yourself.
+
+### Install with npm
+
+If you have Node.js 22 or later and git, you can use npm:
+
+- To run CataTUI without an install, type `npx github:msu/catatui`.
+- To install the `catatui` command, type `npm install -g github:msu/catatui`.
 
 ## First use
 
 1. Go to your project folder in the terminal.
-2. Start CataTUI with `npx github:msu/catatui` or `catatui`.
+2. Type `catatui`.
 3. CataTUI shows the steps to make an API key. Press Enter. CataTUI opens catchat access in your browser.
 4. Click "API Keys", then "+ Free Key". Give the key a unique name, select "gsoc" as your Team, then click "Create Key".
 5. Copy the key, paste it into CataTUI, then press Enter.
@@ -135,6 +145,7 @@ To use only the extension in pi, type `pi install /path/to/catatui`. The extensi
 
 | File | Content |
 |---|---|
+| `install.sh`, `install.ps1` | Installers for macOS and Linux, and for Windows |
 | `bin/catatui.js` | Launcher. Runs pi with the extension, the themes, the skills, and `~/.catatui`. |
 | `extensions/msu/config.ts` | CatChat URLs, the default model, and model notes |
 | `extensions/msu/auth.ts` | `/login` with a pasted key from catchat-access |
