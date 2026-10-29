@@ -1,11 +1,11 @@
 // MSU bobcat header.
 // Terminals with the Kitty or iTerm2 image protocol get assets/bobcat-head.png.
-// Other terminals get the pixel art in logo.ts, shown from top to bottom.
+// Other terminals get the pixel art in logo.ts, shown from top to bottom: green on dark, MSU colors on light.
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, Image, type TUI } from "@earendil-works/pi-tui";
 import { readFileSync } from "node:fs";
-import { HALF_BLOCK, WIDTH } from "./logo.ts";
+import { HEIGHT, logoLines, WIDTH } from "./logo.ts";
 
 const FRAME_MS = 40;
 const ROWS_PER_FRAME = 1;
@@ -31,8 +31,8 @@ function sideText(theme: Theme, version: string): string[] {
 export function halfBlockLines(theme: Theme, version: string, shown: number, width = Infinity): string[] {
   const side = sideText(theme, version);
   const narrow = width < WIDTH + 30;
-  const top = Math.floor((HALF_BLOCK.length - side.length) / 2);
-  const lines = HALF_BLOCK.map((art, i) => {
+  const top = Math.floor((HEIGHT - side.length) / 2);
+  const lines = logoLines(theme.appearance).map((art, i) => {
     const logo = i < shown ? art : " ".repeat(WIDTH);
     const extra = narrow ? undefined : side[i - top];
     return extra === undefined ? `  ${logo}` : `  ${logo}   ${extra}`;
@@ -44,7 +44,7 @@ export function halfBlockLines(theme: Theme, version: string, shown: number, wid
 function imageHeader(theme: Theme, version: string) {
   const image = new Image(readFileSync(LOGO_PNG).toString("base64"), "image/png", { fallbackColor: (s) => theme.fg("dim", s) }, {
     maxWidthCells: WIDTH,
-    maxHeightCells: HALF_BLOCK.length,
+    maxHeightCells: HEIGHT,
   });
   return {
     render: (width: number) => ["", ...image.render(width).map((l) => `  ${l}`), "", ...sideText(theme, version).map((l) => `  ${l}`), ""],
@@ -55,9 +55,9 @@ function imageHeader(theme: Theme, version: string) {
 function halfBlockHeader(tui: TUI, theme: Theme, version: string) {
   let shown = 0;
   const timer = setInterval(() => {
-    shown = Math.min(HALF_BLOCK.length, shown + ROWS_PER_FRAME);
+    shown = Math.min(HEIGHT, shown + ROWS_PER_FRAME);
     tui.requestRender();
-    if (shown >= HALF_BLOCK.length) clearInterval(timer);
+    if (shown >= HEIGHT) clearInterval(timer);
   }, FRAME_MS);
   return {
     render: (width: number) => halfBlockLines(theme, version, shown, width),

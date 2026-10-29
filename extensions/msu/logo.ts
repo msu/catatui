@@ -1,8 +1,9 @@
 // Pixel-art bobcat for terminals without an image protocol.
 // Traced from a pixel-art version of the MSU bobcat logo.
-// Each pixel is the main color of a 2x2 block of the trace. Three colors only: fewer color edges give fewer lines between rows.
+// Each pixel is the main color of a 2x2 block of the trace.
 // N = navy, G = gold, C = cream, . = empty.
-// The art uses half blocks: one text row holds two pixel rows, so the row count must be even.
+
+import { foregroundAnsi, getTerminalColorMode, rgbColor } from "@earendil-works/pi-tui";
 
 const ART = [
   "..................C......",
@@ -31,34 +32,36 @@ const ART = [
   ".........................",
 ];
 
-const COLORS: Record<string, [number, number, number]> = {
-  N: [0, 31, 86],
-  G: [199, 153, 78],
-  C: [251, 246, 236],
+type Rgb = [number, number, number];
+
+// Dark terminals get green "matrix" pixels. Light terminals get MSU blue and gold, with gray for cream.
+const PALETTES: Record<"dark" | "light", Record<string, Rgb>> = {
+  dark: { N: [0, 143, 17], G: [0, 255, 65], C: [170, 255, 190] },
+  light: { N: [22, 41, 96], G: [199, 153, 78], C: [160, 160, 160] },
 };
 
-const ROWS = ART.map((row) => [...row].map((c) => COLORS[c]));
+export const WIDTH = ART[0].length;
+export const HEIGHT = Math.ceil(ART.length / 2);
 
-const fg = ([r, g, b]: number[]) => `\x1b[38;2;${r};${g};${b}m`;
-const bg = ([r, g, b]: number[]) => `\x1b[48;2;${r};${g};${b}m`;
-
-function halfBlockLine(top: (number[] | undefined)[], bottom: (number[] | undefined)[]): string {
-  let line = "";
-  for (let x = 0; x < top.length; x++) {
-    const t = top[x];
-    const b = bottom[x];
-    // If both pixels have the same color, draw a space on a background color.
-    // A glyph edge can show a thin line between rows, but a background fills the full cell.
-    if (t && b && t === b) line += bg(t) + " ";
-    else if (t && b) line += fg(t) + bg(b) + "▀";
-    else if (t) line += "\x1b[49m" + fg(t) + "▀";
-    else if (b) line += "\x1b[49m" + fg(b) + "▄";
-    else line += "\x1b[0m ";
+// One text row holds two pixel rows. A cell is drawn where its two pixels differ, so the edges show.
+// Inside solid areas, it draws every second cell (a checkerboard).
+// A cell draws one "▀" in the color of its top pixel, or its bottom pixel if the top is empty.
+// The empty half of each cell gives the gaps between rows of pixels.
+// The color goes through pi-tui, so terminals without 24-bit color get the nearest 256-color index.
+export function logoLines(appearance: "dark" | "light"): string[] {
+  const palette = PALETTES[appearance];
+  const mode = getTerminalColorMode();
+  const lines: string[] = [];
+  for (let y = 0; y < ART.length; y += 2) {
+    let line = "";
+    for (let x = 0; x < WIDTH; x++) {
+      const top = ART[y][x];
+      const bottom = ART[y + 1]?.[x] ?? ".";
+      const fill = (x + y / 2) % 2 === 0;
+      const c = top === bottom && !fill ? undefined : (palette[top] ?? palette[bottom]);
+      line += c ? `${foregroundAnsi(rgbColor(...c), mode)}▀\x1b[39m` : " ";
+    }
+    lines.push(line);
   }
-  return line + "\x1b[0m";
+  return lines;
 }
-
-export const WIDTH = ROWS[0].length;
-
-export const HALF_BLOCK: string[] = [];
-for (let y = 0; y < ROWS.length; y += 2) HALF_BLOCK.push(halfBlockLine(ROWS[y], ROWS[y + 1]));

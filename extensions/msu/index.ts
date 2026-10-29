@@ -9,6 +9,9 @@ import { login, refreshToken } from "./auth.ts";
 import { bannerComponent } from "./banner.ts";
 import { CATCHAT_API, DEFAULT_MODEL, PREFERRED_MODELS, PROVIDER_ID } from "./config.ts";
 import { fetchModels } from "./models.ts";
+import { setFooter } from "./footer.ts";
+import { registerHttpTool } from "./http.ts";
+import { registerPermissions } from "./permissions.ts";
 
 // The catatui command sets this. As a plain pi package, the extension does not change the theme or model.
 const WRAPPED = process.env.CATATUI === "1";
@@ -30,6 +33,9 @@ async function registerLoginDefault() {
 
 export default async function (pi: ExtensionAPI) {
   await registerLoginDefault();
+  // In the catatui command, ask before file changes and commands. As a plain pi package, do not change pi's behavior.
+  registerHttpTool(pi);
+  if (WRAPPED) registerPermissions(pi);
 
   pi.registerProvider(PROVIDER_ID, {
     name: "MSU CatChat",
@@ -56,6 +62,7 @@ export default async function (pi: ExtensionAPI) {
     ctx.ui.setHeader((tui, theme) => bannerComponent(tui, theme, `${PKG_VERSION} (pi ${VERSION})`));
     if (!WRAPPED) return;
     ctx.ui.setTitle("CataTUI");
+    setFooter(pi, ctx);
     await pickDefaultModel(pi, ctx);
   });
 

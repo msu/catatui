@@ -27,7 +27,7 @@ To update, run the same install command again.
 1. If you are not on campus, connect to the MSU VPN.
 2. In your project folder, run `npx github:msu/catatui` or `catatui`.
 3. Press Enter to run `/login catchat`. catatui types it for you.
-4. Sign in with your MSU account, or paste a key from catchat-access.
+4. Follow the steps to make a key at catchat-access, then paste it.
 5. Type `/model` to pick a model. The default is `gpt-oss:120b`.
 
 ## Commands
@@ -63,7 +63,7 @@ The extension adds the CatChat provider and the MSU header. It does not change y
 |---|---|
 | `bin/catatui.js` | Launcher. Runs pi with the extension, the theme, and `~/.catatui`. |
 | `extensions/msu/config.ts` | CatChat URLs and defaults |
-| `extensions/msu/auth.ts` | `/login`: MSU SSO (PKCE) or a pasted key |
+| `extensions/msu/auth.ts` | `/login`: a pasted key. MSU SSO (PKCE) is off. |
 | `extensions/msu/models.ts` | Model list from CatChat |
 | `extensions/msu/banner.ts` | Header: bobcat head and commands |
 | `themes/msu.json` | MSU blue and gold theme |

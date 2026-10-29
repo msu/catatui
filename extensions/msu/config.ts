@@ -30,9 +30,10 @@ export const MODEL_NOTES: Record<string, string> = {
   "Goedel-Prover-V2": "Theorem prover (Lean). Not for general coding.",
 };
 
-// Sign-in choices for /login, in order. The first one is the default.
-// "sso" is blocked until RCI assigns students to the MSUBZ Catchat-API Entra app (AADSTS50105).
-export const AUTH_METHODS: readonly ("paste" | "sso")[] = ["paste", "sso"];
+// Sign-in choices for /login, in order. With one choice, /login skips the menu.
+// "sso" (browser sign-in) is off until RCI assigns students to the MSUBZ Catchat-API Entra app (AADSTS50105).
+// To turn it on, add "sso" to this list.
+export const AUTH_METHODS: readonly ("paste" | "sso")[] = ["paste"];
 
 // CatChat lists some alias names (for example "opus") that are not the real model. Hide them in /model.
 // Add a pattern here if a new alias shows up.
