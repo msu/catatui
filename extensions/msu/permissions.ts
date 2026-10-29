@@ -1,39 +1,45 @@
-// Safety modes, like the permission modes in Claude Code. The footer shows "mode: ...".
-// "/safety" shows a menu to pick the mode, and to turn the sandbox (sandbox.ts) and
-// Simplified Technical English (ste.ts) on or off.
-// "/safety <mode>" sets the mode. Tab completes the mode names.
-// - ask:  ask before each file change, bash command, and http request. This is the default.
-// - plan: read only. Block file changes and http requests other than GET. Ask before the rest.
-//         Tell the model to make a plan.
-// - ta:   teaching assistant. Read only, as in plan mode. The model explains and gives hints,
-//         but does not write the solution. Students can turn it off, so it is a learning aid, not an integrity control.
-// - yolo: ask nothing.
-// In ask, plan, and ta mode, risky commands and changes outside the project folder always ask.
-// The mode and the "do not ask again" choices last for one session only.
+// Safety settings, like the permission modes in Claude Code. The footer shows "mode: ...".
+// "/safety" opens a panel. Space or Enter changes the line under the cursor. The panel stays open until Escape.
+//   Mode (one of):
+//   - ask:  ask before each file change, bash command, and http request. This is the default.
+//   - plan: the model writes a plan to PLAN_FILE and changes no other files. Block http requests other than GET.
+//   - yolo: ask nothing.
+//   Flags (on or off):
+//   - ta:      teaching assistant. Block file changes and http requests other than GET, in all modes.
+//              The model explains and gives hints, but does not write the solution.
+//              Students can turn it off, so it is a learning aid, not an integrity control.
+//   - sandbox: sandbox.ts
+//   - ste:     Simplified Technical English, ste.ts
+// "/safety ask|plan|yolo" sets the mode. "/safety ta" turns ta on or off. Tab completes these words.
+// In ask and plan mode, risky commands and changes outside the project folder always ask.
+// The mode, ta, and the "do not ask again" choices last for one session only.
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { isAbsolute, relative, resolve } from "node:path";
 import { sandboxOn, setSandbox } from "./sandbox.ts";
 import { setSte, steOn } from "./ste.ts";
 
-type Mode = "ask" | "plan" | "ta" | "yolo";
-const MODES: Mode[] = ["ask", "plan", "ta", "yolo"];
-// Modes that block file changes and http requests other than GET.
-const READ_ONLY: Mode[] = ["plan", "ta"];
-
-const MODE_LABELS: Record<Mode, string> = {
-  ask: "ask",
-  plan: "plan (read only)",
-  ta: "ta (teaching assistant)",
-  yolo: "yolo (no questions)",
-};
+type Mode = "ask" | "plan" | "yolo";
+const MODES: Mode[] = ["ask", "plan", "yolo"];
 
 const MODE_HELP: Record<Mode, string> = {
-  ask: "Ask before each file change, command, and http request",
-  plan: "Read only. The model writes a plan",
-  ta: "Teaching assistant. The model explains and gives hints, but does not write your code",
-  yolo: "Ask nothing",
+  ask: "The agent will ask before each file change, command and http request.",
+  plan: "Planning mode. The model will write a plan file for work but make no changes.",
+  yolo: "The agent will make changes without asking you to approve them.",
 };
+
+type Flag = "ta" | "sandbox" | "ste";
+const FLAGS: Flag[] = ["ta", "sandbox", "ste"];
+
+const FLAG_HELP: Record<Flag, string> = {
+  ta: "Teaching assistant. The agent explains and gives hints, but does not write your code.",
+  sandbox: "The agent can use only the files in the project folder.",
+  ste: "Simplified Technical English. The agent writes short, clear sentences.",
+};
+
+// In plan mode, the model can write only this file in the project folder.
+const PLAN_FILE = "PLAN.md";
 
 // Commands that can run any other command. The student cannot allow them for the whole session,
 // because "do not ask again for npx" allows all of npx.
@@ -49,10 +55,11 @@ const RISKY = [
 ];
 
 const PLAN_CONTEXT = `[PLAN MODE]
-The student turned on plan mode. Do not change files. The edit and write tools are blocked.
-Read the code, then write a numbered plan. The student will turn off plan mode to carry it out.`;
+The student turned on plan mode. Do not change project files.
+Read the code, then write a numbered plan to ${PLAN_FILE} in the project folder with the write tool.
+The edit and write tools are blocked for all other files. The student will turn off plan mode to carry out the plan.`;
 
-// The system prompt section for ta mode. It stays in the prompt while ta mode is on.
+// The system prompt section for ta. It stays in the prompt while ta is on.
 const TA_PROMPT = `The student turned on teaching assistant mode. You are a teaching assistant in a computer science course.
 - Do not write the solution to the student's task. Do not change files. The edit and write tools are blocked.
 - Explain concepts. Ask guiding questions. Give hints one step at a time, from small hints to larger hints.
@@ -61,90 +68,127 @@ const TA_PROMPT = `The student turned on teaching assistant mode. You are a teac
   An example must not solve the student's task, and must not use the names from the student's code.
 - You can read files and run commands (for example tests and compilers) to understand the student's problem.
 - If the student asks for the full solution, say that teaching assistant mode is on, then give the next hint.
-  The student can change the mode with /safety.`;
+  The student can turn it off with /safety.`;
 
-const BLOCK_REASON: Record<string, string> = {
-  plan: "Plan mode is on. Do not change files. Write a plan.",
-  ta: "Teaching assistant mode is on. Do not change files. Give the student a hint.",
-};
+const TA_BLOCK = "Teaching assistant mode is on. Do not change files. Give the student a hint.";
+const PLAN_BLOCK = `Plan mode is on. Do not change project files. Write the plan to ${PLAN_FILE}.`;
 
 const ALLOW_EDITS = "Yes, and do not ask again for file changes in this project this session";
 
 export function registerPermissions(pi: ExtensionAPI) {
   let mode: Mode = "ask";
+  let ta = false;
   let editsAllowed = false;
   // First words of bash commands that the student allowed for this session, for example "npm".
   const allowedCommands = new Set<string>();
   // Hosts that the student allowed for GET requests from the http tool this session.
   const allowedHosts = new Set<string>();
 
-  const showMode = (ctx: ExtensionContext) => {
+  const showStatus = (ctx: ExtensionContext) => {
+    const t = ctx.ui.theme;
     const color = mode === "ask" ? "muted" : mode === "yolo" ? "warning" : "accent";
-    ctx.ui.setStatus("mode", `${ctx.ui.theme.fg("dim", "mode:")} ${ctx.ui.theme.fg(color, MODE_LABELS[mode])}`);
+    ctx.ui.setStatus("mode", `${t.fg("dim", "mode:")} ${t.fg(color, mode)}`);
+    ctx.ui.setStatus("ta", ta ? `${t.fg("dim", "ta:")} ${t.fg("accent", "on")}` : undefined);
   };
 
-  // Menu items: one per mode, then the sandbox and STE switches. "*" marks the current mode.
-  const menu = async (ctx: ExtensionContext) => {
-    const items = MODES.map((m) => `${m === mode ? "*" : " "} ${m}: ${MODE_HELP[m]}`);
-    const sandbox = sandboxOn()
-      ? "  Turn the sandbox off (the agent can use files outside the project folder)"
-      : "  Turn the sandbox on (the agent can use only files in the project folder)";
-    const ste = steOn()
-      ? "  Turn Simplified Technical English off (the agent writes in plain English)"
-      : "  Turn Simplified Technical English on (short, clear sentences)";
-    const onOff = (v: boolean) => (v ? "on" : "off");
-    const title = `Safety mode: ${MODE_LABELS[mode]}. Sandbox: ${onOff(sandboxOn())}. Simplified Technical English: ${onOff(steOn())}.`;
-    const choice = await ctx.ui.select(title, [...items, sandbox, ste]);
-    if (!choice) return;
-    if (choice === sandbox) {
-      setSandbox(ctx, !sandboxOn());
-      ctx.ui.notify(`Sandbox: ${onOff(sandboxOn())}`, sandboxOn() ? "info" : "warning");
-      return;
-    }
-    if (choice === ste) {
-      setSte(ctx, !steOn());
-      ctx.ui.notify(`Simplified Technical English: ${onOff(steOn())}`, "info");
-      return;
-    }
-    mode = MODES[items.indexOf(choice)];
-    showMode(ctx);
-    ctx.ui.notify(`Mode: ${MODE_LABELS[mode]}`, mode === "yolo" ? "warning" : "info");
+  const flagOn = (f: Flag) => (f === "ta" ? ta : f === "sandbox" ? sandboxOn() : steOn());
+  const setFlag = (ctx: ExtensionContext, f: Flag, value: boolean) => {
+    if (f === "ta") ta = value;
+    if (f === "sandbox") setSandbox(ctx, value);
+    if (f === "ste") setSte(ctx, value);
+    showStatus(ctx);
   };
+
+  // The /safety panel. Rows 0-2 are the modes, rows 3-5 are the flags.
+  const panel = (ctx: ExtensionContext) =>
+    ctx.ui.custom<void>((tui, theme: Theme, _kb, done) => {
+      let row = MODES.indexOf(mode);
+      const rows = MODES.length + FLAGS.length;
+      const line = (i: number, mark: string, name: string, help: string) => {
+        const cursor = i === row ? theme.fg("accent", "> ") : "  ";
+        const text = `${mark} ${name.padEnd(8)} ${theme.fg("muted", help)}`;
+        return `${cursor}${i === row ? theme.bold(text) : text}`;
+      };
+      return {
+        render(width: number) {
+          const lines = [
+            theme.fg("accent", theme.bold("Safety")),
+            "",
+            theme.fg("dim", "Mode (pick one)"),
+            ...MODES.map((m, i) => line(i, m === mode ? "(*)" : "( )", m, MODE_HELP[m])),
+            "",
+            theme.fg("dim", "Options (on or off)"),
+            ...FLAGS.map((f, i) => line(MODES.length + i, flagOn(f) ? "[x]" : "[ ]", f, FLAG_HELP[f])),
+            "",
+            theme.fg("dim", "up/down move   space/enter change   escape close"),
+          ];
+          return lines.map((l) => truncateToWidth(l, width));
+        },
+        invalidate() {},
+        handleInput(data: string) {
+          if (matchesKey(data, "escape")) return done();
+          if (matchesKey(data, "up")) row = (row + rows - 1) % rows;
+          if (matchesKey(data, "down")) row = (row + 1) % rows;
+          if (matchesKey(data, "space") || matchesKey(data, "enter")) {
+            if (row < MODES.length) mode = MODES[row];
+            else {
+              const f = FLAGS[row - MODES.length];
+              setFlag(ctx, f, !flagOn(f));
+            }
+            showStatus(ctx);
+          }
+          tui.requestRender();
+        },
+      };
+    });
 
   pi.on("session_start", async (_event, ctx) => {
-    if (ctx.hasUI) showMode(ctx);
+    if (ctx.hasUI) showStatus(ctx);
   });
 
+  const WORDS = [...MODES, "ta"];
   pi.registerCommand("safety", {
-    description: "Change the mode (ask, plan, ta, or yolo), and turn the sandbox and Simplified Technical English on or off",
+    description: "Pick the mode (ask, plan, yolo), and turn ta, the sandbox, and Simplified Technical English on or off",
     getArgumentCompletions: (prefix: string) =>
-      MODES.filter((m) => m.startsWith(prefix.trim())).map((m) => ({ value: m, label: m, description: MODE_HELP[m] })),
+      WORDS.filter((w) => w.startsWith(prefix.trim())).map((w) => ({
+        value: w,
+        label: w,
+        description: w === "ta" ? `Turn on or off. ${FLAG_HELP.ta}` : MODE_HELP[w as Mode],
+      })),
     handler: async (args, ctx) => {
-      const want = args.trim() as Mode;
-      if (want && !MODES.includes(want)) {
-        ctx.ui.notify(`Unknown safety mode "${want}". Use ask, plan, ta, or yolo.`, "error");
+      const want = args.trim();
+      if (!want) return ctx.mode === "tui" ? panel(ctx) : ctx.ui.notify(`Mode: ${mode}. ta: ${ta ? "on" : "off"}.`, "info");
+      if (want === "ta") {
+        setFlag(ctx, "ta", !ta);
+        ctx.ui.notify(`Teaching assistant: ${ta ? "on" : "off"}`, "info");
         return;
       }
-      if (!want) return menu(ctx);
-      mode = want;
-      showMode(ctx);
-      ctx.ui.notify(`Mode: ${MODE_LABELS[mode]}`, mode === "yolo" ? "warning" : "info");
+      if (!MODES.includes(want as Mode)) {
+        ctx.ui.notify(`Unknown word "${want}". Use ask, plan, yolo, or ta.`, "error");
+        return;
+      }
+      mode = want as Mode;
+      showStatus(ctx);
+      ctx.ui.notify(`Mode: ${mode}`, mode === "yolo" ? "warning" : "info");
     },
   });
 
   pi.on("before_agent_start", async (event) => {
-    if (mode === "ta") event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, "teaching-assistant": TA_PROMPT };
+    if (ta) event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, "teaching-assistant": TA_PROMPT };
     if (event.messageType !== "user" || mode !== "plan") return;
     return { message: { customType: "plan-mode-context", content: PLAN_CONTEXT, display: false } };
   });
 
   pi.on("tool_call", async (event, ctx) => {
+    // ta blocks changes in all modes, also in yolo.
+    if (ta && (event.toolName === "edit" || event.toolName === "write")) return { block: true, reason: TA_BLOCK };
+    if (ta && event.toolName === "http" && !isRead(event.input.method)) return { block: true, reason: `${TA_BLOCK} Send only GET requests.` };
     if (mode === "yolo") return;
 
     if (event.toolName === "edit" || event.toolName === "write") {
-      if (READ_ONLY.includes(mode)) return { block: true, reason: BLOCK_REASON[mode] };
       const path = String(event.input.path ?? "");
       const rel = relative(ctx.cwd, resolve(ctx.cwd, path));
+      if (mode === "plan") return rel === PLAN_FILE ? undefined : { block: true, reason: PLAN_BLOCK };
       const inProject = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
       if (editsAllowed && inProject) return;
       const where = inProject ? path : `${path} (outside the project folder)`;
@@ -162,8 +206,8 @@ export function registerPermissions(pi: ExtensionAPI) {
       } catch {
         return { block: true, reason: `"${url}" is not a full URL. Use a URL like https://example.com/page.` };
       }
-      const read = method === "GET" || method === "HEAD";
-      if (READ_ONLY.includes(mode) && !read) return { block: true, reason: `${BLOCK_REASON[mode]} Send only GET requests.` };
+      const read = isRead(method);
+      if (mode === "plan" && !read) return { block: true, reason: `${PLAN_BLOCK} Send only GET requests.` };
       if (read && allowedHosts.has(host)) return;
       const always = `Yes, and do not ask again for GET requests to ${host} this session`;
       const choice = await ask(ctx, `Send this request?\n\n  ${method} ${url}`, read ? ["Yes", always, "No"] : ["Yes", "No"]);
@@ -184,6 +228,8 @@ export function registerPermissions(pi: ExtensionAPI) {
     }
   });
 }
+
+const isRead = (method: unknown) => ["GET", "HEAD"].includes(String(method ?? "GET").toUpperCase());
 
 // Without a UI (for example "catatui -p"), nobody can answer, so the answer is no.
 async function ask(ctx: ExtensionContext, title: string, options: string[]): Promise<string | undefined> {

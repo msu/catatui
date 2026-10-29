@@ -47,7 +47,7 @@ CataTUI selects the model `Qwen3.8-27B`. To pick a different model, type `/model
 
 | Command | Use |
 |---|---|
-| `/safety` | Pick the mode. Turn the sandbox and Simplified Technical English on or off. |
+| `/safety` | Pick the mode. Turn teaching assistant, the sandbox, and Simplified Technical English on or off. |
 | `/undo` | Put back the files that the agent changed for your last request |
 | `/model` | Pick a CatChat model |
 | `/login catchat` | Sign in to CatChat |
@@ -59,14 +59,23 @@ To stop the agent while it works, press Escape.
 
 ## Modes
 
-The mode controls what the agent can do. The bottom line of the screen shows the mode. To change the mode, type `/safety`.
+The mode controls what the agent can do. The bottom line of the screen shows the mode.
+
+To change the mode or an option, type `/safety`. Use the up and down arrows to move. Press Space or Enter to change the line. Press Escape to close.
 
 | Mode | What the agent does |
 |---|---|
-| `ask` | The agent asks you before it changes a file, runs a command, or sends a web request. CataTUI starts in this mode. |
-| `plan` | The agent reads your code and writes a plan. It does not change files. |
-| `ta` | Teaching assistant. The agent explains concepts and gives hints. It does not write your code. |
-| `yolo` | The agent does not ask you before it acts. Use this mode with care. |
+| `ask` | The agent will ask before each file change, command and http request. CataTUI starts in this mode. |
+| `plan` | Planning mode. The model will write a plan file (`PLAN.md`) for work but make no changes. |
+| `yolo` | The agent will make changes without asking you to approve them. Use this mode with care. |
+
+| Option | What it does | Start value |
+|---|---|---|
+| `ta` | Teaching assistant. The agent explains concepts and gives hints. It does not write your code. | off |
+| `sandbox` | The agent can use only the files in the project folder. | on |
+| `ste` | Simplified Technical English. The agent writes short, clear sentences. | on |
+
+`ta` works in all modes. When `ta` is on, the agent cannot change files, also in `yolo` mode.
 
 In `ask` mode, you can select "do not ask again" for some actions. This choice lasts until CataTUI stops.
 
@@ -78,7 +87,7 @@ The agent can use only the files in the folder where you start CataTUI. This is 
 
 To let the agent use other folders, do one of these steps:
 
-- Type `/safety`, then select "Turn the sandbox off".
+- Type `/safety`, then turn off `sandbox`.
 - Start CataTUI with `catatui --no-sandbox`.
 
 The sandbox is not complete protection. A command can get around it. Read each command before you allow it.
@@ -87,7 +96,7 @@ The sandbox is not complete protection. A command can get around it. Read each c
 
 The agent writes in Simplified Technical English. It uses short sentences and simple words. This makes the answers easier to read, also for non-native English speakers.
 
-To turn it off, type `/safety`, then select "Turn Simplified Technical English off". CataTUI keeps this choice for the next start.
+To turn it off, type `/safety`, then turn off `ste`. CataTUI keeps this choice for the next start.
 
 ## Undo
 
@@ -132,7 +141,7 @@ To use only the extension in pi, type `pi install /path/to/catatui`. The extensi
 | `extensions/msu/models.ts` | Model list from CatChat |
 | `extensions/msu/banner.ts`, `logo.ts` | Header: bobcat logo and commands |
 | `extensions/msu/footer.ts` | Bottom status line |
-| `extensions/msu/permissions.ts` | `/safety` and the modes |
+| `extensions/msu/permissions.ts` | `/safety` panel, modes, and `ta` |
 | `extensions/msu/sandbox.ts` | Sandbox |
 | `extensions/msu/ste.ts` | Puts the STE skill in the system prompt |
 | `extensions/msu/undo.ts` | `/undo` |
