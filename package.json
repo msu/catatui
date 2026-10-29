@@ -13,6 +13,7 @@
     "bin",
     "extensions",
     "themes",
+    "skills",
     "assets/bobcat-head.png",
     "README.md"
   ],
@@ -22,6 +23,9 @@
     ],
     "themes": [
       "./themes"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "engines": {

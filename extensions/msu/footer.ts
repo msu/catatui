@@ -38,7 +38,11 @@ export function setFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
         if (branch) cwd += ` (${branch})`;
         const oneLine = width - visibleWidth(rest) - SEP.length - "cwd: ".length >= MIN_CWD;
         const room = (oneLine ? width - visibleWidth(rest) - SEP.length : width) - "cwd: ".length;
-        if (cwd.length > room) cwd = `...${cwd.slice(cwd.length - room + 3)}`;
+        // Remove characters from the start until the path fits. visibleWidth counts wide characters correctly.
+        if (visibleWidth(cwd) > room) {
+          while (cwd.length > 0 && visibleWidth(cwd) > room - 3) cwd = cwd.slice(1);
+          cwd = `...${cwd}`;
+        }
         if (oneLine) return [truncateToWidth(`${label("cwd", cwd)}${SEP}${rest}`, width)];
         return [truncateToWidth(label("cwd", cwd), width), truncateToWidth(rest, width)];
       },

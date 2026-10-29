@@ -12,6 +12,9 @@ import { fetchModels } from "./models.ts";
 import { setFooter } from "./footer.ts";
 import { registerHttpTool } from "./http.ts";
 import { registerPermissions } from "./permissions.ts";
+import { registerSandbox } from "./sandbox.ts";
+import { registerSte } from "./ste.ts";
+import { registerUndo } from "./undo.ts";
 
 // The catatui command sets this. As a plain pi package, the extension does not change the theme or model.
 const WRAPPED = process.env.CATATUI === "1";
@@ -33,9 +36,16 @@ async function registerLoginDefault() {
 
 export default async function (pi: ExtensionAPI) {
   await registerLoginDefault();
-  // In the catatui command, ask before file changes and commands. As a plain pi package, do not change pi's behavior.
+  // In the catatui command, keep the agent in the project folder and ask before file changes and commands.
+  // As a plain pi package, do not change pi's behavior.
+  // The sandbox comes first, so a blocked call does not ask the student. Undo comes last, so it sees only allowed calls.
   registerHttpTool(pi);
-  if (WRAPPED) registerPermissions(pi);
+  if (WRAPPED) {
+    registerSandbox(pi);
+    registerPermissions(pi);
+    registerSte(pi);
+  }
+  registerUndo(pi);
 
   pi.registerProvider(PROVIDER_ID, {
     name: "MSU CatChat",
@@ -64,6 +74,12 @@ export default async function (pi: ExtensionAPI) {
     ctx.ui.setTitle("CataTUI");
     setFooter(pi, ctx);
     await pickDefaultModel(pi, ctx);
+  });
+
+  // After the sign-in, pi selects a CatChat model. Remove the "/login catchat" text that pickDefaultModel typed.
+  pi.on("model_select", async (event, ctx) => {
+    if (!WRAPPED || !ctx.hasUI || event.model.provider !== PROVIDER_ID) return;
+    if (ctx.ui.getEditorText().trim() === `/login ${PROVIDER_ID}`) ctx.ui.setEditorText("");
   });
 
   pi.registerCommand("catchat", {
@@ -123,7 +139,9 @@ async function pickDefaultModel(pi: ExtensionAPI, ctx: ExtensionContext) {
   if (savedDefaultProvider() === PROVIDER_ID) return;
   const models = ctx.modelRegistry.getAll().filter((m) => m.provider === PROVIDER_ID);
   if (models.length === 0) {
-    ctx.ui.notify("To sign in to CatChat, press Enter.", "info");
+    // bin/catatui.js opens the sign-in at start. If the student closes it, Enter opens it again.
+    // An "info" notice is gray. The warning color makes it easy to see, with no "Warning:" prefix.
+    ctx.ui.notify(ctx.ui.theme.fg("warning", "Sign in to CatChat to start. To open the sign-in again, press Enter."), "info");
     ctx.ui.setEditorText(`/login ${PROVIDER_ID}`);
     return;
   }

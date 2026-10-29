@@ -5,6 +5,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 const MAX_CHARS = 50_000;
+// Link-local addresses (169.254.x.x and fe80::) include the cloud metadata service. Block them in all modes.
+const LINK_LOCAL = /^(169\.254\.|\[fe80:)/i;
 const TIMEOUT_MS = 30_000;
 
 const PARAMS = Type.Object({
@@ -41,6 +43,9 @@ export function registerHttpTool(pi: ExtensionAPI) {
     parameters: PARAMS,
     async execute(_id, params, signal) {
       const method = (params.method ?? "GET").toUpperCase();
+      if (LINK_LOCAL.test(new URL(params.url).hostname)) {
+        throw new Error(`Blocked: ${params.url} is a link-local address. The http tool cannot send requests to 169.254.x.x or fe80::.`);
+      }
       const timeout = AbortSignal.timeout(TIMEOUT_MS);
       const res = await fetch(params.url, {
         method,
