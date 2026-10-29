@@ -91,7 +91,9 @@ done
 
 say ""
 say "CataTUI $("$APP/bin/catatui" --version | awk '{print $2}') is installed."
+# This script runs in a child process, so it cannot change the PATH of the student's terminal.
 case ":$PATH:" in
-  *":$APP/bin:"*) say "To start, go to your project folder and type: catatui" ;;
-  *) say "To start, open a new terminal, go to your project folder, and type: catatui" ;;
+  *":$APP/bin:"*) ;;
+  *) say "To use catatui in this terminal, run: source $(printf '%s' "$profiles" | sed "s|^$HOME|~|")" ;;
 esac
+say "To start, go to your project folder and run: catatui"

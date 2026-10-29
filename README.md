@@ -27,7 +27,7 @@ irm https://raw.githubusercontent.com/msu/catatui/master/install.ps1 | iex
 
 The installer puts CataTUI and its own copy of Node.js in the `~/.catatui/app` folder. It adds the `catatui` command to your PATH. It does not change the Node.js that you use for other work.
 
-After the install, open a new terminal.
+After the install, open a new terminal. On macOS or Linux, you can also run the `source` command that the installer shows.
 
 To update CataTUI, run the same install command again.
 
