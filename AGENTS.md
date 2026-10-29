@@ -14,6 +14,7 @@ catatui is a terminal coding agent for MSU computer science students. It is an e
 | `themes/` | The `msu` and `msu-light` themes |
 | `assets/` | The bobcat logo |
 | `install.sh`, `install.ps1` | Install scripts for macOS and Linux, and for Windows |
+| `tmp/` | Scratch work, for example notes, test output, and feedback. Git ignores this folder. |
 
 ## Rules
 
