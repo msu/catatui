@@ -1,11 +1,11 @@
-# CataTUI installer for Windows. Run it in PowerShell:
+# catatui installer for Windows. Run it in PowerShell:
 #
 #   irm https://raw.githubusercontent.com/msu/catatui/master/install.ps1 | iex
 #
-# To update CataTUI, run the same command again.
+# To update catatui, run the same command again.
 #
 # The installer puts all files in ~\.catatui\app:
-#   node\  a private copy of Node.js. CataTUI does not use or change the Node.js on your PATH.
+#   node\  a private copy of Node.js. catatui does not use or change the Node.js on your PATH.
 #   npm\   the catatui package
 #   bin\   the catatui command (catatui.cmd)
 # It adds ~\.catatui\app\bin to your user PATH.
@@ -30,7 +30,7 @@
   $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     "AMD64" { "x64" }
     "ARM64" { "arm64" }
-    default { Fail "CataTUI does not support the CPU type $env:PROCESSOR_ARCHITECTURE." }
+    default { Fail "catatui does not support the CPU type $env:PROCESSOR_ARCHITECTURE." }
   }
 
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ("catatui-" + [Guid]::NewGuid())
@@ -65,12 +65,12 @@
 
     # 2. The catatui package. npm needs node on the PATH. Use npm.cmd, because the
     # default execution policy blocks npm.ps1.
-    Write-Host "Installing CataTUI..."
+    Write-Host "Installing catatui..."
     $oldPath = $env:Path
     $env:Path = (Join-Path $App "node") + ";" + $env:Path
     & (Join-Path $App "node\npm.cmd") install --global --prefix (Join-Path $App "npm") --no-fund --no-audit --loglevel=error $Package
     $env:Path = $oldPath
-    if ($LASTEXITCODE -ne 0) { Fail "npm cannot install CataTUI. Read the npm error above, then run this script again." }
+    if ($LASTEXITCODE -ne 0) { Fail "npm cannot install catatui. Read the npm error above, then run this script again." }
 
     # 3. The catatui command. It always uses the private Node.js.
     $bin = Join-Path $App "bin"
@@ -83,13 +83,13 @@
     if (-not $userPath) { $userPath = "" }
     if (($userPath -split ";") -notcontains $bin) {
       [Environment]::SetEnvironmentVariable("Path", (($userPath.TrimEnd(";") + ";" + $bin).TrimStart(";")), "User")
-      Write-Host "Added CataTUI to your user PATH."
+      Write-Host "Added catatui to your user PATH."
     }
     if (($env:Path -split ";") -notcontains $bin) { $env:Path = "$bin;$env:Path" }
 
     $installed = (& (Join-Path $bin "catatui.cmd") --version) -split " " | Select-Object -Index 1
     Write-Host ""
-    Write-Host "CataTUI $installed is installed."
+    Write-Host "catatui $installed is installed."
     Write-Host "To start, go to your project folder and type: catatui"
   } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

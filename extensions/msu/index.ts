@@ -71,7 +71,7 @@ export default async function (pi: ExtensionAPI) {
     if (ctx.mode !== "tui") return;
     ctx.ui.setHeader((tui, theme) => bannerComponent(tui, theme, `${PKG_VERSION} (pi ${VERSION})`));
     if (!WRAPPED) return;
-    ctx.ui.setTitle("CataTUI");
+    ctx.ui.setTitle("catatui");
     setFooter(pi, ctx);
     await pickDefaultModel(pi, ctx);
   });

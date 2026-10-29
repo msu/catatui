@@ -16,7 +16,7 @@ function sideText(theme: Theme, version: string): string[] {
   const muted = (s: string) => theme.fg("muted", s);
   const dim = (s: string) => theme.fg("dim", s);
   return [
-    `${gold("CataTUI")} ${dim(`v${version}`)}`,
+    `${gold("catatui")} ${dim(`v${version}`)}`,
     muted("Montana State Command Line Agent"),
     "",
     `${dim("/login catchat")}  ${muted("sign in")}`,

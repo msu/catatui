@@ -24,10 +24,10 @@ function compare(a, b) {
 }
 
 export async function printVersion(version, piVersion) {
-  console.log(`CataTUI ${version} (pi ${piVersion})`);
+  console.log(`catatui ${version} (pi ${piVersion})`);
   try {
     const latest = await latestVersion();
-    if (compare(latest, version) > 0) console.log(`CataTUI ${latest} is available. To update, run: catatui --update`);
+    if (compare(latest, version) > 0) console.log(`catatui ${latest} is available. To update, run: catatui --update`);
     else console.log("This is the newest version.");
   } catch (err) {
     console.log(`Cannot check for updates: ${err.message}. Check your network connection.`);
@@ -36,12 +36,12 @@ export async function printVersion(version, piVersion) {
 
 export function update() {
   if (!process.env.CATATUI_APP) {
-    console.log(`npm or npx installed CataTUI. To update, run: ${INSTALL_NPM}`);
+    console.log(`npm or npx installed catatui. To update, run: ${INSTALL_NPM}`);
     return 0;
   }
   // On Windows, the installer cannot replace node.exe while this node.exe runs. The student must run it.
   if (process.platform === "win32") {
-    console.log(`To update, close CataTUI, then run this in PowerShell:\n  ${INSTALL_PS1}`);
+    console.log(`To update, close catatui, then run this in PowerShell:\n  ${INSTALL_PS1}`);
     return 0;
   }
   return spawnSync("sh", ["-c", INSTALL_SH], { stdio: "inherit" }).status ?? 1;

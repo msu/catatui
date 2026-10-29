@@ -11,7 +11,7 @@ import { printVersion, update } from "./update.js";
 const root = (p) => fileURLToPath(new URL(`../${p}`, import.meta.url));
 const args = process.argv.slice(2);
 
-// pi prints its own version for --version. Print the CataTUI version and the pi version, and check for a newer CataTUI.
+// pi prints its own version for --version. Print the catatui version and the pi version, and check for a newer catatui.
 if (args.includes("--version") || args.includes("-v")) {
   const { version } = JSON.parse(readFileSync(root("package.json"), "utf8"));
   const { VERSION } = await import("@earendil-works/pi-coding-agent");
@@ -19,7 +19,7 @@ if (args.includes("--version") || args.includes("-v")) {
   process.exit(0);
 }
 
-// "pi update" updates pi itself, which does not work for catatui. Use the CataTUI update for both words.
+// "pi update" updates pi itself, which does not work for catatui. Use the catatui update for both words.
 if (args.includes("--update") || args[0] === "update") process.exit(update());
 
 process.env.CATATUI = "1";

@@ -1,12 +1,12 @@
 #!/bin/sh
-# CataTUI installer for macOS and Linux.
+# catatui installer for macOS and Linux.
 #
 #   curl -fsSL https://raw.githubusercontent.com/msu/catatui/master/install.sh | sh
 #
-# To update CataTUI, run the same command again.
+# To update catatui, run the same command again.
 #
 # The installer puts all files in ~/.catatui/app:
-#   node/  a private copy of Node.js. CataTUI does not use or change the Node.js on your PATH.
+#   node/  a private copy of Node.js. catatui does not use or change the Node.js on your PATH.
 #   npm/   the catatui package
 #   bin/   the catatui command
 # It adds ~/.catatui/app/bin to the PATH in your shell profile.
@@ -29,7 +29,7 @@ esac
 case "$(uname -m)" in
   x86_64 | amd64) arch=x64 ;;
   arm64 | aarch64) arch=arm64 ;;
-  *) fail "CataTUI does not support the CPU type $(uname -m)." ;;
+  *) fail "catatui does not support the CPU type $(uname -m)." ;;
 esac
 command -v curl >/dev/null || fail "curl is not installed. Install curl, then run this script again."
 
@@ -63,9 +63,9 @@ else
 fi
 
 # 2. The catatui package. npm needs node on the PATH.
-say "Installing CataTUI..."
+say "Installing catatui..."
 PATH="$APP/node/bin:$PATH" npm install --global --prefix "$APP/npm" --no-fund --no-audit --loglevel=error "$PACKAGE" \
-  || fail "npm cannot install CataTUI. Read the npm error above, then run this script again."
+  || fail "npm cannot install catatui. Read the npm error above, then run this script again."
 
 # 3. The catatui command. It always uses the private Node.js.
 mkdir -p "$APP/bin"
@@ -84,13 +84,13 @@ case "${SHELL:-}" in
 esac
 for p in $profiles; do
   if ! grep -qsF "$APP/bin" "$p"; then
-    printf '\n# CataTUI\n%s\n' "$line" >>"$p"
-    say "Added CataTUI to the PATH in $p."
+    printf '\n# catatui\n%s\n' "$line" >>"$p"
+    say "Added catatui to the PATH in $p."
   fi
 done
 
 say ""
-say "CataTUI $("$APP/bin/catatui" --version | awk '{print $2}') is installed."
+say "catatui $("$APP/bin/catatui" --version | awk '{print $2}') is installed."
 # This script runs in a child process, so it cannot change the PATH of the student's terminal.
 case ":$PATH:" in
   *":$APP/bin:"*) ;;
