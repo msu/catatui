@@ -8,6 +8,11 @@ catatui is a terminal coding agent for MSU computer science students. It is an e
 - `bin/catatui.js` starts pi with the extension, themes, and skills.
 - The project has no automated tests. To test the UI, run catatui in a terminal.
 
+## Run
+
+- To install the packages, run `npm install`.
+- To run catatui, run `node bin/catatui.js`.
+
 ## Files
 
 - `bin/catatui.js`: the `catatui` command
