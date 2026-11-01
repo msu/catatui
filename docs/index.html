@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>catatui</title>
+<meta name="description" content="A command line agent harness for MSU students">
+<link rel="icon" href="img/bobcat.png" type="image/png">
+<style>
+body { background: #f4f4f2; color: #1a1a1a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; line-height: 1.55; max-width: 46rem; margin: 0 auto; padding: 2rem 1rem 4rem; }
+a { color: #002f87; }
+header { display: flex; align-items: center; justify-content: center; text-align: center; gap: 1rem; padding-bottom: 1rem; border-bottom: 3px solid #d4a017; }
+header img { width: 120px; height: auto; }
+header h1 { margin: 0; font-size: 3rem; line-height: 1.1; color: #002f87; font-family: ui-monospace, Menlo, Consolas, monospace; }
+header p { margin: 0; font-size: 1.15rem; color: #5a5a5a; }
+h2 { color: #002f87; font-size: 1.5rem; margin: 2.5rem 0 .5rem; padding-bottom: .2rem; border-bottom: 1px solid #d8d8d4; }
+h3 { font-size: 1.05rem; margin: 1.5rem 0 .25rem; }
+ul, ol { margin-top: .25rem; padding-left: 1.5rem; }
+code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9em; background: #e7e7e3; padding: .1em .3em; border-radius: 3px; }
+pre { background: #101317; color: #f4f4f2; padding: .75rem 1rem; border-left: 4px solid #d4a017; border-radius: 4px; overflow-x: auto; }
+pre code { background: none; padding: 0; font-size: .85rem; color: inherit; }
+.copy { position: relative; }
+.copy pre { padding-right: 5rem; }
+.copy button { position: absolute; top: .5rem; right: .5rem; background: #d4a017; color: #1a1a1a; border: 0; border-radius: 3px; padding: .2rem .6rem; font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer; }
+.copy button:hover { background: #e6b52c; }
+.screenshot { display: block; width: 100%; height: auto; margin: 1.5rem 0; border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 47, 135, .25); }
+.table { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+th, td { text-align: left; vertical-align: top; padding: .35rem .75rem .35rem 0; border-bottom: 1px solid #d8d8d4; }
+th { color: #002f87; }
+td:first-child { white-space: nowrap; }
+footer { margin-top: 3rem; padding-top: 1rem; border-top: 3px solid #d4a017; color: #5a5a5a; font-size: .9rem; }
+</style>
+</head>
+<body>
+
+<header>
+<img src="img/bobcat.png" alt="Montana State University bobcat logo">
+<div>
+<h1>catatui</h1>
+<p>A command line agent harness for MSU students</p>
+</div>
+</header>
+
+<a href="img/screenshot.png"><img class="screenshot" src="img/screenshot.png" width="1960" height="1332" alt="catatui running in a terminal with the /mode panel open"></a>
+
+<p>catatui is a coding agent that runs in your terminal and uses the MSU <a href="https://www.montana.edu/uit/rci/catchat/">CatChat</a> models, which are free for MSU students &amp; faculty.</p>
+
+<p>catatui is built as an extension on top of the excellent <a href="https://pi.dev">pi harness</a>.</p>
+
+<h2 id="install">Install</h2>
+
+<p>macOS or Linux:</p>
+<div class="copy">
+<pre><code>curl -fsSL https://raw.githubusercontent.com/msu/catatui/master/install.sh | sh</code></pre>
+<button type="button">Copy</button>
+</div>
+
+<p>Windows (in PowerShell):</p>
+<div class="copy">
+<pre><code>irm https://raw.githubusercontent.com/msu/catatui/master/install.ps1 | iex</code></pre>
+<button type="button">Copy</button>
+</div>
+
+<p>Open a new terminal, go to your project and run:</p>
+<pre><code>catatui</code></pre>
+
+<p>The first time you run it, catatui walks you through creating a CatChat API key. The key page only works on the MSU network, so if you are off campus connect to the VPN first.</p>
+
+<h2 id="docs">Docs</h2>
+
+<h3>Modes</h3>
+<p>Run <code>/mode</code> to change the mode or flip an option. By default catatui runs in <code>ask</code> mode.</p>
+<div class="table"><table>
+<tr><th>Mode</th><th>What it does</th></tr>
+<tr><td><code>ask</code></td><td>Asks before each file change, command and http request</td></tr>
+<tr><td><code>plan</code></td><td>Writes a plan to <code>PLAN.md</code> and changes nothing else</td></tr>
+<tr><td><code>yolo</code></td><td>Doesn't ask. Good luck.</td></tr>
+</table></div>
+
+<h3>Options</h3>
+<div class="table"><table>
+<tr><th>Option</th><th>What it does</th><th>Default</th></tr>
+<tr><td><code>ta</code></td><td>The agent teaches and offers hints rather than writing code for you. We suggest you use this frequently.</td><td>off</td></tr>
+<tr><td><code>sandbox</code></td><td>Keeps the agent in the directory you started it in. This is very simple and a determined agent can get around it, so read commands before you allow them.</td><td>on</td></tr>
+<tr><td><code>ste</code></td><td>Uses <a href="https://www.asd-ste100.org/">Simplified Technical English</a>, which keeps the annoying chattiness of many AI models down. Turn it off if you don't like the clipped responses.</td><td>on</td></tr>
+</table></div>
+
+<h3>Commands</h3>
+<div class="table"><table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>/mode</code></td><td>Change the mode and options</td></tr>
+<tr><td><code>/undo</code></td><td>Put back the files the agent changed in your last request</td></tr>
+<tr><td><code>/model</code></td><td>Pick a CatChat model</td></tr>
+<tr><td><code>/catchat</code></td><td>Show your sign-in status and reload the models</td></tr>
+<tr><td><code>/catchat reset</code></td><td>Sign out and quit</td></tr>
+<tr><td><code>/hotkeys</code></td><td>Show the keyboard shortcuts</td></tr>
+</table></div>
+<p>Press Escape to stop the agent while it is working.</p>
+<p><code>/undo</code> only covers the agent's file edits in the current session. It can't undo what a command did, so use git.</p>
+
+<h3>Updating</h3>
+<p><code>catatui --version</code> tells you if there is a newer version and <code>catatui --update</code> installs it. On Windows, <code>--update</code> prints the install command for you to run after you close catatui.</p>
+
+<h3>More</h3>
+<p>See the <a href="https://github.com/msu/catatui#readme">README</a> for the full docs and troubleshooting, or <a href="https://github.com/msu/catatui/tree/master/src/md">src/md</a> for why it works this way.</p>
+
+<footer>
+<a href="https://github.com/msu/catatui">github.com/msu/catatui</a>
+</footer>
+
+<script>
+document.querySelectorAll(".copy button").forEach((button) => {
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(button.parentElement.querySelector("code").textContent);
+      button.textContent = "Copied";
+    } catch {
+      button.textContent = "Failed";
+    }
+    setTimeout(() => (button.textContent = "Copy"), 1500);
+  });
+});
+</script>
+
+</body>
+</html>

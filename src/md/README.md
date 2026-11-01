@@ -1,10 +1,10 @@
 # catatui
 
-catatui is a terminal coding agent for MSU computer science students. It is an extension to the pi coding agent (`@earendil-works/pi-coding-agent`). It uses the MSU CatChat models. CatVibes is the MSU GUI client.
+catatui is a terminal coding agent for MSU students. It is an extension to the pi coding agent (`@earendil-works/pi-coding-agent`). It uses the MSU CatChat models. CatVibes is the MSU GUI client.
 
 ## Stack
 
-- TypeScript extension in `src/ts/`. pi loads it with jiti, so the project has no build step.
+- TypeScript extension in `src/catatui/`. pi loads it with jiti, so the project has no build step.
 - `bin/catatui.js` starts pi with the extension, themes, and skills.
 - The project has no automated tests. To test the UI, run catatui in a terminal.
 
@@ -17,12 +17,13 @@ catatui is a terminal coding agent for MSU computer science students. It is an e
 
 - `bin/catatui.js`: the `catatui` command
 - `bin/update.js`: `catatui --version` update check and `catatui --update`
-- `src/ts/`: the pi extension. `index.ts` is the entry point.
+- `src/catatui/`: the pi extension. `index.ts` is the entry point.
 - `src/md/`: the intent of this project
 - `skills/`: the `simplified-technical-english` skill
 - `themes/`: the `msu` and `msu-light` themes
 - `assets/`: the bobcat logo
 - `install.sh`, `install.ps1`: install scripts for macOS and Linux, and for Windows
+- `docs/`: the GitHub Pages site
 - `tmp/`: scratch work, plans, and TODOs. Git ignores this folder.
 
 ## Rules
@@ -48,5 +49,6 @@ catatui is a terminal coding agent for MSU computer science students. It is an e
 - [features/undo.md](features/undo.md): the `/undo` command
 - [features/http-tool.md](features/http-tool.md): the `http` tool
 - [features/screen.md](features/screen.md): header, footer, themes, and name
+- [features/website.md](features/website.md): the GitHub Pages site
 - [infrastructure/pi-harness.md](infrastructure/pi-harness.md): why pi, the launcher, and changes to pi internals
 - [infrastructure/distribution.md](infrastructure/distribution.md): install scripts and updates

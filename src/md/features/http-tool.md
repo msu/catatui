@@ -1,6 +1,6 @@
 # Feature: HTTP Tool
 
-The agent can send HTTP requests, for example to read docs or to test a local server. The code is in `src/ts/http.ts`.
+The agent can send HTTP requests, for example to read docs or to test a local server. The code is in `src/catatui/http.ts`.
 
 ## Behavior
 

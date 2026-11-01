@@ -1,6 +1,6 @@
 # Feature: Sandbox
 
-The agent can use only files in the folder where catatui started. The code is in `src/ts/sandbox.ts`.
+The agent can use only files in the folder where catatui started. The code is in `src/catatui/sandbox.ts`.
 
 ## Behavior
 

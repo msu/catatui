@@ -1,6 +1,6 @@
 # Feature: Modes
 
-The code is in `src/ts/permissions.ts`. The `/mode` command opens a panel. Space or Enter changes a line. The panel stays open until Escape.
+The code is in `src/catatui/permissions.ts`. The `/mode` command opens a panel. Space or Enter changes a line. The panel stays open until Escape.
 
 ## Behavior
 

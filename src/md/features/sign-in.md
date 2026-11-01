@@ -1,6 +1,6 @@
 # Feature: Sign-in
 
-The student pastes a CatChat API key. The code is in `src/ts/auth.ts`.
+The student pastes a CatChat API key. The code is in `src/catatui/auth.ts`.
 
 ## Decisions
 

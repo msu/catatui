@@ -14,6 +14,10 @@ pi has no public API for these behaviors. If a pi update removes an internal, ca
 
 | Internal | File | Change |
 |---|---|---|
-| `defaultModelPerProvider` | `src/ts/index.ts` | Add `catchat`. Without it, pi shows "no default model is configured" after `/login`. |
+| `defaultModelPerProvider` | `src/catatui/index.ts` | Add `catchat`. Without it, pi shows "no default model is configured" after `/login`. |
 | `InteractiveMode.prototype.showWarning` | `bin/catatui.js` | Hide "No models available" and open `/login catchat` at once. |
 | `InteractiveMode.prototype.showError` | `bin/catatui.js` | Hide "This operation was aborted" when the student closes the sign-in with Escape. |
+
+## Subtleties
+
+- pi shows the extension under `[Extensions]` with the name of the folder that holds `index.ts`. So the folder name is `src/catatui`.

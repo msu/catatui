@@ -1,6 +1,6 @@
 # Feature: Models
 
-The values are in `src/ts/config.ts`. The model list comes from CatChat (`src/ts/models.ts`).
+The values are in `src/catatui/config.ts`. The model list comes from CatChat (`src/catatui/models.ts`).
 
 ## Decisions
 

@@ -1,6 +1,6 @@
 # Feature: Undo
 
-`/undo` puts back the files that the agent changed for the last request. The code is in `src/ts/undo.ts`.
+`/undo` puts back the files that the agent changed for the last request. The code is in `src/catatui/undo.ts`.
 
 ## Behavior
 

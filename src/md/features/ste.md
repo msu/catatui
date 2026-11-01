@@ -1,6 +1,6 @@
 # Feature: Simplified Technical English
 
-The agent writes in a short form of ASD-STE100. The code is in `src/ts/ste.ts`. The 8 rules are in `skills/simplified-technical-english/SKILL.md`.
+The agent writes in a short form of ASD-STE100. The code is in `src/catatui/ste.ts`. The 8 rules are in `skills/simplified-technical-english/SKILL.md`.
 
 ## Decisions
 

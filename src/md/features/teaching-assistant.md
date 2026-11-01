@@ -1,6 +1,6 @@
 # Feature: Teaching Assistant
 
-When `ta` is on, the agent explains and gives hints. It does not write the solution. The code is in `src/ts/permissions.ts`.
+When `ta` is on, the agent explains and gives hints. It does not write the solution. The code is in `src/catatui/permissions.ts`.
 
 ## Behavior
 

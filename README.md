@@ -1,13 +1,13 @@
 <h1><img src="assets/bobcat-head.png" alt="Montana State Bobcat" width="90" align="middle"> catatui</h1>
 
-A command line agent harness for MSU CSCI students
+A command line agent harness for MSU students
 
 catatui is the Montana State Command Line Agent.
 
 It is an AI coding agent that runs in your terminal that uses the free (for MSU students & faculty) MSU CatChat AI
 models.
 
-catatui is built as an extension to the excellent [pi harness](https://pi.dev).
+catatui is built as an extension on top of the excellent [pi harness](https://pi.dev).
 
 Like all coding agents, catatui can read your code, run commands, and write code for you.
 

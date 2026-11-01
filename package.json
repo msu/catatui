@@ -11,7 +11,7 @@
   },
   "files": [
     "bin",
-    "src/ts",
+    "src/catatui",
     "themes",
     "skills",
     "assets/bobcat-head.png",
@@ -19,7 +19,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/ts/index.ts"
+      "./src/catatui/index.ts"
     ],
     "themes": [
       "./themes"
