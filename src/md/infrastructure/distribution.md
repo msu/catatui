@@ -1,6 +1,6 @@
 # Distribution
 
-catatui is on GitHub (`msu/catatui`). It is not on the npm registry.
+catatui is on GitHub (`msu/catatui`). It is not on the npm registry. The install scripts are on https://catatui.cs.montana.edu.
 
 ## Install Scripts
 
@@ -9,6 +9,12 @@ catatui is on GitHub (`msu/catatui`). It is not on the npm registry.
 - The scripts install catatui from the GitHub tarball URL, not with `github:msu/catatui`, because npm needs git for `github:` installs.
 - The scripts add `~/.catatui/app/bin` to the PATH.
 - The `catatui` command sets `CATATUI_APP`, so `catatui --update` knows that a script installed catatui.
+
+## Script Locations
+
+- The install scripts are `docs/install.sh` and `docs/install.ps1`. GitHub Pages publishes them on the catatui site.
+- `install.sh` and `install.ps1` in the project root are small forwarders to the site. Do not remove them, because installed copies of catatui 0.5.2 and older use these GitHub URLs.
+- The scripts and the version check still get the package and `package.json` from GitHub.
 
 ## Updates
 

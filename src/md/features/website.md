@@ -1,6 +1,6 @@
 # Feature: Website
 
-The site is one static page in `docs/`. GitHub Pages publishes this folder from the master branch.
+The site is one static page in `docs/`, at https://catatui.cs.montana.edu. GitHub Pages publishes this folder from the master branch. The folder also holds the install scripts.
 
 ## Decisions
 
@@ -12,5 +12,6 @@ The site is one static page in `docs/`. GitHub Pages publishes this folder from 
 
 ## Subtleties
 
+- `catatui.cs.montana.edu` is a CNAME to `msu.github.io`. MSU IT controls this DNS record. `docs/CNAME` holds the hostname for GitHub Pages.
 - `docs/img/screenshot.png` is a real catatui screen. To make it, run catatui in a pty with a fake key, then render the screen to an image. It has no agent conversation, because a fake key cannot get a model response.
 - Update the screenshot if the header, the footer, or the `/mode` panel changes. It shows the version number.

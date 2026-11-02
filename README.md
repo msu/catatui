@@ -36,13 +36,13 @@ All of the above can be configured with the `/mode` command.
 On macOS or Linux, run this in your terminal:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/msu/catatui/master/install.sh | sh
+curl -fsSL https://catatui.cs.montana.edu/install.sh | sh
 ```
 
 On Windows, run this in PowerShell:
 
 ```
-irm https://raw.githubusercontent.com/msu/catatui/master/install.ps1 | iex
+irm https://catatui.cs.montana.edu/install.ps1 | iex
 ```
 
 The installer puts catatui and its own copy of Node.js in the `~/.catatui/app` folder. It adds the `catatui` command to

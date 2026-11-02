@@ -4,8 +4,9 @@
 import { spawnSync } from "node:child_process";
 
 const REPO = "https://raw.githubusercontent.com/msu/catatui/master";
-const INSTALL_SH = `curl -fsSL ${REPO}/install.sh | sh`;
-const INSTALL_PS1 = `irm ${REPO}/install.ps1 | iex`;
+const SITE = "https://catatui.cs.montana.edu";
+const INSTALL_SH = `curl -fsSL ${SITE}/install.sh | sh`;
+const INSTALL_PS1 = `irm ${SITE}/install.ps1 | iex`;
 const INSTALL_NPM = "npm install -g github:msu/catatui";
 
 // The version in package.json on GitHub. The check compares only this number, so increase it for each release.
