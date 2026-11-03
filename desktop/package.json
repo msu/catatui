@@ -1,0 +1,22 @@
+{
+  "name": "catatui-desktop",
+  "private": true,
+  "version": "0.0.1",
+  "description": "catatui desktop app",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite build && electron .",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "marked": "18.1.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.2",
+    "electron": "44.9.2",
+    "vite": "8.3.4"
+  }
+}

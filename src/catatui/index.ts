@@ -1,8 +1,8 @@
 // MSU CatChat extension for pi: CatChat provider with /login, MSU header, /catchat command.
 
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { type ExtensionAPI, type ExtensionContext, getAgentDir, getPackageDir, resolveCliModel, VERSION } from "@earendil-works/pi-coding-agent";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { type ExtensionAPI, type ExtensionContext, getPackageDir, resolveCliModel, VERSION } from "@earendil-works/pi-coding-agent";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { login, refreshToken } from "./auth.ts";
@@ -14,6 +14,7 @@ import { registerHelp } from "./help.ts";
 import { CATCHAT_API, DEFAULT_MODEL, PREFERRED_MODELS, PROVIDER_ID } from "./config.ts";
 import { fetchModels } from "./models.ts";
 import { setFooter } from "./footer.ts";
+import { clearSignIn, expiryDays, readCredential, savedDefaultProvider } from "./store.ts";
 import { registerHttpTool } from "./http.ts";
 import { registerPermissions } from "./permissions.ts";
 import { registerSandbox } from "./sandbox.ts";
@@ -78,6 +79,14 @@ export default async function (pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    // RPC mode (the desktop app): pi does not load the CatChat models at start. Load them and pick a model.
+    // The desktop app shows its own sign-in, so do not type "/login catchat" here.
+    if (WRAPPED && ctx.mode === "rpc") {
+      if (!readCredential()) return;
+      await ctx.modelRegistry.refresh({ providers: [PROVIDER_ID], force: true });
+      if (ctx.model?.provider !== PROVIDER_ID) await pickModel(pi, ctx);
+      return;
+    }
     if (ctx.mode !== "tui") return;
     ctx.ui.setHeader((tui, theme) => bannerComponent(tui, theme, `${PKG_VERSION} (pi ${VERSION})`));
     if (!WRAPPED) return;
@@ -134,49 +143,20 @@ export default async function (pi: ExtensionAPI) {
   });
 }
 
-// Remove the CatChat key, the cached model list, and a saved CatChat default model, then exit.
-// pi keeps these in memory, so a restart is necessary.
+// Remove the sign-in (store.ts), then exit. pi keeps the sign-in in memory, so a restart is necessary.
 function logout(ctx: ExtensionContext) {
-  const dir = getAgentDir();
-  editJson(join(dir, "auth.json"), (d) => delete d[PROVIDER_ID]);
-  editJson(join(dir, "models-store.json"), (d) => delete d[PROVIDER_ID]);
-  editJson(join(dir, "settings.json"), (d) => {
-    if (d.defaultProvider !== PROVIDER_ID) return;
-    delete d.defaultProvider;
-    delete d.defaultModel;
-  });
+  clearSignIn();
   ctx.ui.notify("CatChat sign-in removed. Start catatui again to sign in.", "info");
   ctx.shutdown();
 }
 
-function editJson(path: string, edit: (data: Record<string, unknown>) => void) {
-  if (!existsSync(path)) return;
-  const data = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-  edit(data);
-  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
-}
-
-// A CatChat key expires after 180 days and has no refresh token. Warn the student 14 days before.
-const EXPIRY_WARN_MS = 14 * 86_400_000;
-
 function warnExpiry(ctx: ExtensionContext) {
-  const path = join(getAgentDir(), "auth.json");
-  if (!existsSync(path)) return;
-  const cred = (JSON.parse(readFileSync(path, "utf8")) as Record<string, { expires?: number }>)[PROVIDER_ID];
-  if (typeof cred?.expires !== "number") return;
-  const left = cred.expires - Date.now();
-  if (left > EXPIRY_WARN_MS) return;
-  const days = Math.ceil(left / 86_400_000);
-  const text = left <= 0
+  const days = expiryDays();
+  if (days === undefined) return;
+  const text = days <= 0
     ? "Your CatChat key expired. Run /catchat login to get a new key."
     : `Your CatChat key expires in ${days} day${days === 1 ? "" : "s"}. Run /catchat login to get a new key.`;
   ctx.ui.notify(ctx.ui.theme.fg("warning", text), "info");
-}
-
-function savedDefaultProvider(): string | undefined {
-  const path = join(getAgentDir(), "settings.json");
-  if (!existsSync(path)) return undefined;
-  return (JSON.parse(readFileSync(path, "utf8")) as { defaultProvider?: string }).defaultProvider;
 }
 
 // In the catatui command, start on a CatChat model. If there is none, put the sign-in command in the editor.
@@ -192,6 +172,12 @@ async function pickDefaultModel(pi: ExtensionAPI, ctx: ExtensionContext) {
     ctx.ui.setEditorText(`/login ${PROVIDER_ID}`);
     return;
   }
+  await pickModel(pi, ctx);
+}
+
+// Select the first CatChat model in PREFERRED_MODELS, or the first CatChat model.
+async function pickModel(pi: ExtensionAPI, ctx: ExtensionContext) {
+  const models = ctx.modelRegistry.getAll().filter((m) => m.provider === PROVIDER_ID);
   const pick = PREFERRED_MODELS.map((re) => models.find((m) => re.test(m.id))).find(Boolean) ?? models[0];
-  await pi.setModel(pick);
+  if (pick) await pi.setModel(pick);
 }

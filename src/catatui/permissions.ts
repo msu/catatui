@@ -10,7 +10,8 @@
 //              Students can turn it off, so it is a learning aid, not an integrity control.
 //   - sandbox: sandbox.ts
 //   - ste:     Simplified Technical English, ste.ts
-// "/mode ask|plan|yolo" sets the mode. "/mode ta" turns ta on or off. Tab completes these words.
+// "/mode ask|plan|yolo" sets the mode. "/mode ta|sandbox|ste [on|off]" turns an option on or off. Tab completes these words.
+// In RPC mode (the desktop app), the status "catatui" has the mode and options as JSON, for the app controls.
 // In ask and plan mode, risky commands and changes outside the project folder always ask.
 // The mode, ta, and the "do not ask again" choices last for one session only.
 
@@ -90,6 +91,10 @@ export function registerPermissions(pi: ExtensionAPI) {
     const color = mode === "ask" ? "muted" : mode === "yolo" ? "warning" : "accent";
     ctx.ui.setStatus("mode", `${t.fg("dim", "mode:")} ${t.fg(color, mode)}`);
     ctx.ui.setStatus("ta", ta ? `${t.fg("dim", "ta:")} ${t.fg("accent", "on")}` : undefined);
+    if (ctx.mode === "rpc") {
+      const state = { mode, ta, sandbox: sandboxOn(), ste: steOn(), modes: MODES, flags: FLAGS, help: { ...MODE_HELP, ...FLAG_HELP } };
+      ctx.ui.setStatus("catatui", JSON.stringify(state));
+    }
   };
 
   const flagOn = (f: Flag) => (f === "ta" ? ta : f === "sandbox" ? sandboxOn() : steOn());
@@ -147,30 +152,34 @@ export function registerPermissions(pi: ExtensionAPI) {
     if (ctx.hasUI) showStatus(ctx);
   });
 
-  const WORDS = [...MODES, "ta"];
+  const WORDS = [...MODES, ...FLAGS];
   pi.registerCommand("mode", {
     description: "Pick the mode (ask, plan, yolo), and turn ta, the sandbox, and Simplified Technical English on or off",
     getArgumentCompletions: (prefix: string) =>
       WORDS.filter((w) => w.startsWith(prefix.trim())).map((w) => ({
         value: w,
         label: w,
-        description: w === "ta" ? `Turn on or off. ${FLAG_HELP.ta}` : MODE_HELP[w as Mode],
+        description: FLAGS.includes(w as Flag) ? `Turn on or off. ${FLAG_HELP[w as Flag]}` : MODE_HELP[w as Mode],
       })),
     handler: async (args, ctx) => {
-      const want = args.trim();
+      const [want, onOff] = args.trim().split(/\s+/);
       if (!want) return ctx.mode === "tui" ? panel(ctx) : ctx.ui.notify(`Mode: ${mode}. ta: ${ta ? "on" : "off"}.`, "info");
-      if (want === "ta") {
-        setFlag(ctx, "ta", !ta);
-        ctx.ui.notify(`Teaching assistant: ${ta ? "on" : "off"}`, "info");
+      // The desktop app shows the change in its controls, so do not add a notice to the chat.
+      const say = (text: string, level: "info" | "warning" = "info") => { if (ctx.mode !== "rpc") ctx.ui.notify(text, level); };
+      if (FLAGS.includes(want as Flag)) {
+        const f = want as Flag;
+        if (onOff && onOff !== "on" && onOff !== "off") return ctx.ui.notify(`Use "/mode ${f} on" or "/mode ${f} off".`, "error");
+        setFlag(ctx, f, onOff ? onOff === "on" : !flagOn(f));
+        say(`${f}: ${flagOn(f) ? "on" : "off"}`);
         return;
       }
       if (!MODES.includes(want as Mode)) {
-        ctx.ui.notify(`Unknown word "${want}". Use ask, plan, yolo, or ta.`, "error");
+        ctx.ui.notify(`Unknown word "${want}". Use ask, plan, yolo, ta, sandbox, or ste.`, "error");
         return;
       }
       mode = want as Mode;
       showStatus(ctx);
-      ctx.ui.notify(`Mode: ${mode}`, mode === "yolo" ? "warning" : "info");
+      say(`Mode: ${mode}`, mode === "yolo" ? "warning" : "info");
     },
   });
 

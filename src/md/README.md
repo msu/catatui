@@ -52,6 +52,7 @@ catatui is a terminal coding agent for MSU students. It is an extension to the p
 - [features/documents.md](features/documents.md): the `pdf_read`, `docx_read`, and `docx_write` tools
 - [features/web.md](features/web.md): the `show_page` and `server` tools
 - [features/help.md](features/help.md): the `/help` command and the header tip
+- [features/desktop.md](features/desktop.md): the Electron desktop app
 - [features/http-tool.md](features/http-tool.md): the `http` tool
 - [features/screen.md](features/screen.md): header, footer, themes, and name
 - [features/website.md](features/website.md): the GitHub Pages site

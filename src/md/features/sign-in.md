@@ -26,6 +26,7 @@ The sign-in menu has two options. The code is in `src/catatui/auth.ts`.
 - `cleanKey` removes smart quotes, spaces, zero-width characters, `export X_API_KEY=`, and `Bearer`. Text copied from a web page or a PDF often has these.
 - If the student types a prompt before the sign-in, an `input` handler shows "Sign in to CatChat first" and puts `/login catchat` in the editor. pi shows an error with links to the pi docs in this case. The handler replaces the text that the student typed.
 - After the sign-in, a `model_select` handler removes `/login catchat` from the editor.
+- `store.ts` reads and writes the sign-in in `auth.json` (mode 0600). It does not import pi, so the desktop app uses it too.
 - `/catchat logout` removes the key, the model list, and the saved CatChat model, then stops catatui. pi keeps these values in memory, so a restart is necessary. pi's `/logout` removes only the key. `/catchat reset` is the old name, and it still works.
 - `/catchat login` types `/login catchat` in the editor, and the student presses Enter. pi has no public API to open the sign-in from an extension.
 - At start, if the CatChat key expires in 14 days or less, catatui shows a warning that tells the student to run `/catchat login`. catatui reads `expires` from `auth.json`. App Connect keys and pasted keys have no refresh token.

@@ -65,7 +65,12 @@ const AFTER_OPEN = [
 async function pasteLogin(cb: OAuthLoginCallbacks): Promise<OAuthCredentials> {
   await cb.onPrompt({ message: INTRO, allowEmpty: true });
   cb.onAuth({ url: CATCHAT_ACCESS, instructions: AFTER_OPEN });
-  const key = cleanKey(await cb.onPrompt({ message: "Paste your key, then press <enter>:" }));
+  return pastedKey(await cb.onPrompt({ message: "Paste your key, then press <enter>:" }));
+}
+
+// Clean a pasted key, test it with CatChat, and return the credential. The desktop app uses this too.
+export async function pastedKey(raw: string): Promise<OAuthCredentials> {
+  const key = cleanKey(raw);
   if (!key) throw new Error("The key is empty. Copy your key from catchat access, then paste it again.");
   if (!(await keyWorks(key))) throw new Error("CatChat did not accept the key. Make a new key at catchat access, then try again.");
   return { access: key, refresh: "", expires: Date.now() + PASTED_KEY_LIFETIME_MS };
@@ -108,7 +113,8 @@ code { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--fg); 
 }
 
 // Wait for the browser to come back to http://127.0.0.1:<port>/callback with our state.
-function startLoopback(state: string): Promise<{ redirectUri: string; code: Promise<string>; close: () => void }> {
+// If the signal aborts (the student cancels), stop the wait and close the server.
+function startLoopback(state: string, signal?: AbortSignal): Promise<{ redirectUri: string; code: Promise<string>; close: () => void }> {
   let resolve!: (c: string) => void;
   let reject!: (e: Error) => void;
   const code = new Promise<string>((res, rej) => { resolve = res; reject = rej; });
@@ -121,12 +127,12 @@ function startLoopback(state: string): Promise<{ redirectUri: string; code: Prom
     }
     const error = url.searchParams.get("error");
     if (error) {
-      reply(200, page("Key not approved", "catatui did not get a key. Close this tab. To try again, run <code>/catchat login</code> in catatui.", false));
+      reply(200, page("Key not approved", "catatui did not get a key. Close this tab and go back to catatui to try again.", false));
       return reject(new Error(`The key was not approved: ${url.searchParams.get("error_description") ?? error}. To sign in, run /catchat login.`));
     }
     const c = url.searchParams.get("code");
     if (!c) return reply(400, page("No code", "The response has no code. catatui still waits for the sign-in.", false));
-    reply(200, page("Signed in to CatChat", "Close this tab and go back to catatui in your terminal.", true));
+    reply(200, page("Signed in to CatChat", "Close this tab and go back to catatui.", true));
     resolve(c);
   });
   const close = () => server.close();
@@ -134,7 +140,9 @@ function startLoopback(state: string): Promise<{ redirectUri: string; code: Prom
     const addr = server.address();
     const port = typeof addr === "object" && addr ? addr.port : 0;
     const timer = setTimeout(() => reject(new Error("The sign-in timed out after 5 minutes. Run /catchat login again.")), SSO_TIMEOUT_MS);
-    code.finally(() => { clearTimeout(timer); close(); }).catch(() => {});
+    const onAbort = () => reject(new Error("The sign-in was cancelled."));
+    signal?.addEventListener("abort", onAbort);
+    code.finally(() => { clearTimeout(timer); signal?.removeEventListener("abort", onAbort); close(); }).catch(() => {});
     ok({ redirectUri: `http://127.0.0.1:${port}/callback`, code, close });
   }));
 }
@@ -150,11 +158,12 @@ function codeFromPaste(input: string, state: string): string {
   return c;
 }
 
-async function ssoLogin(cb: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+// The desktop app calls this with its own callbacks: onAuth opens the browser, and signal cancels.
+export async function ssoLogin(cb: Pick<OAuthLoginCallbacks, "onAuth" | "onProgress" | "onManualCodeInput" | "signal">): Promise<OAuthCredentials> {
   const state = b64url(randomBytes(32));
   const verifier = b64url(randomBytes(64));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
-  const loop = await startLoopback(state);
+  const loop = await startLoopback(state, cb.signal);
 
   try {
     cb.onAuth({
