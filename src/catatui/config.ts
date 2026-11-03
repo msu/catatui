@@ -3,6 +3,8 @@
 export const PROVIDER_ID = "catchat";
 export const CATCHAT_API = "https://catchat-api.msu.montana.edu";
 export const CATCHAT_ACCESS = "https://catchat-access.msu.montana.edu";
+// The app name that SSO sign-in registers with CatChat.
+export const CLIENT_NAME = "catatui";
 
 // Used when CatChat does not report model limits.
 export const DEFAULT_CONTEXT_WINDOW = 32768;

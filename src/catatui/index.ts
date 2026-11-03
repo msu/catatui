@@ -47,13 +47,20 @@ export default async function (pi: ExtensionAPI) {
   }
   registerUndo(pi);
 
+  // SSO does not work for students yet (AADSTS50105). The flag lets other persons test it. See src/md/features/sign-in.md.
+  pi.registerFlag("sso", {
+    description: "Also offer MSU SSO sign-in in a browser (test only)",
+    type: "boolean",
+    default: false,
+  });
+
   pi.registerProvider(PROVIDER_ID, {
     name: "MSU CatChat",
     baseUrl: `${CATCHAT_API}/v1`,
     api: "openai-completions",
     oauth: {
       name: "MSU CatChat",
-      login,
+      login: (cb) => login(cb, pi.getFlag("sso") === true),
       refreshToken,
       getApiKey: (cred) => cred.access,
     },

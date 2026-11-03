@@ -90,7 +90,7 @@ for p in $profiles; do
 done
 
 say ""
-say "catatui $("$APP/bin/catatui" --version | awk '{print $2}') is installed."
+say "catatui $("$APP/bin/catatui" --version | awk 'NR==1 {print $2}') is installed."
 # This script runs in a child process, so it cannot change the PATH of the student's terminal.
 case ":$PATH:" in
   *":$APP/bin:"*) ;;
