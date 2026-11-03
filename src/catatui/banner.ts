@@ -19,7 +19,7 @@ function sideText(theme: Theme, version: string): string[] {
     `${gold("catatui")} ${dim(`v${version}`)}`,
     muted("Montana State Command Line Agent"),
     "",
-    `${dim("/login catchat")}  ${muted("sign in")}`,
+    `${dim("/catchat login")}  ${muted("sign in")}`,
     `${dim("/model")}          ${muted("pick a model")}`,
     `${dim("/catchat")}        ${muted("status")}`,
     `${dim("/hotkeys")}        ${muted("keys")}`,

@@ -11,8 +11,6 @@ import { CATCHAT_ACCESS, CATCHAT_API, CLIENT_NAME } from "./config.ts";
 // A pasted key has no refresh token. Treat it as valid for 180 days (the catchat-access maximum).
 const PASTED_KEY_LIFETIME_MS = 180 * 86_400_000;
 const SSO_TIMEOUT_MS = 5 * 60 * 1000;
-// The team to preselect on the App Connect approval page. The student can change it.
-const SSO_TEAM = "gsoc";
 
 // The connection failed. The cause can be the network, a firewall, or CatChat itself.
 const noConnection = (e: unknown) =>
@@ -41,7 +39,7 @@ async function keyWorks(key: string): Promise<boolean> {
 // The key steps. Both login dialog steps show them, so the student can follow them on the catchat access page (issue #1).
 const KEY_STEPS = [
   'Click on "API Keys" and then "+ Free Key".',
-  'Give the key a unique name and select "gsoc" as your Team.',
+  'Give the key a unique name and select "Student" as your Team.',
   'Click "Create Key".',
   "You will be shown a key to copy and paste back here.",
 ];
@@ -93,7 +91,7 @@ function startLoopback(state: string): Promise<{ redirectUri: string; code: Prom
     const error = url.searchParams.get("error");
     if (error) {
       reply(200, "The key was not approved. You can close this window.");
-      return reject(new Error(`The key was not approved: ${url.searchParams.get("error_description") ?? error}. To sign in, run /login catchat.`));
+      return reject(new Error(`The key was not approved: ${url.searchParams.get("error_description") ?? error}. To sign in, run /catchat login.`));
     }
     const c = url.searchParams.get("code");
     if (!c) return reply(400, "The response has no code. catatui still waits for the sign-in.");
@@ -104,7 +102,7 @@ function startLoopback(state: string): Promise<{ redirectUri: string; code: Prom
   return new Promise((ok) => server.listen(0, "127.0.0.1", () => {
     const addr = server.address();
     const port = typeof addr === "object" && addr ? addr.port : 0;
-    const timer = setTimeout(() => reject(new Error("The sign-in timed out after 5 minutes. Run /login catchat again.")), SSO_TIMEOUT_MS);
+    const timer = setTimeout(() => reject(new Error("The sign-in timed out after 5 minutes. Run /catchat login again.")), SSO_TIMEOUT_MS);
     code.finally(() => { clearTimeout(timer); close(); }).catch(() => {});
     ok({ redirectUri: `http://127.0.0.1:${port}/callback`, code, close });
   }));
@@ -115,7 +113,7 @@ function codeFromPaste(input: string, state: string): string {
   const text = input.trim();
   if (!text.includes("://")) return text;
   const url = new URL(text);
-  if (url.searchParams.get("state") !== state) throw new Error("The pasted URL is from a different sign-in. Run /login catchat again.");
+  if (url.searchParams.get("state") !== state) throw new Error("The pasted URL is from a different sign-in. Run /catchat login again.");
   const c = url.searchParams.get("code");
   if (!c) throw new Error("The pasted URL has no code. Copy the full address from the browser.");
   return c;
@@ -135,7 +133,6 @@ async function ssoLogin(cb: OAuthLoginCallbacks): Promise<OAuthCredentials> {
         state,
         code_challenge: challenge,
         code_challenge_method: "S256",
-        team: SSO_TEAM,
       })}`,
       instructions: [
         'Sign in with your MSU account, then click "Create key".',
@@ -161,7 +158,7 @@ async function ssoLogin(cb: OAuthLoginCallbacks): Promise<OAuthCredentials> {
       throw noConnection(e);
     }
     const text = await res.text();
-    if (res.status !== 200) throw new Error(`CatChat did not give a key (HTTP ${res.status}): ${text.slice(0, 200)}. Run /login catchat again.`);
+    if (res.status !== 200) throw new Error(`CatChat did not give a key (HTTP ${res.status}): ${text.slice(0, 200)}. Run /catchat login again.`);
     const r = JSON.parse(text) as ConnectResult;
     return { access: r.key, refresh: "", expires: Date.parse(r.expires_at) || Date.now() + PASTED_KEY_LIFETIME_MS, user: r.key_alias };
   } finally {
@@ -181,10 +178,10 @@ export async function login(cb: OAuthLoginCallbacks): Promise<OAuthCredentials> 
   });
   if (method === "sso") return ssoLogin(cb);
   if (method === "paste") return pasteLogin(cb);
-  throw new Error("The sign-in was cancelled. To sign in, run /login catchat.");
+  throw new Error("The sign-in was cancelled. To sign in, run /catchat login.");
 }
 
 // Pasted keys and App Connect keys have no refresh token. The student must sign in again.
 export async function refreshToken(_cred: OAuthCredentials): Promise<OAuthCredentials> {
-  throw new Error("Your CatChat key expired. Run /login catchat to get a new key.");
+  throw new Error("Your CatChat key expired. Run /catchat login to get a new key.");
 }

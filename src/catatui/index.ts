@@ -76,6 +76,7 @@ export default async function (pi: ExtensionAPI) {
     ctx.ui.setTitle("catatui");
     setFooter(pi, ctx);
     await pickDefaultModel(pi, ctx);
+    warnExpiry(ctx);
   });
 
   // After the sign-in, pi selects a CatChat model. Remove the "/login catchat" text that pickDefaultModel typed.
@@ -95,9 +96,18 @@ export default async function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("catchat", {
-    description: "Show CatChat sign-in status and reload the model list. \"/catchat reset\" signs you out.",
+    description: "Show CatChat sign-in status. \"/catchat login\" gets a new key. \"/catchat logout\" signs you out.",
+    getArgumentCompletions: (prefix) =>
+      ["login", "logout"].filter((a) => a.startsWith(prefix)).map((a) => ({ value: a, label: a })),
     handler: async (args, ctx) => {
-      if (args.trim() === "reset") return reset(ctx);
+      const arg = args.trim();
+      // "reset" is the old name of "logout". Keep it for old docs.
+      if (arg === "logout" || arg === "reset") return logout(ctx);
+      if (arg === "login") {
+        // pi has no public API to open the sign-in, so type the command for the student.
+        ctx.ui.setEditorText(`/login ${PROVIDER_ID}`);
+        return ctx.ui.notify("To open the sign-in, press Enter.", "info");
+      }
       const status = ctx.modelRegistry.getProviderAuthStatus(PROVIDER_ID);
       const result = await ctx.modelRegistry.refresh({ providers: [PROVIDER_ID], force: true });
       const err = result.errors.get(PROVIDER_ID);
@@ -108,7 +118,7 @@ export default async function (pi: ExtensionAPI) {
           `Sign-in: ${JSON.stringify(status)}`,
           `Models (${models.length}): ${models.map((m) => m.id).join(", ") || "none"}`,
           err ? `Error: ${err.message}` : "",
-          models.length ? "" : "Run /login catchat to sign in.",
+          models.length ? "" : "Run /catchat login to sign in.",
         ].filter(Boolean).join("\n"),
         err ? "error" : "info",
       );
@@ -118,7 +128,7 @@ export default async function (pi: ExtensionAPI) {
 
 // Remove the CatChat key, the cached model list, and a saved CatChat default model, then exit.
 // pi keeps these in memory, so a restart is necessary.
-function reset(ctx: ExtensionContext) {
+function logout(ctx: ExtensionContext) {
   const dir = getAgentDir();
   editJson(join(dir, "auth.json"), (d) => delete d[PROVIDER_ID]);
   editJson(join(dir, "models-store.json"), (d) => delete d[PROVIDER_ID]);
@@ -136,6 +146,23 @@ function editJson(path: string, edit: (data: Record<string, unknown>) => void) {
   const data = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
   edit(data);
   writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+// A CatChat key expires after 180 days and has no refresh token. Warn the student 14 days before.
+const EXPIRY_WARN_MS = 14 * 86_400_000;
+
+function warnExpiry(ctx: ExtensionContext) {
+  const path = join(getAgentDir(), "auth.json");
+  if (!existsSync(path)) return;
+  const cred = (JSON.parse(readFileSync(path, "utf8")) as Record<string, { expires?: number }>)[PROVIDER_ID];
+  if (typeof cred?.expires !== "number") return;
+  const left = cred.expires - Date.now();
+  if (left > EXPIRY_WARN_MS) return;
+  const days = Math.ceil(left / 86_400_000);
+  const text = left <= 0
+    ? "Your CatChat key expired. Run /catchat login to get a new key."
+    : `Your CatChat key expires in ${days} day${days === 1 ? "" : "s"}. Run /catchat login to get a new key.`;
+  ctx.ui.notify(ctx.ui.theme.fg("warning", text), "info");
 }
 
 function savedDefaultProvider(): string | undefined {

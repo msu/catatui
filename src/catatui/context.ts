@@ -11,7 +11,7 @@ const PER_ROW = 10;
 
 async function promptTokens(ctx: ExtensionCommandContext, model: Model<Api>, systemPrompt: string, tools: Tool[], messages: Message[]): Promise<number> {
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok) throw new Error("catatui cannot get your CatChat key. Run /login catchat, then try again.");
+  if (!auth.ok) throw new Error("catatui cannot get your CatChat key. Run /catchat login, then try again.");
   const dot: Message = { role: "user", content: ".", timestamp: Date.now() };
   const res = await completeSimple(
     { ...model, ...(auth.baseUrl ? { baseUrl: auth.baseUrl } : {}) },
