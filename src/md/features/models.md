@@ -8,6 +8,7 @@ The values are in `src/catatui/config.ts`. The model list comes from CatChat (`s
 - At the start, catatui keeps a model that the student saved with `/model`. If there is none, it uses the first match in `PREFERRED_MODELS`.
 - catatui hides alias names that are not the real model (for example "opus"). It also hides embedding models, because they cannot chat.
 - `/model` shows a short note for each model: the maker and type, then the result of a small tool-call test on 2026-10-28. The test is a guide only.
+- The note is the pi model name. pi 1.5 shows the name after the id in `/model`, so the name does not repeat the id. Ctrl+P model cycling shows the note, not the id.
 - CatChat does not give model descriptions, so the notes are written by hand. The README and the website have the same list.
 - CatChat does not tell what `muse-glimmer:30b` and `nimble:9b` are. Their notes say "Unknown Model".
 - catatui does not change the pi thinking default (`medium`).

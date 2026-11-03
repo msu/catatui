@@ -32,7 +32,8 @@ export async function fetchModels(key: string, signal: AbortSignal): Promise<Pro
     const i = byName.get(id) ?? {};
     return {
       id,
-      name: MODEL_NOTES[id] ? `${id}: ${MODEL_NOTES[id]}` : id,
+      // pi 1.5 shows the name after the id in /model, so the name is the note only. Without a note, pi shows the id only.
+      name: MODEL_NOTES[id] ?? id,
       reasoning: i.supports_reasoning ?? /gpt-oss|qwen3|deepseek-r1/i.test(id),
       input: i.supports_vision ? ["text", "image"] : ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

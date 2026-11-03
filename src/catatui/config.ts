@@ -18,7 +18,7 @@ export const DEFAULT_MODEL = "Qwen3.8-27B";
 // Qwen is first by choice. The rest are in order from a tool-call test on 2026-10-28 (read, edit, and no edit when told not to).
 export const PREFERRED_MODELS = [/^qwen3\.\d+-27b$/i, /^gpt-oss:120b$/, /^gemma4-31b/i];
 
-// Notes shown after the model name in /model. Keys are CatChat model ids. Keep them short: /model shows one line.
+// Notes shown after the model id in /model. Keys are CatChat model ids. Keep them short: /model shows one line.
 // Each note gives the maker and type, then the result of a small tool-call test on 2026-10-28. The test is a guide only.
 // CatChat does not describe muse-glimmer and nimble. Ask RCI, then update the notes.
 // The README and docs/index.html have the same list. Change all three together.

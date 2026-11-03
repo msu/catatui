@@ -100,6 +100,24 @@ footer { margin-top: 3rem; padding-top: 1rem; border-top: 3px solid #d4a017; col
 <p>Run <code>catatui --list-models</code> to see the CatChat models you can use, and <code>catatui --help</code> for all the command line options.</p>
 <p><code>/undo</code> only covers the agent's file edits in the current session. It can't undo what a command did, so use git.</p>
 
+<h3>Shortcuts</h3>
+<p>These come from pi. Run <code>/hotkeys</code> for the full list.</p>
+<div class="table"><table>
+<tr><th>Key</th><th>What it does</th></tr>
+<tr><td><code>Escape</code></td><td>Stop the agent</td></tr>
+<tr><td><code>Ctrl+L</code></td><td>Pick a model (same as <code>/model</code>)</td></tr>
+<tr><td><code>Ctrl+P</code></td><td>Switch to the next model</td></tr>
+<tr><td><code>Shift+Tab</code></td><td>Change the thinking level</td></tr>
+<tr><td><code>Ctrl+T</code></td><td>Show or hide the model's thinking</td></tr>
+<tr><td><code>Ctrl+O</code></td><td>Show or hide tool output</td></tr>
+<tr><td><code>Shift+Enter</code></td><td>New line in your prompt</td></tr>
+<tr><td><code>Alt+Enter</code></td><td>Queue a follow-up while the agent works (<code>Ctrl+Q</code> on Windows)</td></tr>
+<tr><td><code>Ctrl+G</code></td><td>Write your prompt in your editor</td></tr>
+<tr><td><code>Ctrl+V</code></td><td>Paste text or files (<code>Alt+V</code> on Windows)</td></tr>
+<tr><td><code>Ctrl+X</code></td><td>Copy the last answer</td></tr>
+<tr><td><code>Ctrl+C</code></td><td>Clear your prompt. Press it twice to quit.</td></tr>
+</table></div>
+
 <h3>Models</h3>
 <p>Pick a model with <code>/model</code>. If you aren't sure, stay with Qwen.</p>
 <div class="table"><table>

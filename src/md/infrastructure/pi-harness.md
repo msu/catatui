@@ -7,6 +7,9 @@
 - `bin/catatui.js` sets the pi agent folder to `~/.catatui`, so a plain pi install keeps its own settings.
 - `bin/catatui.js` selects the `msu` theme on a dark terminal and `msu-light` on a light terminal.
 - `catatui update` runs the catatui update. Without this, pi runs `pi update`, which does not work for catatui.
+- `bin/catatui.js` sets `PI_SKIP_VERSION_CHECK=1`, so pi does not show "Update Available ... Run pi update". Students cannot update pi, because `package.json` sets the pi version.
+- After a catatui update changes the pi version, pi shows its changelog one time. `bin/catatui.js` sets `lastChangelogVersion` in `settings.json` to the pi version, so pi does not show it. The changelog is about pi, not catatui.
+- pi sends one anonymous request with its version to pi.dev at the first start of a new install (`enableInstallTelemetry`). pi also sends it when it shows the changelog, so catatui stops that second request. catatui does not change the first request.
 
 ## Changes to pi Internals
 
