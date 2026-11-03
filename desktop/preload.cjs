@@ -23,4 +23,12 @@ contextBridge.exposeInMainWorld("catatui", {
   signOut: () => ipcRenderer.invoke("sign-out"),
   onSignInUrl: on("sign-in-url"),
   openExternal: (url) => ipcRenderer.send("open-external", url),
+  // projects and sessions
+  listProjects: () => ipcRenderer.invoke("list-projects"),
+  listSessions: () => ipcRenderer.invoke("list-sessions"),
+  pickFolder: () => ipcRenderer.invoke("pick-folder"),
+  openProject: (path) => ipcRenderer.invoke("open-project", path),
+  // changed files
+  changedFiles: () => ipcRenderer.invoke("changed-files"),
+  openPath: (path) => ipcRenderer.send("open-path", path),
 });

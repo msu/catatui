@@ -1,7 +1,8 @@
+import { structuredPatch } from "diff";
 import { marked } from "marked";
 import { useEffect, useReducer, useRef, useState } from "react";
 import logo from "./bobcat.png";
-import { closeDialog, initialState, notice, plain, reduce, resultText, toolSummary } from "./chat.js";
+import { closeDialog, initialState, itemsFromMessages, notice, plain, reduce, resultText, toolSummary } from "./chat.js";
 
 const api = window.catatui;
 // The project folder, for short paths in tool cards. It does not change while the app runs.
@@ -41,12 +42,33 @@ export function App() {
     PROJECT = i.project;
     setInfo(i);
     if (!i.signedIn || (i.expiryDays !== undefined && i.expiryDays <= 0)) return setPhase("signin");
+    if (!i.project) return setPhase("projects");
     setPhase("loading");
     // Clear the chat before the start, so the status that catatui sends at start (the mode) stays.
     local(() => initialState);
     const r = await api.start();
     setModel(r.success ? r.data?.model : undefined);
     setPhase("chat");
+  }
+
+  async function openProject(path) {
+    const r = await api.openProject(path);
+    if (!r.ok) return r.error;
+    await boot();
+  }
+
+  // Open an old chat of this project: load it in catatui, then show its messages.
+  async function openSession(path) {
+    const r = await api.command({ type: "switch_session", sessionPath: path });
+    if (!r.success || r.data?.cancelled) return local((s) => notice(s, "error", r.error ?? "catatui did not open the chat."));
+    const m = await api.command({ type: "get_messages" });
+    local((s) => ({ ...s, items: itemsFromMessages(m.data?.messages), busy: false, dialogs: [] }));
+    refreshModel();
+  }
+
+  async function newChat() {
+    const r = await api.command({ type: "new_session" });
+    if (r.success && !r.data?.cancelled) local((s) => ({ ...s, items: [], busy: false, dialogs: [] }));
   }
 
   async function refreshModel() {
@@ -78,7 +100,16 @@ export function App() {
 
   const stop = () => api.command({ type: "abort" });
 
+  // The files that the agent changed in this chat. Read them again when the agent is done and after each
+  // notice (for example "Undo complete"), so the count and the panel stay correct.
+  const [files, setFiles] = useState([]);
+  const [showFiles, setShowFiles] = useState(false);
+  useEffect(() => {
+    if (phase === "chat" && !state.busy) api.changedFiles().then(setFiles);
+  }, [phase, state.busy, state.items.length]);
+
   if (phase === "signin") return <SignIn info={info} onDone={boot} />;
+  if (phase === "projects") return <Projects onOpen={openProject} />;
   if (phase === "loading") return <div className="loading"><img src={logo} alt="" /><p>Starting catatui...</p></div>;
 
   return (
@@ -87,10 +118,14 @@ export function App() {
         <img src={logo} alt="" className="logo" />
         <div className="title">
           <strong>catatui</strong>
-          <span className="project" title={info.project}>{info.project}</span>
+          <button className="project link" title={`${info.project}\nClick to open a different project`} onClick={() => setPhase("projects")}>{info.project}</button>
         </div>
         <div className="chips">
           {Object.entries(state.status).filter(([k]) => !CONTROLLED.includes(k)).map(([k, v]) => <span key={k} className="chip">{plain(v)}</span>)}
+          <button className={`chip ${showFiles ? "active" : ""}`} onClick={() => setShowFiles(!showFiles)} title="Files that the agent changed in this chat">
+            Files{files.length ? ` (${files.length})` : ""}
+          </button>
+          <ChatsMenu busy={state.busy} onNew={newChat} onOpen={openSession} />
           <button className="chip" onClick={() => send("/undo")} disabled={state.busy} title="Put back the files the agent changed in your last request">Undo</button>
           <ModeMenu state={parseState(state.status.catatui)} onCommand={send} />
           <ModelMenu model={model} busy={state.busy} onPick={pickModel} />
@@ -105,7 +140,10 @@ export function App() {
         </div>
       )}
 
-      <Chat items={state.items} busy={state.busy} />
+      <div className="body">
+        <Chat items={state.items} busy={state.busy} />
+        {showFiles && <FilesPanel files={files} onClose={() => setShowFiles(false)} />}
+      </div>
 
       <Composer busy={state.busy} onSend={send} onStop={stop} editorText={state.editorText}
         clearEditorText={() => local((s) => ({ ...s, editorText: undefined }))} />
@@ -117,6 +155,145 @@ export function App() {
       {log && state.items.at(-1)?.text?.startsWith("catatui stopped") && <pre className="log">{log}</pre>}
     </div>
   );
+}
+
+// The files that the agent changed in this chat, with a diff for each text file.
+function FilesPanel({ files, onClose }) {
+  const [sel, setSel] = useState(undefined);
+  const file = files.find((f) => f.path === sel) ?? files[0];
+  return (
+    <aside className="files">
+      <div className="files-head">
+        <strong>Changed files</strong>
+        <button className="link" onClick={onClose}>Close</button>
+      </div>
+      {files.length === 0 && <p className="muted small pad">The agent did not change files in this chat.</p>}
+      <div className="file-list">
+        {files.map((f) => (
+          <button key={f.path} className={f === file ? "current" : ""} onClick={() => setSel(f.path)} title={f.path}>
+            <span className={`file-status ${f.status}`}>{f.status === "added" ? "A" : f.status === "deleted" ? "D" : "M"}</span>
+            <span className="file-name">{f.path}</span>
+          </button>
+        ))}
+      </div>
+      {file && <FileDiff file={file} />}
+    </aside>
+  );
+}
+
+function FileDiff({ file }) {
+  if (file.binary || file.big) {
+    return (
+      <div className="pad">
+        <p className="muted small">{file.binary ? "This file is not text (for example an Excel or Word file), so there is no diff." : "This file is too large to show a diff."}</p>
+        {file.status !== "deleted" && <button onClick={() => api.openPath(file.path)}>Open the file</button>}
+      </div>
+    );
+  }
+  const patch = structuredPatch(file.path, file.path, file.before, file.after, "", "", { context: 3 });
+  return (
+    <div className="diff-view">
+      {patch.hunks.map((h, i) => {
+        let oldNo = h.oldStart;
+        let newNo = h.newStart;
+        return (
+          <div key={i} className="hunk">
+            <div className="hunk-head">@@ -{h.oldStart},{h.oldLines} +{h.newStart},{h.newLines} @@</div>
+            {h.lines.map((line, j) => {
+              // "\ No newline at end of file" is not a line of the file.
+              if (line.startsWith("\\")) return null;
+              const kind = line[0] === "+" ? "add" : line[0] === "-" ? "del" : "ctx";
+              const nums = kind === "add" ? ["", newNo++] : kind === "del" ? [oldNo++, ""] : [oldNo++, newNo++];
+              return (
+                <div key={j} className={`dl ${kind}`}>
+                  <span className="ln">{nums[0]}</span><span className="ln">{nums[1]}</span>
+                  <span className="dt">{line}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+      {file.status !== "deleted" && <button className="link pad" onClick={() => api.openPath(file.path)}>Open the file</button>}
+    </div>
+  );
+}
+
+// The project screen: recent projects (from the catatui sessions) and a button to open a folder.
+function Projects({ onOpen }) {
+  const [projects, setProjects] = useState(undefined);
+  const [error, setError] = useState("");
+  useEffect(() => { api.listProjects().then(setProjects, () => setProjects([])); }, []);
+  const open = async (path) => {
+    if (!path) return;
+    setError("");
+    const err = await onOpen(path);
+    if (err) setError(err);
+  };
+  return (
+    <div className="signin">
+      <div className="card projects">
+        <img src={logo} alt="Montana State University bobcat logo" />
+        <h1>Open a project</h1>
+        <p className="muted">catatui works in one folder: your project. It can read and change the files in this folder.</p>
+        <button className="big" onClick={async () => open(await api.pickFolder())}>Open a folder...</button>
+        {error && <p className="error">{error}</p>}
+        {projects === undefined && <p className="muted">Loading recent projects...</p>}
+        {projects?.length > 0 && (
+          <>
+            <div className="menu-head">Recent</div>
+            <div className="recent">
+              {projects.map((p) => (
+                <button key={p.path} onClick={() => open(p.path)} title={p.path}>
+                  <span className="menu-id">{p.name}</span>
+                  <span className="menu-note">{p.path}</span>
+                  <span className="menu-note">{ago(p.modified)} - {p.sessions} chat{p.sessions === 1 ? "" : "s"}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// "New chat" and the old chats of this project.
+function ChatsMenu({ busy, onNew, onOpen }) {
+  const [open, setOpen] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  async function toggle() {
+    if (!open) setSessions(await api.listSessions());
+    setOpen(!open);
+  }
+  return (
+    <span className="menu-wrap">
+      <button className="chip" onClick={toggle} disabled={busy} title={busy ? "Wait until the agent is done" : "New chat and old chats"}>Chats ▾</button>
+      {open && (
+        <div className="menu wide" onMouseLeave={() => setOpen(false)}>
+          <button onClick={() => { setOpen(false); onNew(); }}><span className="menu-id">+ New chat</span></button>
+          {sessions.length > 0 && <div className="menu-head">Old chats in this project</div>}
+          {sessions.map((s) => (
+            <button key={s.path} onClick={() => { setOpen(false); onOpen(s.path); }}>
+              <span className="chat-first">{s.name ?? s.first ?? "(no text)"}</span>
+              <span className="menu-note">{ago(s.modified)} - {s.count} messages</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+}
+
+// "5 minutes ago", "3 days ago".
+function ago(ms) {
+  const m = Math.round((Date.now() - ms) / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} minute${m === 1 ? "" : "s"} ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} hour${h === 1 ? "" : "s"} ago`;
+  const d = Math.round(h / 24);
+  return `${d} day${d === 1 ? "" : "s"} ago`;
 }
 
 // Status keys that the mode menu shows. catatui sends the mode and options as JSON in "catatui".

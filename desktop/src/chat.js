@@ -140,3 +140,29 @@ export function toolSummary(name, args, project = "") {
 export function resultText(result) {
   return (result?.content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
 }
+
+// Chat items from saved messages (get_messages), when the student opens an old chat.
+// Tool calls are in the assistant messages. Their results are in later "toolResult" messages.
+export function itemsFromMessages(messages) {
+  const items = [];
+  const tools = new Map();
+  for (const m of messages ?? []) {
+    if (m.role === "user") {
+      items.push({ kind: "user", text: userText(m.content) });
+    } else if (m.role === "assistant") {
+      const blocks = blocksOf(m);
+      const error = m.stopReason === "error" ? m.errorMessage ?? "The model returned an error." : m.stopReason === "aborted" ? "Stopped." : undefined;
+      if (blocks.length || error) items.push({ kind: "assistant", blocks, error });
+      for (const c of m.content ?? []) {
+        if (c.type !== "toolCall") continue;
+        const item = { kind: "tool", id: c.id, name: c.name, args: c.arguments ?? {}, running: false };
+        tools.set(c.id, item);
+        items.push(item);
+      }
+    } else if (m.role === "toolResult") {
+      const item = tools.get(m.toolCallId);
+      if (item) Object.assign(item, { result: { content: m.content, details: m.details }, isError: m.isError });
+    }
+  }
+  return items;
+}

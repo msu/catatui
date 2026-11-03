@@ -115,3 +115,31 @@ button.chip { background: none; font-weight: 400; cursor: pointer; }
 .chip.mode-yolo { border-color: var(--warn); color: var(--warn); }
 .chip.mode-plan { border-color: var(--blue); color: var(--blue); }
 button.chip:disabled { opacity: .5; cursor: default; }
+
+button.project { font-size: .8rem; color: var(--muted); text-decoration: none; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; -webkit-app-region: no-drag; }
+button.project:hover { text-decoration: underline; }
+.projects .recent { display: flex; flex-direction: column; gap: .2rem; max-height: 40vh; overflow: auto; text-align: left; }
+.projects .recent button { background: none; color: var(--fg); font-weight: 400; display: flex; flex-direction: column; text-align: left; padding: .4rem .6rem; border-radius: 6px; }
+.projects .recent button:hover { background: var(--user); }
+.chat-first { font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 26rem; }
+
+.body { flex: 1; min-height: 0; display: flex; }
+.chip.active { border-color: var(--gold); color: var(--fg); background: var(--user); }
+.files { width: min(46%, 36rem); border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+.files-head { display: flex; justify-content: space-between; align-items: center; padding: .5rem .8rem; border-bottom: 1px solid var(--line); }
+.pad { padding: .6rem .8rem; }
+.file-list { display: flex; flex-direction: column; border-bottom: 1px solid var(--line); max-height: 30%; overflow: auto; flex-shrink: 0; }
+.file-list button { background: none; color: var(--fg); font-weight: 400; display: flex; gap: .5rem; text-align: left; padding: .3rem .8rem; border-radius: 0; font-size: .85rem; }
+.file-list button.current { background: var(--user); }
+.file-status { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; width: 1em; }
+.file-status.added { color: var(--ok); }
+.file-status.deleted { color: var(--err); }
+.file-status.modified { color: var(--warn); }
+.file-name { font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; }
+.diff-view { flex: 1; overflow: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .78rem; }
+.hunk-head { color: var(--muted); background: var(--bg); padding: .2rem .6rem; }
+.dl { display: flex; white-space: pre; }
+.dl .ln { width: 3em; flex-shrink: 0; text-align: right; padding-right: .5em; color: var(--muted); user-select: none; }
+.dl .dt { flex: 1; padding-left: .3em; }
+.dl.add { background: rgba(26, 127, 55, .15); }
+.dl.del { background: rgba(180, 35, 24, .15); }

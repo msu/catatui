@@ -6,9 +6,9 @@
 
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -24,6 +24,13 @@ const { createJiti } = await import(pathToFileURL(join(ROOT, "node_modules", "ji
 const jiti = createJiti(import.meta.url);
 const auth = await jiti.import(join(ROOT, "src", "catatui", "auth.ts"));
 const store = await jiti.import(join(ROOT, "src", "catatui", "store.ts"));
+const { CHANGE_TOOLS } = await jiti.import(join(ROOT, "src", "catatui", "config.ts"));
+
+// pi itself, for the session lists. Load it only when the app needs it, because it is large.
+let piModule;
+const pi = async () => (piModule ??= await import(pathToFileURL(join(ROOT, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "index.js")).href));
+
+const isFolder = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
 
 /** @type {BrowserWindow | undefined} */
 let win;
@@ -38,6 +45,49 @@ const pending = new Map();
 let signIn;
 
 const toRenderer = (channel, data) => win?.webContents.send(channel, data);
+
+// ---- changed files ----
+
+// The files that the agent changed in this chat: full path -> the file before the first change (null: no file).
+// The Files panel compares this with the file now. So an /undo or a change by the student shows correctly.
+/** @type {Map<string, Buffer | null>} */
+let changed = new Map();
+const MAX_DIFF_BYTES = 300_000;
+
+const readOrNull = (p) => { try { return readFileSync(p); } catch { return null; } };
+
+// Called for each RPC event. Keep the file before the first change by a file tool (CHANGE_TOOLS in config.ts).
+function trackFiles(rec) {
+  if (rec.type !== "tool_execution_start" || !CHANGE_TOOLS.includes(rec.toolName)) return;
+  const path = rec.args?.path;
+  if (typeof path !== "string" || !project) return;
+  const full = resolve(project, path.replace(/^@/, ""));
+  if (!changed.has(full)) changed.set(full, readOrNull(full));
+}
+
+// A text file has no zero bytes in its first 8 KB. Excel and Word files are zip files, so they are binary.
+const isBinary = (b) => !!b && b.subarray(0, 8192).includes(0);
+
+ipcMain.handle("changed-files", () => {
+  const files = [];
+  for (const [full, before] of changed) {
+    const after = readOrNull(full);
+    if (before === null && after === null) continue;
+    if (before && after && before.equals(after)) continue;
+    const rel = relative(project, full);
+    const binary = isBinary(before) || isBinary(after);
+    const big = (before?.length ?? 0) + (after?.length ?? 0) > MAX_DIFF_BYTES;
+    files.push({
+      path: rel.startsWith("..") || isAbsolute(rel) ? full : rel,
+      status: before === null ? "added" : after === null ? "deleted" : "modified",
+      binary,
+      big,
+      before: binary || big ? undefined : before?.toString("utf8") ?? "",
+      after: binary || big ? undefined : after?.toString("utf8") ?? "",
+    });
+  }
+  return files;
+});
 
 // ---- catatui child process ----
 
@@ -70,6 +120,7 @@ function startChild() {
         pending.get(rec.id)(rec);
         pending.delete(rec.id);
       } else {
+        trackFiles(rec);
         toRenderer("rpc-event", rec);
       }
     }
@@ -114,7 +165,11 @@ function command(cmd) {
 
 // ---- IPC from the renderer ----
 
-ipcMain.handle("rpc-command", (_e, cmd) => command(cmd));
+ipcMain.handle("rpc-command", (_e, cmd) => {
+  // A new chat or an old chat starts a new list of changed files.
+  if (cmd?.type === "new_session" || cmd?.type === "switch_session") changed = new Map();
+  return command(cmd);
+});
 // The answer to a dialog (extension_ui_request). It has no response.
 ipcMain.on("ui-response", (_e, response) => write({ type: "extension_ui_response", ...response }));
 
@@ -126,7 +181,9 @@ ipcMain.handle("info", () => {
 
 // Start catatui, or start it again so that pi reads a new sign-in. Resolves when catatui answers.
 ipcMain.handle("start", async () => {
+  if (!project) return { type: "response", success: false, error: "Open a project folder first." };
   await stopChild();
+  changed = new Map();
   startChild();
   return command({ type: "get_state" });
 });
@@ -168,16 +225,59 @@ ipcMain.handle("sign-out", async () => {
 });
 
 ipcMain.on("open-external", (_e, url) => { if (/^https?:/.test(url)) shell.openExternal(url); });
+// Open a changed file in its normal app (for example Excel for .xlsx). Only files in the project.
+ipcMain.on("open-path", (_e, path) => {
+  const full = resolve(project, path);
+  const rel = relative(project, full);
+  if (project && !rel.startsWith("..") && !isAbsolute(rel)) shell.openPath(full);
+});
+
+// ---- projects and sessions ----
+
+// Recent projects: the folders of the catatui sessions, newest first. A folder that does not exist now is not shown.
+ipcMain.handle("list-projects", async () => {
+  const { SessionManager } = await pi();
+  const byCwd = new Map();
+  for (const s of await SessionManager.listAll()) {
+    if (!s.cwd) continue;
+    const p = byCwd.get(s.cwd) ?? { path: s.cwd, name: basename(s.cwd), modified: 0, sessions: 0 };
+    p.sessions += 1;
+    p.modified = Math.max(p.modified, new Date(s.modified).getTime());
+    byCwd.set(s.cwd, p);
+  }
+  return [...byCwd.values()].filter((p) => isFolder(p.path)).sort((a, b) => b.modified - a.modified).slice(0, 20);
+});
+
+// The chats (sessions) of the open project, newest first.
+ipcMain.handle("list-sessions", async () => {
+  if (!project) return [];
+  const { SessionManager } = await pi();
+  return (await SessionManager.list(project))
+    .filter((s) => s.messageCount > 0)
+    .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
+    .map((s) => ({ path: s.path, name: s.name, first: s.firstMessage, modified: new Date(s.modified).getTime(), count: s.messageCount }));
+});
+
+ipcMain.handle("pick-folder", async () => {
+  const r = await dialog.showOpenDialog(win, { title: "Open a project folder", properties: ["openDirectory", "createDirectory"] });
+  return r.canceled ? undefined : r.filePaths[0];
+});
+
+// Change the project. The renderer then calls "start", which starts catatui in the new folder.
+ipcMain.handle("open-project", async (_e, path) => {
+  if (!isFolder(path)) return { ok: false, error: `The folder ${path} does not exist.` };
+  await stopChild();
+  project = path;
+  win?.setTitle(`catatui - ${basename(path)}`);
+  return { ok: true };
+});
 
 // ---- window ----
 
-async function pickProject() {
+// A folder on the command line opens at once. Without one, the app shows the project screen.
+function projectFromArgs() {
   const arg = process.argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith("-") && a !== ".");
-  if (arg && existsSync(arg)) return arg;
-  // There is no window yet, so the folder dialog can open behind the terminal. Bring the app to the front first.
-  app.focus({ steal: true });
-  const r = await dialog.showOpenDialog({ title: "Open a project folder", properties: ["openDirectory", "createDirectory"] });
-  return r.canceled ? undefined : r.filePaths[0];
+  return arg && existsSync(arg) && isFolder(arg) ? arg : "";
 }
 
 // For tests: CATATUI_DESKTOP_SNAPSHOT=out.png runs with a hidden window, sends CATATUI_DESKTOP_PROMPT,
@@ -185,9 +285,7 @@ async function pickProject() {
 const SNAPSHOT = process.env.CATATUI_DESKTOP_SNAPSHOT;
 
 app.whenReady().then(async () => {
-  const cwd = await pickProject();
-  if (!cwd) return app.quit();
-  project = cwd;
+  project = projectFromArgs();
 
   win = new BrowserWindow({
     show: !SNAPSHOT,
@@ -195,7 +293,7 @@ app.whenReady().then(async () => {
     height: 760,
     minWidth: 520,
     minHeight: 400,
-    title: "catatui",
+    title: project ? `catatui - ${basename(project)}` : "catatui",
     backgroundColor: "#101317",
     webPreferences: { preload: join(HERE, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
