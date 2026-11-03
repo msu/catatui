@@ -20,6 +20,7 @@ The sign-in menu has two options. The code is in `src/catatui/auth.ts`.
 
 ## Subtleties
 
+- After the redirect, the browser shows a page with the MSU colors and the bobcat logo, in light or dark mode. The logo is inline, so the page works with no network. A script removes the one-time code from the address bar.
 - Over SSH, the browser is on a different computer, so the loopback redirect fails. The student pastes the final redirect URL from the browser.
 - The key page (catchat-access) works only on the MSU network or the MSU VPN. The sign-in text says this.
 - `cleanKey` removes smart quotes, spaces, zero-width characters, `export X_API_KEY=`, and `Bearer`. Text copied from a web page or a PDF often has these.

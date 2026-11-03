@@ -28,6 +28,10 @@ All of the above can be configured with the `/mode` command.
 
 ## What you need
 
+> [!IMPORTANT]
+> catatui requires learning the command line. If you are unfamiliar with it, please see this
+> [Mozilla command line tutorial](https://developer.mozilla.org/en-US/docs/Learn_web_development/Getting_started/Environment_setup/Command_line).
+
 - An MSU account.
 - A connection to the MSU network to make a key. If you are not on campus, connect to the MSU VPN.
 

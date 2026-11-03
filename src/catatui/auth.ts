@@ -5,6 +5,7 @@
 
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai/compat";
 import { createHash, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { CATCHAT_ACCESS, CATCHAT_API, CLIENT_NAME } from "./config.ts";
 
@@ -78,6 +79,34 @@ interface ConnectResult { key: string; key_alias: string; team_id: string; team_
 
 const b64url = (b: Buffer) => b.toString("base64url");
 
+const LOGO = `data:image/png;base64,${readFileSync(new URL("../../assets/bobcat-head.png", import.meta.url)).toString("base64")}`;
+
+// The page that the browser shows after the redirect to the loopback. MSU colors, light and dark.
+// The script removes the one-time code from the address bar.
+function page(title: string, text: string, ok: boolean): string {
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>catatui: ${title}</title>
+<style>
+:root { --bg: #f4f4f2; --card: #ffffff; --fg: #1a1a1a; --muted: #5a5a5a; --blue: #002f87; --gold: #d4a017; --mark: ${ok ? "#1a7f37" : "#b42318"}; }
+@media (prefers-color-scheme: dark) { :root { --bg: #101317; --card: #1a1f26; --fg: #f4f4f2; --muted: #a8adb4; --blue: #8fb3ff; --mark: ${ok ? "#4ac26b" : "#ff7b72"}; } }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+main { max-width: 26rem; margin: 1rem; padding: 2rem 2.25rem; background: var(--card); border-top: 4px solid var(--gold); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .15); text-align: center; }
+img { width: 96px; height: auto; }
+h1 { margin: .75rem 0 .5rem; font-size: 1.4rem; color: var(--blue); }
+h1 span { color: var(--mark); }
+p { margin: 0; color: var(--muted); line-height: 1.5; }
+code { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--fg); }
+</style></head>
+<body><main>
+<img src="${LOGO}" alt="Montana State University bobcat logo">
+<h1><span>${ok ? "&#10003;" : "&#10007;"}</span> ${title}</h1>
+<p>${text}</p>
+</main>
+<script>history.replaceState(null, "", location.pathname);</script>
+</body></html>`;
+}
+
 // Wait for the browser to come back to http://127.0.0.1:<port>/callback with our state.
 function startLoopback(state: string): Promise<{ redirectUri: string; code: Promise<string>; close: () => void }> {
   let resolve!: (c: string) => void;
@@ -85,17 +114,19 @@ function startLoopback(state: string): Promise<{ redirectUri: string; code: Prom
   const code = new Promise<string>((res, rej) => { resolve = res; reject = rej; });
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    const reply = (status: number, text: string) => { res.writeHead(status, { "Content-Type": "text/plain" }); res.end(text); };
-    if (url.pathname !== "/callback") return reply(404, "Not found.");
-    if (url.searchParams.get("state") !== state) return reply(400, "The state does not match. catatui still waits for the sign-in.");
+    const reply = (status: number, html: string) => { res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" }); res.end(html); };
+    if (url.pathname !== "/callback") return reply(404, page("Not found", "This page does not exist.", false));
+    if (url.searchParams.get("state") !== state) {
+      return reply(400, page("Sign-in does not match", "This response is from a different sign-in. catatui still waits for the sign-in.", false));
+    }
     const error = url.searchParams.get("error");
     if (error) {
-      reply(200, "The key was not approved. You can close this window.");
+      reply(200, page("Key not approved", "catatui did not get a key. Close this tab. To try again, run <code>/catchat login</code> in catatui.", false));
       return reject(new Error(`The key was not approved: ${url.searchParams.get("error_description") ?? error}. To sign in, run /catchat login.`));
     }
     const c = url.searchParams.get("code");
-    if (!c) return reply(400, "The response has no code. catatui still waits for the sign-in.");
-    reply(200, "You are signed in to CatChat. Close this window and go back to the terminal.");
+    if (!c) return reply(400, page("No code", "The response has no code. catatui still waits for the sign-in.", false));
+    reply(200, page("Signed in to CatChat", "Close this tab and go back to catatui in your terminal.", true));
     resolve(c);
   });
   const close = () => server.close();
