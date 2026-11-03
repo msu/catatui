@@ -1,8 +1,7 @@
 // CatChat sign-in for pi's /login.
-// Default: the student pastes a key from catchat-access.
-// With --sso: the student can also sign in with MSU SSO in a browser. Students do not have access to the
-// CatChat app in Azure yet (AADSTS50105), so this is for tests only. See src/md/features/sign-in.md.
-// SSO uses LiteLLM native-app OAuth (code + PKCE S256, loopback redirect), the same flow as CatVibes auth/pkce.ts.
+// Default: MSU SSO in a browser (CatChat App Connect) gives catatui a key.
+// Other option: the student makes a key at catchat-access and pastes it.
+// See src/md/features/sign-in.md.
 
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai/compat";
 import { createHash, randomBytes } from "node:crypto";
@@ -12,6 +11,8 @@ import { CATCHAT_ACCESS, CATCHAT_API, CLIENT_NAME } from "./config.ts";
 // A pasted key has no refresh token. Treat it as valid for 180 days (the catchat-access maximum).
 const PASTED_KEY_LIFETIME_MS = 180 * 86_400_000;
 const SSO_TIMEOUT_MS = 5 * 60 * 1000;
+// The team to preselect on the App Connect approval page. The student can change it.
+const SSO_TEAM = "gsoc";
 
 // The connection failed. The cause can be the network, a firewall, or CatChat itself.
 const noConnection = (e: unknown) =>
@@ -71,50 +72,13 @@ async function pasteLogin(cb: OAuthLoginCallbacks): Promise<OAuthCredentials> {
   return { access: key, refresh: "", expires: Date.now() + PASTED_KEY_LIFETIME_MS };
 }
 
-// ---- MSU SSO (--sso) ----
+// ---- MSU SSO: CatChat App Connect ----
+// The portal makes a free 180-day key after an MSU sign-in, and sends it back to the app. There is no refresh token.
+// Flow: OAuth loopback redirect with PKCE S256 (RFC 8252, RFC 7636). See src/md/features/sign-in.md.
 
-interface Contract {
-  authorization_endpoint: string;
-  token_endpoint: string;
-  registration_endpoint: string;
-  revocation_endpoint: string;
-  resource: string;
-  code_challenge_methods_supported: string[];
-}
-
-interface TokenResponse { access_token: string; expires_in: number; refresh_token: string; user_id?: string }
+interface ConnectResult { key: string; key_alias: string; team_id: string; team_alias: string; expires_at: string }
 
 const b64url = (b: Buffer) => b.toString("base64url");
-
-async function discover(signal?: AbortSignal): Promise<Contract> {
-  let res: Response;
-  try {
-    res = await fetch(`${CATCHAT_API}/.well-known/litellm-cli-auth`, { signal: signal ?? AbortSignal.timeout(15_000) });
-  } catch (e) {
-    throw noConnection(e);
-  }
-  if (res.status !== 200) throw new Error(`CatChat does not support app sign-in (HTTP ${res.status}). Use a pasted key.`);
-  const c = (await res.json()) as Contract;
-  if (!c.code_challenge_methods_supported.includes("S256")) throw new Error("CatChat does not support PKCE S256. Use a pasted key.");
-  const origin = new URL(CATCHAT_API).origin;
-  for (const ep of [c.authorization_endpoint, c.token_endpoint, c.registration_endpoint, c.revocation_endpoint]) {
-    if (new URL(ep).origin !== origin) throw new Error(`A sign-in endpoint is not on ${origin}: ${ep}. Use a pasted key.`);
-  }
-  return c;
-}
-
-async function postForm<T>(url: string, fields: Record<string, string>, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(fields),
-    redirect: "manual",
-    signal,
-  });
-  const text = await res.text();
-  if (res.status !== 200) throw new Error(`CatChat sign-in failed (HTTP ${res.status}): ${text.slice(0, 200)}`);
-  return JSON.parse(text) as T;
-}
 
 // Wait for the browser to come back to http://127.0.0.1:<port>/callback with our state.
 function startLoopback(state: string): Promise<{ redirectUri: string; code: Promise<string>; close: () => void }> {
@@ -128,8 +92,8 @@ function startLoopback(state: string): Promise<{ redirectUri: string; code: Prom
     if (url.searchParams.get("state") !== state) return reply(400, "The state does not match. catatui still waits for the sign-in.");
     const error = url.searchParams.get("error");
     if (error) {
-      reply(200, "The sign-in was not approved. You can close this window.");
-      return reject(new Error(`The sign-in was not approved: ${url.searchParams.get("error_description") ?? error}`));
+      reply(200, "The key was not approved. You can close this window.");
+      return reject(new Error(`The key was not approved: ${url.searchParams.get("error_description") ?? error}. To sign in, run /login catchat.`));
     }
     const c = url.searchParams.get("code");
     if (!c) return reply(400, "The response has no code. catatui still waits for the sign-in.");
@@ -157,65 +121,49 @@ function codeFromPaste(input: string, state: string): string {
   return c;
 }
 
-function toCredentials(t: TokenResponse, clientId: string): OAuthCredentials {
-  return {
-    access: t.access_token,
-    refresh: t.refresh_token,
-    expires: Date.now() + t.expires_in * 1000,
-    clientId,
-    user: t.user_id,
-  };
-}
-
 async function ssoLogin(cb: OAuthLoginCallbacks): Promise<OAuthCredentials> {
-  cb.onProgress?.("Connecting to CatChat...");
-  const c = await discover(cb.signal);
   const state = b64url(randomBytes(32));
   const verifier = b64url(randomBytes(64));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
   const loop = await startLoopback(state);
 
   try {
-    const reg = await fetch(c.registration_endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_name: CLIENT_NAME,
-        redirect_uris: [loop.redirectUri],
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
-        token_endpoint_auth_method: "none",
-      }),
-      redirect: "manual",
-    });
-    if (reg.status !== 200 && reg.status !== 201) throw new Error(`CatChat client registration failed (HTTP ${reg.status}). Use a pasted key.`);
-    const { client_id } = (await reg.json()) as { client_id: string };
-
     cb.onAuth({
-      url: `${c.authorization_endpoint}?${new URLSearchParams({
-        response_type: "code",
-        client_id,
+      url: `${CATCHAT_ACCESS}/connect?${new URLSearchParams({
+        name: CLIENT_NAME,
         redirect_uri: loop.redirectUri,
         state,
         code_challenge: challenge,
         code_challenge_method: "S256",
-        resource: c.resource,
+        team: SSO_TEAM,
       })}`,
-      instructions: "Sign in with your MSU account. If the browser is on a different computer (SSH), paste the final redirect URL here.",
+      instructions: [
+        'Sign in with your MSU account, then click "Create key".',
+        "If the page does not open, Cmd+click or Ctrl+click the URL above.",
+        "The page works only on the MSU network. If the page does not load, connect to the MSU VPN.",
+        "If the browser is on a different computer (SSH), paste the final redirect URL here.",
+      ].join("\n"),
     });
 
     const manual = cb.onManualCodeInput?.().then((input) => codeFromPaste(input, state));
     const code = await (manual ? Promise.race([loop.code, manual]) : loop.code);
 
-    const tok = await postForm<TokenResponse>(c.token_endpoint, {
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: loop.redirectUri,
-      client_id,
-      code_verifier: verifier,
-      resource: c.resource,
-    }, cb.signal);
-    return toCredentials(tok, client_id);
+    cb.onProgress?.("Getting your CatChat key...");
+    let res: Response;
+    try {
+      res = await fetch(`${CATCHAT_ACCESS}/connect/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: loop.redirectUri }),
+        signal: cb.signal ?? AbortSignal.timeout(30_000),
+      });
+    } catch (e) {
+      throw noConnection(e);
+    }
+    const text = await res.text();
+    if (res.status !== 200) throw new Error(`CatChat did not give a key (HTTP ${res.status}): ${text.slice(0, 200)}. Run /login catchat again.`);
+    const r = JSON.parse(text) as ConnectResult;
+    return { access: r.key, refresh: "", expires: Date.parse(r.expires_at) || Date.now() + PASTED_KEY_LIFETIME_MS, user: r.key_alias };
   } finally {
     loop.close();
   }
@@ -223,13 +171,12 @@ async function ssoLogin(cb: OAuthLoginCallbacks): Promise<OAuthCredentials> {
 
 // ---- pi entry points ----
 
-export async function login(cb: OAuthLoginCallbacks, sso: boolean): Promise<OAuthCredentials> {
-  if (!sso) return pasteLogin(cb);
+export async function login(cb: OAuthLoginCallbacks): Promise<OAuthCredentials> {
   const method = await cb.onSelect({
     message: "How do you want to sign in to CatChat?",
     options: [
-      { id: "paste", label: "Paste a CatChat key from catchat access" },
-      { id: "sso", label: "Sign in with MSU SSO in a browser (test)" },
+      { id: "sso", label: "Sign in with your MSU account in a browser" },
+      { id: "paste", label: "Make a key at catchat access and paste it" },
     ],
   });
   if (method === "sso") return ssoLogin(cb);
@@ -237,17 +184,7 @@ export async function login(cb: OAuthLoginCallbacks, sso: boolean): Promise<OAut
   throw new Error("The sign-in was cancelled. To sign in, run /login catchat.");
 }
 
-// A pasted key has no refresh token, so the student must paste a new key. An SSO sign-in has a refresh token.
-export async function refreshToken(cred: OAuthCredentials, signal?: AbortSignal): Promise<OAuthCredentials> {
-  if (!cred.refresh || typeof cred.clientId !== "string") {
-    throw new Error("Your CatChat key expired. Run /login catchat and paste a new key.");
-  }
-  const c = await discover(signal);
-  const tok = await postForm<TokenResponse>(c.token_endpoint, {
-    grant_type: "refresh_token",
-    refresh_token: cred.refresh,
-    client_id: cred.clientId,
-    resource: c.resource,
-  }, signal);
-  return { ...toCredentials(tok, cred.clientId), refresh: tok.refresh_token ?? cred.refresh };
+// Pasted keys and App Connect keys have no refresh token. The student must sign in again.
+export async function refreshToken(_cred: OAuthCredentials): Promise<OAuthCredentials> {
+  throw new Error("Your CatChat key expired. Run /login catchat to get a new key.");
 }

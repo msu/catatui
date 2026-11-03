@@ -40,7 +40,7 @@ catatui is a terminal coding agent for MSU students. It is an extension to the p
 
 ## File Index
 
-- [features/sign-in.md](features/sign-in.md): pasted key sign-in and the first start
+- [features/sign-in.md](features/sign-in.md): SSO and pasted key sign-in, and the first start
 - [features/models.md](features/models.md): default model, hidden models, and model notes
 - [features/modes.md](features/modes.md): ask, plan, and yolo modes, and the `/mode` panel
 - [features/sandbox.md](features/sandbox.md): limit on files outside the project folder

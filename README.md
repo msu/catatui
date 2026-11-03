@@ -68,10 +68,13 @@ If you have Node.js 22 or later and git, you can use npm:
 
 1. Go to your project folder in the terminal.
 2. Run `catatui`.
-3. catatui shows the steps to make an API key. Press Enter. catatui opens catchat access in your browser.
-4. Click "API Keys", then "+ Free Key". Give the key a unique name, select "gsoc" as your Team, then click "Create Key".
-5. Copy the key, paste it into catatui, then press Enter.
-6. Type your question or task, then press Enter.
+3. Select "Sign in with your MSU account in a browser", then press Enter. catatui opens catchat access in your browser.
+4. Sign in with your MSU account, then click "Create key". catatui gets the key and saves it.
+5. Type your question or task, then press Enter.
+
+The key is valid for 180 days. After that, catatui tells you to sign in again.
+
+If the browser sign-in does not work, select "Make a key at catchat access and paste it". catatui shows the steps.
 
 If you close the sign-in with Escape, press Enter to open it again.
 

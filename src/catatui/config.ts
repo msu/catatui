@@ -3,7 +3,7 @@
 export const PROVIDER_ID = "catchat";
 export const CATCHAT_API = "https://catchat-api.msu.montana.edu";
 export const CATCHAT_ACCESS = "https://catchat-access.msu.montana.edu";
-// The app name that SSO sign-in registers with CatChat.
+// The key name for SSO sign-in. CatChat names the key <username>_catatui.
 export const CLIENT_NAME = "catatui";
 
 // Used when CatChat does not report model limits.

@@ -1,18 +1,20 @@
 # Feature: Sign-in
 
-The student pastes a CatChat API key. The code is in `src/catatui/auth.ts`.
+The sign-in menu has two options. The code is in `src/catatui/auth.ts`.
 
-With `catatui --sso`, the sign-in also offers MSU SSO in a browser. This flag is for tests only.
+1. MSU SSO in a browser (CatChat App Connect). This is the default. catatui gets the key with no copy and paste.
+2. The student makes a key at catchat access and pastes it. catatui shows the key steps only for this option.
 
 ## Decisions
 
-- MSU SSO does not work for students, because they do not have access to the CatChat app in Azure (error AADSTS50105). So SSO is off by default.
-- `--sso` turns on SSO, so other persons can test it. The flag is not in the README. If SSO works for students, make it the default and remove the flag.
-- SSO uses the LiteLLM native-app OAuth flow: code + PKCE S256, with a loopback redirect to `127.0.0.1`. The contract is at `<CATCHAT_API>/.well-known/litellm-cli-auth`. CatVibes uses the same flow (`src/main/auth/pkce.ts`).
-- The flag controls only the sign-in menu. An SSO sign-in has a refresh token, so catatui renews it without the flag.
+- SSO uses CatChat App Connect on catchat-access: `GET /connect` in the browser, a loopback redirect to `127.0.0.1` with a code, then `POST /connect/token` with the code and the PKCE S256 verifier. The reply is a normal free key.
+- The App Connect key expires after 180 days and has no refresh token. catatui saves `expires_at` as the expiry. After that, the student signs in again.
+- Each App Connect sign-in makes a new key named `<username>_catatui` (then `-2`, `-3`). The student signs in with Microsoft and MFA each time.
+- catatui sends `team=gsoc`, so the approval page preselects gsoc. The student can change it.
+- catatui no longer uses the LiteLLM SSO flow (`/.well-known/litellm-cli-auth`). Students do not have access to that CatChat app in Azure (error AADSTS50105).
 - At the first start, catatui opens the sign-in at once. The student does not type `/login`.
 - The browser opens only after the student presses Enter, so the student can read the steps first.
-- The steps tell the student to select the team "gsoc". This team is correct for all students.
+- The paste steps tell the student to select the team "gsoc". This team is correct for all students.
 - catatui sends the key to `/v1/models` before it saves the key. A bad key gives an error at sign-in, not at the first prompt.
 - A pasted key has no refresh token. catatui treats it as valid for 180 days, the catchat-access maximum.
 
