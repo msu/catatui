@@ -5,11 +5,14 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, Image, type TUI } from "@earendil-works/pi-tui";
 import { readFileSync } from "node:fs";
+import { tip } from "./help.ts";
 import { HEIGHT, logoLines, WIDTH } from "./logo.ts";
 
 const FRAME_MS = 40;
 const ROWS_PER_FRAME = 1;
 const LOGO_PNG = new URL("../../assets/bobcat-head.png", import.meta.url);
+// One example prompt per start, so students learn what catatui can do.
+const TIP = tip();
 
 function sideText(theme: Theme, version: string): string[] {
   const gold = (s: string) => theme.bold(theme.fg("accent", s));
@@ -19,10 +22,13 @@ function sideText(theme: Theme, version: string): string[] {
     `${gold("catatui")} ${dim(`v${version}`)}`,
     muted("Montana State Command Line Agent"),
     "",
+    `${dim("/help")}           ${muted("what catatui can do")}`,
     `${dim("/catchat login")}  ${muted("sign in")}`,
     `${dim("/model")}          ${muted("pick a model")}`,
     `${dim("/catchat")}        ${muted("status")}`,
     `${dim("/hotkeys")}        ${muted("keys")}`,
+    "",
+    `${dim("Try:")} ${muted(`"${TIP}"`)}`,
   ];
 }
 

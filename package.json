@@ -1,6 +1,6 @@
 {
   "name": "catatui",
-  "version": "0.5.12",
+  "version": "0.5.13",
   "description": "MSU CatChat coding agent for the terminal, built on pi",
   "type": "module",
   "keywords": [
@@ -33,7 +33,11 @@
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.5.0",
-    "typebox": "1.3.27"
+    "docx": "9.13.0",
+    "exceljs": "4.4.0",
+    "mammoth": "1.13.0",
+    "typebox": "1.3.27",
+    "unpdf": "1.9.1"
   },
   "author": {
     "name": "Montana State University"

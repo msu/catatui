@@ -1,6 +1,6 @@
 // Sandbox: the agent can use only files in the folder where catatui started (the project folder).
 // "catatui --no-sandbox" turns the sandbox off at start. "/mode" (permissions.ts) can turn it on and off.
-// - read, write, edit, grep, find, ls: block a path outside the project folder.
+// - READ_TOOLS and CHANGE_TOOLS (config.ts): block a path outside the project folder.
 // - bash, powershell: block a command with a path outside the project folder (/x, ~, $HOME, .., C:\).
 //   This check reads the command text only. It is not an OS sandbox, so a command can get around it.
 // The sandbox applies in all modes, also in yolo.
@@ -9,9 +9,11 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, relative, resolve } from "node:path";
+import { CHANGE_TOOLS, READ_TOOLS } from "./config.ts";
 
-const FILE_TOOLS = ["read", "write", "edit", "grep", "find", "ls"];
-const SHELL_TOOLS = ["bash", "powershell"];
+const FILE_TOOLS = [...READ_TOOLS, ...CHANGE_TOOLS];
+// "server" (web.ts) runs a shell command too. Its stop, logs, and list actions have no command.
+const SHELL_TOOLS = ["bash", "powershell", "server"];
 
 // Paths outside the project folder that commands can use.
 const ALLOWED = ["/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr"];

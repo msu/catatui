@@ -105,10 +105,26 @@ These are the CatChat models. Type `/model` to pick one.
 
 CatChat can add or remove models. To see the current list, run `catatui --list-models`.
 
+## Tools
+
+In addition to the pi tools (read, write, edit, bash, grep, find, ls), the agent has these tools:
+
+| Tool                        | Use                                                                            |
+|-----------------------------|--------------------------------------------------------------------------------|
+| `http`                      | Send HTTP requests, for example to read docs or test a server                  |
+| `excel_read`, `excel_write` | Read and write Excel `.xlsx` files. Python is not necessary.                   |
+| `pdf_read`                  | Read the text of PDF files                                                     |
+| `docx_read`, `docx_write`   | Read and write Word `.docx` files. Python is not necessary.                    |
+| `show_page`                 | Show a quiz, form, or chart in your browser and send your answers to the agent |
+| `server`                    | Start and stop your dev server in the background, so the agent can test it     |
+
+The write tools and `server` ask before they run, in the same way as `write` and `bash`.
+
 ## Commands
 
 | Command           | Use                                                                                              |
 |-------------------|--------------------------------------------------------------------------------------------------|
+| `/help`           | Show what catatui can do, with example prompts                                                   |
 | `/mode`           | Pick the mode. Turn teaching assistant, the sandbox, and Simplified Technical English on or off. |
 | `/undo`           | Put back the files that the agent changed for your last request                                  |
 | `/model`          | Pick a CatChat model                                                                             |

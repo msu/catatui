@@ -6,6 +6,11 @@ export const CATCHAT_ACCESS = "https://catchat-access.msu.montana.edu";
 // The key name for SSO sign-in. CatChat names the key <username>_catatui.
 export const CLIENT_NAME = "catatui";
 
+// Tools that change a file. sandbox.ts, permissions.ts, and undo.ts treat them all like "write".
+export const CHANGE_TOOLS = ["edit", "write", "excel_write", "docx_write"];
+// Tools that read a file. The sandbox checks their path.
+export const READ_TOOLS = ["read", "grep", "find", "ls", "excel_read", "pdf_read", "docx_read"];
+
 // Used when CatChat does not report model limits.
 export const DEFAULT_CONTEXT_WINDOW = 32768;
 export const DEFAULT_MAX_TOKENS = 8192;

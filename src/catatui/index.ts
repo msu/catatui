@@ -8,6 +8,9 @@ import { pathToFileURL } from "node:url";
 import { login, refreshToken } from "./auth.ts";
 import { bannerComponent } from "./banner.ts";
 import { registerContext } from "./context.ts";
+import { registerDocumentTools } from "./documents.ts";
+import { registerExcelTools } from "./excel.ts";
+import { registerHelp } from "./help.ts";
 import { CATCHAT_API, DEFAULT_MODEL, PREFERRED_MODELS, PROVIDER_ID } from "./config.ts";
 import { fetchModels } from "./models.ts";
 import { setFooter } from "./footer.ts";
@@ -16,6 +19,7 @@ import { registerPermissions } from "./permissions.ts";
 import { registerSandbox } from "./sandbox.ts";
 import { registerSte } from "./ste.ts";
 import { registerUndo } from "./undo.ts";
+import { registerWebTools } from "./web.ts";
 
 // The catatui command sets this. As a plain pi package, the extension does not change the theme or model.
 const WRAPPED = process.env.CATATUI === "1";
@@ -41,6 +45,9 @@ export default async function (pi: ExtensionAPI) {
   // As a plain pi package, do not change pi's behavior.
   // The sandbox comes first, so a blocked call does not ask the student. Undo comes last, so it sees only allowed calls.
   registerHttpTool(pi);
+  registerExcelTools(pi);
+  registerDocumentTools(pi);
+  registerWebTools(pi);
   if (WRAPPED) {
     registerSandbox(pi);
     registerPermissions(pi);
@@ -48,6 +55,7 @@ export default async function (pi: ExtensionAPI) {
   }
   registerUndo(pi);
   registerContext(pi);
+  registerHelp(pi);
 
   pi.registerProvider(PROVIDER_ID, {
     name: "MSU CatChat",

@@ -17,6 +17,7 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { isAbsolute, relative, resolve } from "node:path";
+import { CHANGE_TOOLS } from "./config.ts";
 import { sandboxOn, setSandbox } from "./sandbox.ts";
 import { setSte, steOn } from "./ste.ts";
 
@@ -181,11 +182,11 @@ export function registerPermissions(pi: ExtensionAPI) {
 
   pi.on("tool_call", async (event, ctx) => {
     // ta blocks changes in all modes, also in yolo.
-    if (ta && (event.toolName === "edit" || event.toolName === "write")) return { block: true, reason: TA_BLOCK };
+    if (ta && CHANGE_TOOLS.includes(event.toolName)) return { block: true, reason: TA_BLOCK };
     if (ta && event.toolName === "http" && !isRead(event.input.method)) return { block: true, reason: `${TA_BLOCK} Send only GET requests.` };
     if (mode === "yolo") return;
 
-    if (event.toolName === "edit" || event.toolName === "write") {
+    if (CHANGE_TOOLS.includes(event.toolName)) {
       const path = String(event.input.path ?? "");
       const rel = relative(ctx.cwd, resolve(ctx.cwd, path));
       if (mode === "plan") return rel === PLAN_FILE ? undefined : { block: true, reason: PLAN_BLOCK };
@@ -215,14 +216,17 @@ export function registerPermissions(pi: ExtensionAPI) {
       return choice?.startsWith("Yes") ? undefined : { block: true, reason: "The student did not allow this request." };
     }
 
-    if (event.toolName === "bash") {
+    // "server start" (web.ts) runs a command in the background, so it asks like bash.
+    const serverStart = event.toolName === "server" && event.input.action === "start";
+    if (event.toolName === "bash" || serverStart) {
       const command = String(event.input.command ?? "");
       const first = command.trim().split(/\s+/)[0] ?? "";
       // A chain (for example "ls && python x.py") can hide a second command after an allowed first word.
       const risky = RISKY.some((re) => re.test(command)) || RUNNERS.includes(first) || /[;&|`]|\$\(/.test(command);
       if (!risky && allowedCommands.has(first)) return;
       const always = `Yes, and do not ask again for "${first}" commands this session`;
-      const choice = await ask(ctx, `Run this command?\n\n  ${command}`, risky ? ["Yes", "No"] : ["Yes", always, "No"]);
+      const question = serverStart ? "Run this command in the background (server)?" : "Run this command?";
+      const choice = await ask(ctx, `${question}\n\n  ${command}`, risky ? ["Yes", "No"] : ["Yes", always, "No"]);
       if (choice === always) allowedCommands.add(first);
       return choice?.startsWith("Yes") ? undefined : { block: true, reason: "The student did not allow this command." };
     }
