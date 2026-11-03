@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { login, refreshToken } from "./auth.ts";
 import { bannerComponent } from "./banner.ts";
+import { registerContext } from "./context.ts";
 import { CATCHAT_API, DEFAULT_MODEL, PREFERRED_MODELS, PROVIDER_ID } from "./config.ts";
 import { fetchModels } from "./models.ts";
 import { setFooter } from "./footer.ts";
@@ -46,6 +47,7 @@ export default async function (pi: ExtensionAPI) {
     registerSte(pi);
   }
   registerUndo(pi);
+  registerContext(pi);
 
   // SSO does not work for students yet (AADSTS50105). The flag lets other persons test it. See src/md/features/sign-in.md.
   pi.registerFlag("sso", {

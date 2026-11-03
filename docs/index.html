@@ -29,6 +29,8 @@ table { border-collapse: collapse; width: 100%; font-size: .95rem; }
 th, td { text-align: left; vertical-align: top; padding: .35rem .75rem .35rem 0; border-bottom: 1px solid #d8d8d4; }
 th { color: #002f87; }
 td:first-child { white-space: nowrap; }
+.notice { background: #fff6d6; border: 1px solid #d4a017; border-left: 4px solid #d4a017; border-radius: 4px; padding: .6rem 1rem; margin: 1.25rem 0 0; font-size: .95rem; }
+.notice p { margin: 0; }
 footer { margin-top: 3rem; padding-top: 1rem; border-top: 3px solid #d4a017; color: #5a5a5a; font-size: .9rem; }
 </style>
 </head>
@@ -41,6 +43,10 @@ footer { margin-top: 3rem; padding-top: 1rem; border-top: 3px solid #d4a017; col
 <p>A command line agent harness for MSU students</p>
 </div>
 </header>
+
+<div class="notice">
+<p><strong>Installed catatui from the old GitHub link?</strong> catatui moved to this site. If <code>catatui --update</code> doesn't work for you, run the <a href="#install">install command</a> again. It replaces the old install and keeps your key and settings.</p>
+</div>
 
 <a href="img/screenshot.png"><img class="screenshot" src="img/screenshot.png" width="1960" height="1332" alt="catatui running in a terminal with the /mode panel open"></a>
 
@@ -92,6 +98,7 @@ footer { margin-top: 3rem; padding-top: 1rem; border-top: 3px solid #d4a017; col
 <tr><td><code>/mode</code></td><td>Change the mode and options</td></tr>
 <tr><td><code>/undo</code></td><td>Put back the files the agent changed in your last request</td></tr>
 <tr><td><code>/model</code></td><td>Pick a CatChat model</td></tr>
+<tr><td><code>/context</code></td><td>Show what's using up the model's context window</td></tr>
 <tr><td><code>/catchat</code></td><td>Show your sign-in status and reload the models</td></tr>
 <tr><td><code>/catchat reset</code></td><td>Sign out and quit</td></tr>
 <tr><td><code>/hotkeys</code></td><td>Show the keyboard shortcuts</td></tr>

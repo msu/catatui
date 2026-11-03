@@ -105,6 +105,7 @@ CatChat can add or remove models. To see the current list, run `catatui --list-m
 | `/mode`          | Pick the mode. Turn teaching assistant, the sandbox, and Simplified Technical English on or off. |
 | `/undo`          | Put back the files that the agent changed for your last request                                  |
 | `/model`         | Pick a CatChat model                                                                             |
+| `/context`       | Show what uses the context window of the model                                                   |
 | `/login catchat` | Sign in to CatChat                                                                               |
 | `/catchat`       | Show your sign-in status and get the model list again                                            |
 | `/catchat reset` | Sign out of CatChat and stop catatui                                                             |
