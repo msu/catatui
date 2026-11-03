@@ -100,6 +100,22 @@ footer { margin-top: 3rem; padding-top: 1rem; border-top: 3px solid #d4a017; col
 <p>Run <code>catatui --list-models</code> to see the CatChat models you can use, and <code>catatui --help</code> for all the command line options.</p>
 <p><code>/undo</code> only covers the agent's file edits in the current session. It can't undo what a command did, so use git.</p>
 
+<h3>Models</h3>
+<p>Pick a model with <code>/model</code>. If you aren't sure, stay with Qwen.</p>
+<div class="table"><table>
+<tr><th>Model</th><th>What it is</th></tr>
+<tr><td><code>Qwen3.8-27B</code></td><td>Alibaba. General and coding model, with thinking. The default and our recommendation.</td></tr>
+<tr><td><code>gpt-oss:120b</code></td><td>OpenAI open-weight model, with thinking. Good for coding. The fastest model.</td></tr>
+<tr><td><code>gemma4-31B-it</code></td><td>Google. General model with a long context. Good for coding.</td></tr>
+<tr><td><code>muse-glimmer:30b</code></td><td>Unknown Model. Very slow.</td></tr>
+<tr><td><code>nimble:9b</code></td><td>Unknown Model.</td></tr>
+<tr><td><code>mistral-small:24b</code></td><td>Mistral. General chat model. Weak at file edits.</td></tr>
+<tr><td><code>llama3.1:8b</code></td><td>Meta. Small general model.</td></tr>
+<tr><td><code>codegemma:7b</code></td><td>Google. Code completion model. Not for agent work.</td></tr>
+<tr><td><code>medgemma:4b</code></td><td>Google. Medical model for text and images. Not for coding.</td></tr>
+<tr><td><code>Goedel-Prover-V2</code></td><td>Theorem prover (Lean). Not for general coding.</td></tr>
+</table></div>
+
 <h3>Updating</h3>
 <p><code>catatui --version</code> tells you if there is a newer version and <code>catatui --update</code> installs it. On Windows, <code>--update</code> prints the install command for you to run after you close catatui.</p>
 

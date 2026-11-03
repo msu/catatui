@@ -18,17 +18,20 @@ export const DEFAULT_MODEL = "Qwen3.8-27B";
 // Qwen is first by choice. The rest are in order from a tool-call test on 2026-10-28 (read, edit, and no edit when told not to).
 export const PREFERRED_MODELS = [/^qwen3\.\d+-27b$/i, /^gpt-oss:120b$/, /^gemma4-31b/i];
 
-// Notes shown under "Model Name" in /model. Keys are CatChat model ids.
-// Source: the same tool-call test. It is a small test, so the notes are a guide only.
+// Notes shown after the model name in /model. Keys are CatChat model ids. Keep them short: /model shows one line.
+// Each note gives the maker and type, then the result of a small tool-call test on 2026-10-28. The test is a guide only.
+// CatChat does not describe muse-glimmer and nimble. Ask RCI, then update the notes.
+// The README and docs/index.html have the same list. Change all three together.
 export const MODEL_NOTES: Record<string, string> = {
-  "gpt-oss:120b": "Good for coding. Passed all tool tests. Fastest.",
-  "Qwen3.8-27B": "Recommended for coding. Passed all tool tests.",
-  "gemma4-31B-it": "Good for coding. Passed all tool tests.",
-  "muse-glimmer:30b": "Passed all tool tests, but very slow.",
-  "mistral-small:24b": "Weak at file edits.",
-  "llama3.1:8b": "Small model. Can change files when you do not ask.",
-  "codegemma:7b": "Code completion model. Not for agent work. Can change files when you do not ask.",
-  "medgemma:4b": "Medical model. Not for coding.",
+  "Qwen3.8-27B": "Alibaba. General and coding model, with thinking. Recommended. Passed all tool tests.",
+  "gpt-oss:120b": "OpenAI open-weight model, with thinking. Good for coding. Passed all tool tests. Fastest.",
+  "gemma4-31B-it": "Google. General model, long context. Good for coding. Passed all tool tests.",
+  "muse-glimmer:30b": "Unknown Model. Passed all tool tests, but very slow.",
+  "nimble:9b": "Unknown Model.",
+  "mistral-small:24b": "Mistral. General chat model. Weak at file edits.",
+  "llama3.1:8b": "Meta. Small general model. Can change files when you do not ask.",
+  "codegemma:7b": "Google. Code completion model. Not for agent work. Can change files when you do not ask.",
+  "medgemma:4b": "Google. Medical model for text and images. Not for coding.",
   "Goedel-Prover-V2": "Theorem prover (Lean). Not for general coding.",
 };
 

@@ -79,6 +79,25 @@ catatui selects the model `Qwen3.8-27B`. To pick a different model, type `/model
 
 To see the available models, run `catatui --list-models`. To see all command line options, run `catatui --help`.
 
+## Models
+
+These are the CatChat models. Type `/model` to pick one.
+
+| Model               | What it is                                                                            |
+|---------------------|---------------------------------------------------------------------------------------|
+| `Qwen3.8-27B`       | Alibaba. General and coding model, with thinking. The default and our recommendation. |
+| `gpt-oss:120b`      | OpenAI open-weight model, with thinking. Good for coding. The fastest model.          |
+| `gemma4-31B-it`     | Google. General model with a long context. Good for coding.                           |
+| `muse-glimmer:30b`  | Unknown Model. Very slow.                                                             |
+| `nimble:9b`         | Unknown Model.                                                                        |
+| `mistral-small:24b` | Mistral. General chat model. Weak at file edits.                                      |
+| `llama3.1:8b`       | Meta. Small general model.                                                            |
+| `codegemma:7b`      | Google. Code completion model. Not for agent work.                                    |
+| `medgemma:4b`       | Google. Medical model for text and images. Not for coding.                            |
+| `Goedel-Prover-V2`  | Theorem prover (Lean). Not for general coding.                                        |
+
+CatChat can add or remove models. To see the current list, run `catatui --list-models`.
+
 ## Commands
 
 | Command          | Use                                                                                              |
