@@ -37,20 +37,27 @@ async function keyWorks(key: string): Promise<boolean> {
   }
 }
 
-// Step 1 of the login dialog. The browser opens only after the student presses Enter.
-const INTRO = [
-  "To use catatui, you need to generate an API key.",
-  "Press <enter> and I will open the catchat access website.",
+// The key steps. Both login dialog steps show them, so the student can follow them on the catchat access page (issue #1).
+const KEY_STEPS = [
   'Click on "API Keys" and then "+ Free Key".',
   'Give the key a unique name and select "gsoc" as your Team.',
   'Click "Create Key".',
   "You will be shown a key to copy and paste back here.",
+];
+
+// Step 1 of the login dialog. The browser opens only after the student presses Enter.
+const INTRO = [
+  "To use catatui, you need to generate an API key.",
+  "Press <enter> and I will open the catchat access website.",
+  ...KEY_STEPS,
   "",
   "Hit <enter> to open catchat access.",
 ].join("\n");
 
 // Step 2: shown under the catchat-access URL, after the browser opens.
 const AFTER_OPEN = [
+  ...KEY_STEPS,
+  "",
   "If the page does not open, Cmd+click or Ctrl+click the URL above.",
   "The page works only on the MSU network. If the page does not load, connect to the MSU VPN.",
 ].join("\n");
