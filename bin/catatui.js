@@ -2,9 +2,9 @@
 // Run pi with the MSU extension and theme.
 // catatui keeps its own config in ~/.catatui, so it does not mix with a plain pi install.
 
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { printVersion, update } from "./update.js";
 
@@ -24,6 +24,19 @@ if (args.includes("--update") || args[0] === "update") process.exit(update());
 
 process.env.CATATUI = "1";
 process.env.PI_CODING_AGENT_DIR ??= join(homedir(), ".catatui");
+
+// Hide the thinking blocks by default. Ctrl+T shows them. pi has no option for this default, so set it in settings.json.
+// pi writes this key only when the student presses Ctrl+T. If the key is there, keep the student's choice.
+const settingsFile = join(process.env.PI_CODING_AGENT_DIR, "settings.json");
+try {
+  const settings = existsSync(settingsFile) ? JSON.parse(readFileSync(settingsFile, "utf8")) : {};
+  if (!("hideThinkingBlock" in settings)) {
+    mkdirSync(dirname(settingsFile), { recursive: true });
+    writeFileSync(settingsFile, JSON.stringify({ ...settings, hideThinkingBlock: true }, null, 2));
+  }
+} catch {
+  // A bad settings.json. pi shows its own error for it, so do nothing here.
+}
 
 const extra = ["-e", root("src/catatui/index.ts"), "--theme", root("themes"), "--skill", root("skills")];
 // pi picks msu-light on a light terminal and msu on a dark terminal.

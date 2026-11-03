@@ -77,6 +77,8 @@ If you close the sign-in with Escape, press Enter to open it again.
 
 catatui selects the model `Qwen3.8-27B`. To pick a different model, type `/model`.
 
+To see the available models, run `catatui --list-models`. To see all command line options, run `catatui --help`.
+
 ## Commands
 
 | Command          | Use                                                                                              |

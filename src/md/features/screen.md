@@ -19,6 +19,12 @@ The code is in `src/catatui/footer.ts`.
 
 `themes/msu.json` (dark) and `themes/msu-light.json` (light) use MSU blue and gold.
 
+## Thinking
+
+- catatui hides the model's thinking blocks by default. Students need the answer, and the thinking is long. Ctrl+T shows the thinking.
+- pi has no option for this default, so `bin/catatui.js` writes `"hideThinkingBlock": true` to `~/.catatui/settings.json` before pi starts.
+- catatui writes the value only if the key is not in the file. pi writes the key only when the student presses Ctrl+T, so catatui does not change the student's choice.
+
 ## Name
 
 The name is "catatui", all lowercase, in the program and in the README.
