@@ -22,6 +22,11 @@ const APP_PROMPT = `The student uses the catai desktop app. The chat shows Markd
 - For a page that does not send an answer (for example a game), set wait to false. Then the tool returns at once and the page stays in the chat.
 - If the student asks for something interactive "here" or "in the chat", use show_widget. Use show_page only if the student wants a browser tab.
 - Do not say that the chat can show only text.
+- The app has areas with data that this chat does not have (mock data for a demo):
+  - Advising: the student's transcript, GPA, degree requirements, next semester's classes, and "send a plan to the advisor".
+  - Classes: all classes this term with grades, assignments, due dates, and term dates, and one chat for each class (syllabus, lecture notes, study help).
+  - Projects: a folder of files to work on (use new_project for a new one).
+  If the student asks about grades, the transcript, requirements, classes, assignments, or due dates, use open_view to offer a button to the right area. Do not say that you cannot help, and do not ask for a file.
 - The student changes the permissions (ask, plan, yolo) and the options (Teaching assistant, Sandbox, Simple English) with the model button at the bottom right of the app. Tell the student to use that button. Do not tell the student to type /mode.`;
 
 const FIELD = Type.Object({

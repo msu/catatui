@@ -452,7 +452,8 @@ export function App() {
             widgets={state.widgets} onWidgetAnswer={(req, data) => { api.respond({ id: req.id, value: JSON.stringify(data) }); local((st) => closeDialog(st, req.id)); }}
             resume={info.kind === "chat" ? info.resumeProject : undefined} onResume={openProject} advising={info.kind === "advising"} onAsk={send}
             kind={info.kind} project={info.project} onOpenSession={openAnySession} onRemove={removeFromChat}
-            onPin={(p) => openSide({ type: "file", path: p })} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })} />
+            onPin={(p) => openSide({ type: "file", path: p })} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })}
+            onOpenView={(view, course) => (view === "advising" ? goAdvising() : goClasses(course))} />
           <Composer context={lastAssistantText(state.items)} busy={state.busy} onSend={send} onStop={stop} editorText={state.editorText}
             clearEditorText={() => local((s) => ({ ...s, editorText: undefined }))}
             canUndo={undoSteps > 0} onUndo={() => send("/undo")}
@@ -1888,7 +1889,7 @@ function AccountMenu({ user, expiryDays, onSignOut }) {
   );
 }
 
-function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove, onPin, onOpenWeb }) {
+function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove, onPin, onOpenWeb, onOpenView }) {
   const end = useRef(null);
   const box = useRef(null);
   // Keep the newest text in view, unless the student scrolled up to read.
@@ -1926,7 +1927,7 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
       )}
       {items.map((it, i) => {
         const item = <Item key={i} it={it} onShowChanges={onShowChanges} changed={changed} fileTick={fileTick} widgets={widgets} onWidgetAnswer={onWidgetAnswer}
-          onPin={onPin} onRemove={busy ? undefined : onRemove} onOpenWeb={onOpenWeb} />;
+          onPin={onPin} onRemove={busy ? undefined : onRemove} onOpenWeb={onOpenWeb} onOpenView={busy ? undefined : onOpenView} />;
         // File cards have their own buttons. A removed message has nothing to remove.
         if (it.kind === "user" && (it.text.startsWith(FILE_PREFIX) || it.text === "[removed]")) return item;
         // "Remove" on a message or a tool call, when the agent is not working.
@@ -1947,7 +1948,7 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
   );
 }
 
-function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, onPin, onRemove, onOpenWeb }) {
+function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, onPin, onRemove, onOpenWeb, onOpenView }) {
   // advising_submit_plan: the plan card. It is live while its request waits. After that, the result has the plan and the status.
   if (it.kind === "tool" && it.name === "advising_submit_plan") {
     const req = it.running ? widgets.find((w) => w.title.startsWith(`${WIDGET_PREFIX}{"type":"plan"`)) : undefined;
@@ -1964,6 +1965,21 @@ function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, o
       if (!it.running) result ??= { submitted: false };
     }
     if (spec) return <PlanCard spec={spec} result={result} running={it.running} onSubmit={req ? (data) => onWidgetAnswer(req, data) : undefined} />;
+  }
+  // open_view (views.ts): a card with a button that opens Advising, Classes, or one class chat.
+  if (it.kind === "tool" && it.name === "open_view" && it.args?.view && !it.isError) {
+    const { view, course, reason } = it.args;
+    const title = view === "advising" ? "Advising" : course ? `${course} class chat` : "Classes";
+    return (
+      <div className={`view-card view-${view}`}>
+        {view === "advising" ? <AdvisingIcon /> : <ClassIcon />}
+        <span className="view-card-text">
+          <strong>{title}</strong>
+          {reason && <span>{reason}</span>}
+        </span>
+        <button className="btn primary" disabled={!onOpenView} onClick={() => onOpenView?.(view, course)}>Open {title}</button>
+      </div>
+    );
   }
   // show_preview: a card with the page and a button that opens it in the side panel (again).
   if (it.kind === "tool" && it.name === "show_preview" && !it.running && !it.isError) {
