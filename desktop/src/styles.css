@@ -446,10 +446,10 @@ button.project:hover { color: var(--blue); text-decoration: underline; }
 
 /* Chat or Project: a segmented switch in the header. */
 .kind-switch { display: inline-flex; margin-left: 1rem; border: 1px solid var(--btn-border); border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); -webkit-app-region: no-drag; }
-.kind-switch button { border: 0; border-radius: 0; padding: .35rem .9rem; font-size: .9rem; font-weight: 600; color: var(--fg); background: linear-gradient(var(--btn-top), var(--btn-bottom)); max-width: 18rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kind-switch button + button { border-left: 1px solid var(--btn-border); }
-.kind-switch button.on { background: var(--blue); color: #fff; box-shadow: inset 0 2px 4px rgba(0, 0, 0, .25); }
-.kind-switch button:disabled { opacity: .6; }
+.kind-switch > button { border: 0; border-radius: 0; padding: .35rem .9rem; font-size: .9rem; font-weight: 600; color: var(--fg); background: linear-gradient(var(--btn-top), var(--btn-bottom)); max-width: 18rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kind-switch > button + button { border-left: 1px solid var(--btn-border); }
+.kind-switch > button.on { background: var(--blue); color: #fff; box-shadow: inset 0 2px 4px rgba(0, 0, 0, .25); }
+.kind-switch > button:disabled, .kind-switch > .menu-wrap > button:disabled { opacity: .6; }
 
 /* Model and permissions in one button. */
 .below-send > .agent-menu { flex: 1; width: 100%; }
@@ -463,3 +463,130 @@ button.project:hover { color: var(--blue); text-decoration: underline; }
 .below-send > .menu-wrap.agent-menu { flex: 1 1 auto; width: 100%; }
 .pathbar-actions { margin-left: auto; display: flex; gap: .4rem; flex-shrink: 0; }
 .below-send > .menu-wrap.agent-menu > .btn { width: 100%; justify-content: space-between; }
+
+/* History and the Project menu: an icon, a title, and a small second line. */
+.menu.history { width: 26rem; max-height: 70vh; }
+.history-row { flex-direction: row !important; align-items: center !important; gap: .65rem; padding: .45rem .6rem !important; width: 100%; }
+.history-row.current { box-shadow: inset 3px 0 var(--gold); }
+.history-icon { flex-shrink: 0; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); }
+.history-icon .ficon { width: 1.2rem; height: 1.2rem; }
+.history-text { display: flex; flex-direction: column; min-width: 0; }
+.history-title { font-weight: 600; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-sub { font-size: .75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu-sep { height: 1px; background: var(--line); margin: .3rem 0; }
+.menu-strong { font-weight: 700 !important; }
+.project-menu { left: 0; right: auto; width: 22rem; }
+.kind-switch .menu-wrap > button { border: 0; border-left: 1px solid var(--btn-border); border-radius: 0; padding: .35rem .9rem; font-size: .9rem; font-weight: 600; color: var(--fg); background: linear-gradient(var(--btn-top), var(--btn-bottom)); max-width: 18rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kind-switch .menu-wrap > button.on { background: var(--blue); color: #fff; box-shadow: inset 0 2px 4px rgba(0, 0, 0, .25); }
+.kind-switch { overflow: visible; }
+
+/* Folder picker window. */
+.window.picker { width: min(46rem, 94vw); height: min(32rem, 88vh); }
+.picker-body { flex: 1; min-height: 0; display: flex; }
+.picker-places { width: 11rem; flex-shrink: 0; border-right: 1px solid var(--btn-border); background: var(--bg); padding: .5rem .3rem; display: flex; flex-direction: column; gap: .1rem; }
+.picker-places button { display: flex; align-items: center; gap: .45rem; background: none; color: var(--fg); font-weight: 400; text-align: left; padding: .35rem .5rem; border-radius: 5px; font-size: .88rem; }
+.picker-places button:hover { background: var(--user); }
+.picker-places button.current { background: var(--blue); color: #fff; }
+.picker-places .ficon { width: 1.1rem; height: 1.1rem; }
+.picker-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .5rem; padding: .7rem; }
+.picker-crumbs { display: flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--muted); }
+.picker-crumbs .crumbs { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+.picker-list { flex: 1; max-height: none; }
+.folder-row { grid-template-columns: 1fr; }
+.new-folder { display: flex; gap: .5rem; }
+.new-folder .input-field { flex: 1; padding: .4rem .6rem; }
+.picker-target { font-size: .8rem; color: var(--muted); max-width: 16rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.listbox .list-row.selected:not(.list-header), .listbox .list-row.selected:not(.list-header):hover { background: var(--blue); color: #fff; }
+
+/* Model menu: two columns. Permissions and options on the left, models on the right (scrolls). */
+.menu.agent { flex-direction: row; width: min(44rem, 92vw); max-height: 70vh; padding: 0; overflow: hidden; }
+.agent-col { flex: 1; min-width: 0; padding: .3rem; overflow: auto; }
+.agent-col.models { border-left: 1px solid var(--btn-border); background: var(--bg); }
+.menu-row.disabled { opacity: .5; cursor: default; }
+.kind-switch .ficon { width: 1.05rem; height: 1.05rem; vertical-align: -3px; margin-right: .2rem; }
+.kind-switch > button.on .ficon path:first-child { stroke: #fff; stroke-width: .6; }
+
+/* Inline widgets (show_widget). */
+.widget { width: min(36rem, 100%); background: var(--panel); border: 1px solid var(--btn-border); border-radius: 8px; box-shadow: var(--shadow); overflow: hidden; }
+.widget.live { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(212, 160, 23, .2), var(--lift); }
+.widget-title { padding: .5rem .8rem; font-weight: 700; background: linear-gradient(var(--btn-top), var(--btn-bottom)); border-bottom: 1px solid var(--btn-border); font-family: "Atkinson Hyperlegible", sans-serif; }
+.widget-body { padding: .7rem .8rem; display: flex; flex-direction: column; gap: .45rem; font-family: "Atkinson Hyperlegible", sans-serif; }
+.widget-options { display: flex; flex-wrap: wrap; gap: .4rem; }
+.widget-check { display: flex; align-items: center; gap: .5rem; cursor: pointer; }
+.widget-check input, .widget-slider input, .widget-field input[type=checkbox] { accent-color: var(--gold); }
+.widget-actions { display: flex; justify-content: flex-end; }
+.widget-slider { display: flex; align-items: center; gap: .6rem; }
+.widget-slider input { flex: 1; }
+.widget-form { display: grid; gap: .5rem; }
+.widget-field { display: grid; grid-template-columns: 9rem 1fr; align-items: center; gap: .6rem; }
+.widget-field .input-field, .widget-field select { padding: .35rem .5rem; font: inherit; }
+.widget .input-field { width: 100%; resize: vertical; }
+.quiz-q { padding: .3rem 0 .5rem; border-bottom: 1px solid var(--line); }
+.quiz-q:last-of-type { border-bottom: 0; }
+.quiz-question { font-weight: 600; margin-bottom: .3rem; }
+.quiz-opt { padding: .15rem .3rem; border-radius: 4px; }
+.quiz-opt.right { background: rgba(26, 127, 55, .14); }
+.quiz-opt.wrong { background: rgba(198, 40, 40, .14); }
+.quiz-mark { margin-left: auto; font-weight: 700; }
+.quiz-explain { margin-top: .3rem; font-size: .9rem; color: var(--muted); }
+.quiz-score { font-weight: 700; }
+.widget-chart { height: 16rem; position: relative; }
+.widget-table { overflow: auto; max-height: 20rem; }
+.widget-table table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+.widget-table th, .widget-table td { border: 1px solid var(--line); padding: .3rem .5rem; text-align: left; }
+.widget-table th { background: var(--bg); }
+.widget-frame { width: 100%; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.widget-note { padding: 0 .8rem .6rem; font-size: .8rem; color: var(--muted); }
+
+/* Model menu: wide. The left column sets the height and never scrolls. On the right, the header stays and
+   only the model list scrolls (the inner box is absolute, so the list does not make the menu taller). */
+.menu.agent { width: min(56rem, 94vw); max-width: none; max-height: none; overflow: visible; align-items: stretch; }
+.menu.agent .agent-col:first-child { flex: 1.15; overflow: visible; padding: .3rem .4rem; }
+.agent-col.models { position: relative; flex: 1; padding: 0; overflow: hidden; }
+.models-inner { position: absolute; inset: 0; display: flex; flex-direction: column; padding: .3rem; }
+.model-list { flex: 1; min-height: 0; overflow: auto; }
+
+.widget-chart { height: 18rem; }
+.widget-chart { height: auto; }
+
+/* Chat and Project split buttons: [main | ▾]. */
+.kind-switch > .split { display: inline-flex; }
+.kind-switch > .split:first-child > button:first-child { border-left: 0; }
+.kind-switch .split > .split-arrow { padding: .35rem .45rem; border-left: 1px solid rgba(0, 0, 0, .15); }
+.kind-switch .split > .split-arrow.on { border-left-color: rgba(255, 255, 255, .35); }
+.kind-menu { left: 0; right: auto; width: 22rem; max-width: none; }
+
+/* The selected kind: a light background with dark text, so the icons stay easy to see. */
+.kind-switch .menu-wrap > button.on, .kind-switch .split > .split-arrow.on { background: #dfe8f7; color: var(--blue); box-shadow: inset 0 2px 3px rgba(0, 0, 0, .15); }
+.kind-switch .split > .split-arrow.on { border-left-color: rgba(0, 47, 135, .2); }
+.kind-switch .menu-wrap > button.on .ficon path:first-child { stroke: none; }
+@media (prefers-color-scheme: dark) {
+  .kind-switch .menu-wrap > button.on, .kind-switch .split > .split-arrow.on { background: #2a3b5c; color: #fff; }
+}
+
+/* Open a project: the search field, and a list that scrolls under a fixed header. */
+.project-search { width: 100%; margin: .2rem 0 .5rem; }
+.projects-screen .listbox { max-height: min(22rem, 50vh); overflow: auto; }
+.projects-screen .list-header { position: sticky; top: 0; z-index: 1; }
+.project-search { padding: .45rem .6rem; }
+
+/* The down arrow on menu buttons. */
+.caret { width: .85rem; height: .85rem; vertical-align: -1px; margin-left: .15rem; flex-shrink: 0; }
+.kind-switch .split > .split-arrow { padding: .35rem .5rem; display: inline-flex; align-items: center; }
+.kind-switch .split > .split-arrow .caret { margin: 0; width: .95rem; height: .95rem; }
+/* The switch has round corners. The outer buttons have the same corners, so they do not cover the border. */
+.kind-switch { overflow: visible; }
+.kind-switch > .split:first-child > button:first-child { border-radius: 7px 0 0 7px; }
+.kind-switch > .split:last-child > .split-arrow { border-radius: 0 7px 7px 0; }
+.kind-switch .menu-wrap > button { height: 100%; }
+
+/* The diff is now on the left, between the file tree and the chat. */
+.files { border-left: 0; border-right: 1px solid var(--btn-border); }
+/* A visible focus ring for keyboard users, on the areas and the tree rows. */
+.files:focus, main.chat:focus, .diff-view:focus { outline: none; }
+.diff-view:focus-visible, .files:focus-visible { box-shadow: inset 0 0 0 2px var(--gold); }
+.tree-row:focus-visible, .menu button:focus-visible, .menu input:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+/* With the diff open, the chat keeps enough width for the message box. The diff gets smaller first. */
+.files { width: min(32%, 30rem); min-width: 14rem; flex-shrink: 1; }
+.main-col { min-width: 26rem; }
+.pathbar-label { font-weight: 600; font-size: .85rem; color: var(--muted); white-space: nowrap; margin-right: .2rem; }

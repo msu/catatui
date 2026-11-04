@@ -26,7 +26,7 @@ What it can do
   Excel          read and write .xlsx files            "Make budget.xlsx with a total row"
   PDF            read PDF files                        "Read syllabus.pdf and list the due dates"
   Word           read and write .docx files            "Summarize report.docx in five bullets"
-  Quizzes        show a quiz or form in your browser   "Quiz me on recursion in the browser"
+  Quizzes        a quiz, form, or chart in the chat    "Quiz me on recursion"
   Web servers    run your app and test it              "Start my web app and check that / works"
   Web pages      read docs and call APIs               "Read the docs at https://... and explain X"
   New projects   make a folder for a new task          "I want to plan my semester"

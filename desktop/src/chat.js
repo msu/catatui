@@ -11,6 +11,7 @@ export const initialState = {
   items: [],
   busy: false,
   dialogs: [], // extension_ui_request records that wait for an answer
+  widgets: [], // show_widget requests (input dialogs with a "[widget] " title) that wait for an answer
   status: {}, // setStatus entries, by key
   editorText: undefined, // set_editor_text from catatui; the input box takes it once
 };
@@ -99,6 +100,9 @@ export function reduce(state, rec) {
       return notice(state, "error", `Extension error (${rec.event}): ${rec.error}`);
 
     case "extension_ui_request": {
+      // A widget: the chat draws it inline from the show_widget tool item, not as a dialog or a notice.
+      if (rec.method === "input" && String(rec.title ?? "").startsWith(WIDGET_PREFIX)) return { ...state, widgets: [...state.widgets, rec] };
+      if (rec.method === "notify" && String(rec.message ?? "").startsWith(WIDGET_PREFIX)) return state;
       if (DIALOGS.includes(rec.method)) return { ...state, dialogs: [...state.dialogs, rec] };
       if (rec.method === "notify") return notice(state, rec.notifyType ?? "info", rec.message ?? "");
       if (rec.method === "setStatus") {
@@ -118,7 +122,18 @@ export function reduce(state, rec) {
 
 export const notice = (state, level, text) => ({ ...state, items: [...state.items, { kind: "notice", level, text }] });
 
-export const closeDialog = (state, id) => ({ ...state, dialogs: state.dialogs.filter((d) => d.id !== id) });
+export const closeDialog = (state, id) => ({ ...state, dialogs: state.dialogs.filter((d) => d.id !== id), widgets: state.widgets.filter((w) => w.id !== id) });
+
+// The same prefix as WIDGET_PREFIX in src/catatui/widget.ts.
+export const WIDGET_PREFIX = "[widget] ";
+
+// The answer in a show_widget tool result: "The student answered: <JSON>".
+export function widgetAnswer(result) {
+  const t = resultText(result);
+  const m = /^The student answered: ([\s\S]*)$/.exec(t);
+  if (!m) return undefined;
+  try { return JSON.parse(m[1]); } catch { return m[1]; }
+}
 
 // Remove ANSI color codes. catatui notices use the terminal theme colors.
 export const plain = (s) => String(s ?? "").replace(/\x1b\[[0-9;]*m/g, "");

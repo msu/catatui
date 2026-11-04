@@ -4,7 +4,8 @@
 //   (src/catatui/auth.ts and store.ts), loaded with jiti.
 // The renderer talks to this file through preload.cjs. See ../src/md/features/desktop.md.
 
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell } from "electron";
+import { randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -24,7 +25,7 @@ const { createJiti } = await import(pathToFileURL(join(ROOT, "node_modules", "ji
 const jiti = createJiti(import.meta.url);
 const auth = await jiti.import(join(ROOT, "src", "catatui", "auth.ts"));
 const store = await jiti.import(join(ROOT, "src", "catatui", "store.ts"));
-const { CHANGE_TOOLS } = await jiti.import(join(ROOT, "src", "catatui", "config.ts"));
+const { CHANGE_TOOLS, CATCHAT_API, DEFAULT_MODEL } = await jiti.import(join(ROOT, "src", "catatui", "config.ts"));
 
 // pi itself, for the session lists. Load it only when the app needs it, because it is large.
 let piModule;
@@ -330,6 +331,7 @@ function startChild() {
       } else {
         trackFiles(rec);
         toRenderer("rpc-event", rec);
+        if (rec.type === "agent_settled") titleForOpenChat().catch(() => {});
       }
     }
   });
@@ -386,8 +388,10 @@ ipcMain.handle("info", () => {
   const cred = store.readCredential();
   // resumeProject: the app last worked in this project (not in a chat). The chat start screen offers it.
   const st = readState();
-  const resumeProject = st.lastKind === "project" && st.lastProject && isFolder(st.lastProject) && st.lastProject !== project ? st.lastProject : undefined;
-  return { project, chat: isChat(project), resumeProject, signedIn: !!cred, user: cred?.user, expiryDays: store.expiryDays(cred) };
+  // lastProject: the Project button opens it with one click from a chat.
+  const lastProject = st.lastProject && isFolder(st.lastProject) && st.lastProject !== project ? st.lastProject : undefined;
+  const resumeProject = st.lastKind === "project" ? lastProject : undefined;
+  return { project, chat: isChat(project), resumeProject, lastProject, signedIn: !!cred, user: cred?.user, expiryDays: store.expiryDays(cred) };
 });
 
 // Start catatui, or start it again so that pi reads a new sign-in. Resolves when catatui answers.
@@ -462,7 +466,8 @@ ipcMain.on("open-path", (_e, path) => {
 // ---- projects and sessions ----
 
 // Recent projects: the folders of the catatui sessions, newest first. A folder that does not exist now is not shown.
-ipcMain.handle("list-projects", async () => {
+ipcMain.handle("list-projects", () => listProjects());
+async function listProjects() {
   const { SessionManager } = await pi();
   const byCwd = new Map();
   for (const s of await SessionManager.listAll()) {
@@ -475,8 +480,8 @@ ipcMain.handle("list-projects", async () => {
     p.modified = Math.max(p.modified, new Date(s.modified).getTime());
     byCwd.set(s.cwd, p);
   }
-  return [...byCwd.values()].filter((p) => isFolder(p.path)).sort((a, b) => b.modified - a.modified).slice(0, 20);
-});
+  return [...byCwd.values()].filter((p) => isFolder(p.path)).sort((a, b) => b.modified - a.modified);
+}
 
 // All catatui chats (sessions), in all project folders, newest first. Each has its folder.
 ipcMain.handle("list-sessions", async () => {
@@ -490,7 +495,126 @@ ipcMain.handle("list-sessions", async () => {
       path: s.path, name: s.name, first: s.firstMessage, modified: new Date(s.modified).getTime(), count: s.messageCount,
       cwd: s.cwd, folder: s.cwd === home ? "~" : s.cwd.startsWith(`${home}/`) ? `~${s.cwd.slice(home.length)}` : s.cwd,
       here: s.cwd === project, exists: isFolder(s.cwd), chat: isChat(s.cwd),
-    }));
+      title: readTitles()[s.path], projectName: basename(s.cwd),
+      _s: s,
+    }))
+    .map((x, i, all) => {
+      if (i === all.length - 1) queueTitles(all.slice(0, 30).filter((y) => !y.title).map((y) => y._s));
+      const { _s, ...rest } = x;
+      return rest;
+    });
+});
+
+// ---- chat titles ----
+
+// A short title for each chat, made by the default model (Qwen) from the start of the chat.
+// The titles are in titles.json in the app data folder: { "<session file>": "<title>" }.
+const titlesPath = () => join(app.getPath("userData"), "titles.json");
+let titles;
+function readTitles() {
+  if (!titles) { try { titles = JSON.parse(readFileSync(titlesPath(), "utf8")); } catch { titles = {}; } }
+  return titles;
+}
+function saveTitle(session, title) {
+  readTitles()[session] = title;
+  try { writeFileSync(titlesPath(), JSON.stringify(titles, null, 1)); } catch { /* The app works without the file. */ }
+}
+
+// The chat text for the title. File lines ("[file] path" and the request after them) become "File: name".
+function chatText(s) {
+  return (s.allMessagesText || s.firstMessage || "")
+    .replace(/\[file\] (\S[^\n]*)\n?I added (this file|these files)[^\n]*/g, (_m, p) => `File: ${basename(p)}`)
+    .slice(0, 2000);
+}
+
+// Qwen thinks before it answers, so it needs some room (max_tokens). A title takes about 1 second.
+async function makeTitle(text) {
+  const key = store.readCredential()?.access;
+  if (!key || !text.trim()) return undefined;
+  const res = await fetch(`${CATCHAT_API}/v1/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: DEFAULT_MODEL, max_tokens: 800, temperature: 0.2,
+      messages: [
+        { role: "system", content: "Write a short title (3 to 6 words) for the conversation that the user gives. Reply with the title only, no quotes. Think very briefly." },
+        { role: "user", content: text },
+      ],
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) return undefined;
+  const title = (await res.json())?.choices?.[0]?.message?.content?.replace(/<think>[\s\S]*?<\/think>/g, "").trim().replace(/^["'*#\s]+|["'*.\s]+$/g, "");
+  return title && title.length <= 80 ? title : undefined;
+}
+
+// Make the missing titles in the background, a few at a time, then tell the renderer.
+const titleQueue = new Map();
+let titleRunning = 0;
+function queueTitles(sessions) {
+  for (const s of sessions) if (!readTitles()[s.path] && !titleQueue.has(s.path)) titleQueue.set(s.path, s);
+  pumpTitles();
+}
+function pumpTitles() {
+  while (titleRunning < 3 && titleQueue.size) {
+    const [path, s] = titleQueue.entries().next().value;
+    titleQueue.delete(path);
+    titleRunning++;
+    makeTitle(chatText(s))
+      .then((t) => { if (t) { saveTitle(path, t); toRenderer("titles-updated"); } })
+      .catch(() => {})
+      .finally(() => { titleRunning--; pumpTitles(); });
+  }
+}
+
+// After the agent is done, make a title for the open chat if it has none.
+async function titleForOpenChat() {
+  const st = await command({ type: "get_state" });
+  const file = st.data?.sessionFile;
+  if (!file || readTitles()[file] || !project) return;
+  const { SessionManager } = await pi();
+  const s = (await SessionManager.list(project)).find((x) => x.path === file);
+  if (s) queueTitles([s]);
+}
+
+// ---- folders, for the "new project" folder picker ----
+
+// Places on the left of the folder picker.
+function places() {
+  const home = homedir();
+  const list = [
+    { name: "catai projects", path: join(home, "Documents", "catai") },
+    { name: "Documents", path: join(home, "Documents") },
+    { name: "Desktop", path: join(home, "Desktop") },
+    { name: "Downloads", path: join(home, "Downloads") },
+    { name: "Home", path: home },
+  ];
+  return list.filter((p) => isFolder(p.path) || p.name === "catai projects");
+}
+
+// The folders in a folder (no hidden folders, no chat folders). The picker starts in Documents/catai.
+ipcMain.handle("list-folders", (_e, path) => {
+  const dir = path && isFolder(path) ? path : join(homedir(), "Documents", "catai");
+  mkdirSync(dir, { recursive: true });
+  let folders = [];
+  try {
+    folders = readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith(".") && !(dir === join(homedir(), "Documents", "catai") && e.name === "Chats"))
+      .map((e) => e.name)
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  } catch { /* The folder cannot be read. */ }
+  const parent = dirname(dir);
+  return { path: dir, parent: parent !== dir ? parent : undefined, folders, places: places(), sep: process.platform === "win32" ? "\\" : "/" };
+});
+
+// A new folder in the picker. Letters, digits, spaces, dots, - and _ only.
+ipcMain.handle("make-folder", (_e, parent, name) => {
+  const clean = String(name ?? "").replace(/[^A-Za-z0-9 ._-]+/g, " ").replace(/\s+/g, " ").trim().replace(/^\.+/, "");
+  if (!clean) return { error: "Type a name for the folder." };
+  const path = join(parent, clean);
+  if (existsSync(path)) return { error: `A folder named ${clean} is there already.` };
+  try { mkdirSync(path, { recursive: true }); } catch (e) { return { error: `catai could not make the folder: ${e.message}` }; }
+  return { path };
 });
 
 // A new chat: a new chat folder. The renderer then calls "start".
@@ -514,6 +638,7 @@ ipcMain.handle("open-project", async (_e, path) => {
   project = path;
   saveState(isChat(path) ? { lastKind: "chat" } : { lastProject: path, lastKind: "project" });
   win?.setTitle(isChat(path) ? "catai - Chat" : `catai - ${basename(path)}`);
+  buildMenu();
   return { ok: true };
 });
 
@@ -538,6 +663,148 @@ async function startProject() {
   return newChatFolder();
 }
 
+// ---- application menu ----
+// Most items send an action to the renderer ("menu" event), which does the same thing as the button.
+// The renderer sends its state ("menu-state"): the permissions, the options, busy, and chat or project.
+let menuState = { mode: "ask", busy: false, chat: true };
+ipcMain.on("menu-state", (_e, st) => {
+  if (JSON.stringify(st) === JSON.stringify(menuState)) return;
+  menuState = st;
+  buildMenu();
+});
+const act = (action) => () => win?.webContents.send("menu", action);
+const SITE = "https://catatui.cs.montana.edu";
+
+// The About window. The standard macOS About panel shows the Electron icon in development, so the app
+// shows its own window with the bobcat icon.
+function showAbout() {
+  let cli = "";
+  try { cli = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8")).version; } catch { /* Not in a package. */ }
+  dialog.showMessageBox(win, {
+    title: "About catai",
+    message: "catai",
+    detail: `Version ${app.getVersion()}${cli ? ` (catatui ${cli})` : ""}\nMontana State University\n${SITE}`,
+    icon: nativeImage.createFromPath(ICON),
+    buttons: ["OK", "Website"],
+    defaultId: 0,
+  }).then((r) => { if (r.response === 1) shell.openExternal(SITE); });
+}
+
+async function buildMenu() {
+  const mac = process.platform === "darwin";
+  const st = menuState;
+  const recent = (await listProjects().catch(() => [])).slice(0, 10);
+  const inProject = project && !isChat(project);
+  const option = (key, label) => ({ label, type: "checkbox", checked: !!st[key], click: (item) => act(`option:${key}:${item.checked ? "on" : "off"}`)() });
+  const perm = (m, label) => ({ label, type: "radio", checked: st.mode === m, click: act(`mode:${m}`) });
+  const template = [
+    ...(mac ? [{
+      label: "catai",
+      submenu: [
+        { label: "About catai", click: showAbout },
+        { type: "separator" },
+        { label: "Sign Out", click: act("sign-out") },
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { role: "hide", label: "Hide catai" }, { role: "hideOthers" }, { role: "unhide" },
+        { type: "separator" },
+        { role: "quit", label: "Quit catai" },
+      ],
+    }] : []),
+    {
+      label: "File",
+      submenu: [
+        { label: "New Chat", accelerator: "CmdOrCtrl+N", enabled: !st.busy, click: act("new-chat") },
+        { label: "New Project...", accelerator: "CmdOrCtrl+Shift+N", enabled: !st.busy, click: act("new-project") },
+        { label: "New Chat in This Project", accelerator: "CmdOrCtrl+Alt+N", enabled: !st.busy && !!inProject, click: act("new-chat-here") },
+        { type: "separator" },
+        { label: "Open Project...", accelerator: "CmdOrCtrl+O", enabled: !st.busy, click: act("all-projects") },
+        {
+          label: "Open Recent Project",
+          enabled: !st.busy && recent.length > 0,
+          submenu: recent.length ? recent.map((p) => ({ label: p.name, sublabel: p.display, click: act(`open:${p.path}`) })) : [{ label: "None", enabled: false }],
+        },
+        { type: "separator" },
+        { label: mac ? "Show Project in Finder" : "Show Project in Explorer", enabled: !!inProject, click: () => shell.openPath(project) },
+        { label: "Close Project", accelerator: "CmdOrCtrl+Shift+W", enabled: !st.busy && !!inProject, click: act("close-project") },
+        { type: "separator" },
+        mac ? { role: "close" } : { role: "quit" },
+      ],
+    },
+    { role: "editMenu" },
+    {
+      label: "View",
+      submenu: [
+        { label: "Show Files", type: "checkbox", checked: st.tree !== false, accelerator: "CmdOrCtrl+B", enabled: !!inProject, click: act("toggle-tree") },
+        { type: "separator" },
+        { label: "Next Area", accelerator: "F6", click: act("next-area") },
+        { label: "Previous Area", accelerator: "Shift+F6", click: act("prev-area") },
+        { type: "separator" },
+        { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+        { type: "separator" },
+        { role: "toggleDevTools" },
+      ],
+    },
+    {
+      label: "Agent",
+      submenu: [
+        { label: "Stop", accelerator: "CmdOrCtrl+.", enabled: !!st.busy, click: act("stop") },
+        { label: "Undo Last Request", accelerator: "CmdOrCtrl+Alt+Z", enabled: !st.busy && !!st.canUndo, click: act("undo") },
+        { type: "separator" },
+        { label: "Permissions", enabled: false },
+        perm("ask", "Ask"), perm("plan", "Plan"), perm("yolo", "Yolo"),
+        { type: "separator" },
+        { label: "Options", enabled: false },
+        option("ta", "Teaching Assistant"), option("sandbox", "Sandbox"), option("ste", "Simple English"),
+      ],
+    },
+    { role: "windowMenu" },
+    {
+      role: "help",
+      submenu: [
+        { label: "What catai Can Do", click: act("help") },
+        { label: "catai Website", click: () => shell.openExternal(SITE) },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// The window place and size from the last run, if it still fits on a screen. The screens can change between
+// runs (a laptop without its second screen). If the title bar is not on a screen now, the window opens centered on
+// the main screen. If the window is larger than its screen now, it gets smaller.
+function savedBounds() {
+  const b = readState().window;
+  if (!b || ![b.x, b.y, b.width, b.height].every(Number.isFinite)) return undefined;
+  const area = screen.getAllDisplays().map((d) => d.workArea).find((a) =>
+    // The top 40 pixels of the window (the title bar) must be on this screen, at least 120 pixels wide.
+    Math.min(b.x + b.width, a.x + a.width) - Math.max(b.x, a.x) >= 120 && b.y >= a.y && b.y + 40 <= a.y + a.height);
+  if (!area) return undefined;
+  const width = Math.min(b.width, area.width);
+  const height = Math.min(b.height, area.height);
+  return {
+    x: Math.max(area.x, Math.min(b.x, area.x + area.width - width)),
+    y: Math.max(area.y, Math.min(b.y, area.y + area.height - height)),
+    width, height, maximized: !!b.maximized,
+  };
+}
+
+// Save the place and size when the window moves or changes size (after 500 ms), and when it closes.
+function rememberBounds(w) {
+  let timer;
+  const save = () => {
+    if (w.isDestroyed() || w.isMinimized() || w.isFullScreen()) return;
+    saveState({ window: { ...w.getNormalBounds(), maximized: w.isMaximized() } });
+  };
+  const later = () => { clearTimeout(timer); timer = setTimeout(save, 500); };
+  w.on("move", later);
+  w.on("resize", later);
+  w.on("close", () => { clearTimeout(timer); save(); });
+}
+
 // For tests: CATATUI_DESKTOP_SNAPSHOT=out.png runs with a hidden window, sends CATATUI_DESKTOP_PROMPT,
 // saves a screenshot when the agent is done or a dialog opens (or after 90 seconds), then quits.
 const SNAPSHOT = process.env.CATATUI_DESKTOP_SNAPSHOT;
@@ -546,18 +813,46 @@ const SNAPSHOT = process.env.CATATUI_DESKTOP_SNAPSHOT;
 // In development, Electron shows its own icon unless the app sets this one.
 const ICON = join(HERE, "build", "icon.png");
 app.setName("catai");
+
+// HTML widgets (show_widget type "html"): the model's page is served at catai-widget://frame/<id>, with a strict
+// Content-Security-Policy: inline scripts and styles only, no network. The renderer shows it in a sandboxed iframe
+// (allow-scripts only), so it cannot reach the app. The page sends its answer with catai.submit(data) (postMessage).
+protocol.registerSchemesAsPrivileged([{ scheme: "catai-widget", privileges: { standard: true, secure: true } }]);
+const widgetPages = new Map();
+const WIDGET_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:";
+const WIDGET_BRIDGE = `<script>window.catai = { submit: (data) => parent.postMessage({ cataiWidget: true, data }, "*") };
+addEventListener("load", () => {
+  // The height of the content (the lowest element), not of the frame. A page with height: 100% would grow without end.
+  const send = () => { let h = 0; for (const e of document.body.querySelectorAll("*")) h = Math.max(h, e.getBoundingClientRect().bottom); parent.postMessage({ cataiWidget: true, height: Math.ceil(h + 12) }, "*"); };
+  send(); setTimeout(send, 300); new MutationObserver(send).observe(document.body, { subtree: true, childList: true, attributes: true });
+});</script>`;
+ipcMain.handle("widget-frame", (_e, html) => {
+  const id = randomUUID();
+  widgetPages.set(id, String(html ?? ""));
+  if (widgetPages.size > 200) widgetPages.delete(widgetPages.keys().next().value);
+  return `catai-widget://frame/${id}`;
+});
 // For tests: keep the app data (state.json) in a different folder, so tests do not change the real app data.
 if (process.env.CATATUI_DESKTOP_USER_DATA) app.setPath("userData", process.env.CATATUI_DESKTOP_USER_DATA);
 
 app.whenReady().then(async () => {
+  protocol.handle("catai-widget", (req) => {
+    const id = new URL(req.url).pathname.replace(/^\//, "");
+    const html = widgetPages.get(id);
+    if (html === undefined) return new Response("Not found", { status: 404 });
+    const page = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => `${m}${WIDGET_BRIDGE}`) : `${WIDGET_BRIDGE}${html}`;
+    return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": WIDGET_CSP } });
+  });
   if (process.platform === "darwin") app.dock?.setIcon(ICON);
   project = await startProject();
   if (project && !isChat(project)) saveState({ lastProject: project, lastKind: "project" });
 
+  const bounds = SNAPSHOT ? undefined : savedBounds();
   win = new BrowserWindow({
     show: !SNAPSHOT,
-    width: 1000,
-    height: 760,
+    width: bounds?.width ?? 1000,
+    height: bounds?.height ?? 760,
+    ...(bounds ? { x: bounds.x, y: bounds.y } : {}),
     minWidth: 520,
     minHeight: 400,
     title: isChat(project) ? "catai - Chat" : project ? `catai - ${basename(project)}` : "catai",
@@ -565,6 +860,8 @@ app.whenReady().then(async () => {
     icon: ICON,
     webPreferences: { preload: join(HERE, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
+  if (bounds?.maximized) win.maximize();
+  if (!SNAPSHOT) rememberBounds(win);
   // Links in answers open in the normal browser, not in the app.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
@@ -577,6 +874,7 @@ app.whenReady().then(async () => {
     }
   });
   win.loadFile(join(HERE, "dist", "index.html"));
+  buildMenu();
   if (SNAPSHOT) snapshot();
 });
 
@@ -600,8 +898,30 @@ async function snapshot() {
       if (await win.webContents.executeJavaScript(`!!document.querySelector(".dialog") || !document.querySelector(".working")`)) break;
     }
   }
+  // CATATUI_DESKTOP_MENU="Agent>Plan ;; File>New Project..." clicks application menu items. It also prints
+  // the labels and the states of the Agent menu, so a test can read them.
+  for (const path of (process.env.CATATUI_DESKTOP_MENU ?? "").split(";;").map((x) => x.trim()).filter(Boolean)) {
+    let items = Menu.getApplicationMenu()?.items ?? [];
+    let item;
+    for (const label of path.split(">")) {
+      item = items.find((i) => i.label === label);
+      items = item?.submenu?.items ?? [];
+    }
+    if (item) item.click(); else console.log(`menu item not found: ${path}`);
+    await new Promise((r) => setTimeout(r, Number(process.env.CATATUI_DESKTOP_AFTER ?? 1500)));
+  }
+  if (process.env.CATATUI_DESKTOP_MENU) {
+    const agent = Menu.getApplicationMenu()?.items.find((i) => i.label === "Agent");
+    console.log(`menu Agent: ${agent?.submenu.items.filter((i) => i.type !== "separator").map((i) => `${i.label}${i.checked ? "*" : ""}${i.enabled ? "" : "(off)"}`).join(", ")}`);
+  }
   // CATATUI_DESKTOP_JS runs JavaScript in the page first (for example to type in a field).
   if (process.env.CATATUI_DESKTOP_JS) await win.webContents.executeJavaScript(process.env.CATATUI_DESKTOP_JS);
+  // CATATUI_DESKTOP_FRAME_JS runs JavaScript in the first widget frame (catai-widget://).
+  if (process.env.CATATUI_DESKTOP_FRAME_JS) {
+    const f = win.webContents.mainFrame.framesInSubtree.find((x) => x.url.startsWith("catai-widget:"));
+    if (f) await f.executeJavaScript(process.env.CATATUI_DESKTOP_FRAME_JS);
+    await new Promise((r) => setTimeout(r, Number(process.env.CATATUI_DESKTOP_AFTER ?? 1000)));
+  }
   // CATATUI_DESKTOP_CLICK="a ;; b" clicks each element in turn before the screenshot (for example the model chip).
   for (const sel of (process.env.CATATUI_DESKTOP_CLICK ?? "").split(";;").map((x) => x.trim()).filter(Boolean)) {
     await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(sel)})?.click()`);

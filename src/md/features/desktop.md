@@ -44,13 +44,31 @@ A desktop app (like Claude Desktop) for students who do not use the command line
 - A file with a zero byte in its first 8 KB is binary (Excel and Word files are zip files). The panel shows "Open the file" for it, with no diff. Files over 300 KB also have no diff.
 - "Open the file" opens only files in the project, with the normal app for the file type.
 - Limits: the panel does not show changes from bash commands. For an old chat that the student opens again, the list starts empty.
-- Chat and Project. The app starts in Chat. A chat is a project in a hidden folder, `Documents/catai/Chats/<date time>`, with the same tools (also code), but with no file tree and no path row. The header has a Chat and Project switch. In a project it says "Project: <folder>", and the path row has "Switch..." (the project screen) and "Close" (back to a new chat). "+ New chat" makes a new chat folder in Chat, and a new chat in the same folder in a project.
+- Chat and Project. The app starts in Chat. A chat is a project in a hidden folder, `Documents/catai/Chats/<date time>`, with the same tools (also code), but with no file tree and no path row. The header has a Chat and Project switch. In a project it says "Project: <folder>", and the path row shows "Project Directory:" and the path (a click opens the project screen). Chats and Projects are split buttons. A click on the main part moves to the last chat or the last project (the folder picker if there is no project). The arrow opens a menu: Chats has "New chat" and the five last chats. Projects has "New project...", "New chat in this project" (in a project only), the five last projects, and "All projects...". History on the right shows all chats and projects.
 - At launch the app reuses the newest chat folder if it is empty and has no chat, so launches do not leave empty folders.
 - If the app was last in a project, the empty chat shows "Resume project <name>". `state.json` has `lastProject` and `lastKind`.
-- Recent projects do not list chat folders. History marks chats as "Chat".
+- The Project tab is a menu: "New project...", the five last projects, and "All projects...". "New project..." opens "Select A Folder For Your Project", a folder picker in the app. It has places on the left (catai projects, Documents, Desktop, Downloads, Home), the folders on the right, and "New Folder". It starts in Documents/catai. A place itself cannot be the project: select or make a folder in it.
+- History lists chats and projects by last use, under day headings (Today, Yesterday, then dates). Each row has an icon (a chat bubble or a folder), a title, and "Chat" or "Project <name>" with the time. No paths.
+- Titles: Qwen (the default model) makes a 3 to 6 word title for each chat, from its text. The titles are in `titles.json` in the app data folder. The app makes a title after the agent is done in a chat with no title, and in the background for the 30 newest chats in History (3 at a time). Qwen thinks first, so the request has room for 800 tokens. A title takes about 1 second. Before the title is there, History shows the first line of the chat.
 - "Permissions" is the app name for the catatui modes (ask, plan, yolo). The CLI command is still `/mode`. The model and the permissions are one button, "<model> | <permission>", with one menu (Model, Permissions, Options).
 - `CATATUI_DESKTOP_USER_DATA` moves the app data (state.json) to a different folder, for tests. Without it, tests change the real app data, also with a different HOME.
-- Layout: the header has the app name, "+ New chat", History, and the account. The file tree is full height on the left. The chat and the message box are one column. The message box is flush with the column edges and has a sunken text field.
+- Layout: the header has the app name, the Chats and Projects split buttons, History, and the account. The file tree is full height on the left. The chat and the message box are one column. The message box is flush with the column edges and has a sunken text field.
+- Keyboard:
+  - The areas are the file tree, the diff, the chat, and the message box. F6 and Shift+F6 move between them.
+  - File tree: Up and Down move, Right opens a folder, Left closes it or goes to the parent, Enter adds the file to the chat.
+  - Ctrl+D (or Cmd+D) shows or hides the diff of the selected file. In a text field, Ctrl+D keeps its normal meaning.
+  - Menus: the first item or the checked item gets the focus. Up and Down move, Enter picks, Escape closes the menu and goes back to its button.
+  - Escape goes back: from the diff to the tree, and from the tree or the chat to the message box. In the message box, Escape stops the agent.
+- The diff panel is between the file tree and the chat.
+- The window opens at its last place and size. If the screens changed and the title bar is not on a screen, the window opens centered on the main screen.
+- Application menu (main.js buildMenu):
+  - catai (macOS): About catai, Sign Out, Hide, Quit.
+  - File: New Chat (Cmd+N), New Project... (Cmd+Shift+N), New Chat in This Project (Cmd+Alt+N), Open Project... (Cmd+O), Open Recent Project, Show Project in Finder, Close Project (Cmd+Shift+W).
+  - Edit: the standard items.
+  - View: Show Files (Cmd+B), Next Area (F6), Previous Area (Shift+F6), zoom, full screen, developer tools.
+  - Agent: Stop (Cmd+.), Undo Last Request (Cmd+Alt+Z), the permissions (Ask, Plan, Yolo), and the options. The checks show the catatui state.
+  - Window, and Help: What catai Can Do (/help) and the catai website.
+  - The menu items send an action to the renderer, which does the same thing as the button. The test hook CATATUI_DESKTOP_MENU="Agent>Plan ;; File>New Project..." clicks menu items.
 - Undo is on only if there is an undo step. In RPC mode, `undo.ts` sends the number of steps in the status `catatui-undo`.
 - At launch, the app opens the folder on the command line, or else the last project (`state.json` in the Electron user data folder). If that folder is gone, it shows the project screen.
 - The tree has Windows Explorer style icons (`icons.jsx`): a folder, or a page with a colored label for the file type.
