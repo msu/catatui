@@ -60,8 +60,12 @@ catatui is a terminal coding agent for MSU students. I (`@earendil-works/pi-codi
 - [features/widgets.md](features/widgets.md): the `show_widget` tool and the inline widgets
 - [features/advising.md](features/advising.md): the academic advising demo (mock transcript, requirements, and classes)
 - [features/classes.md](features/classes.md): the classes demo (mock assignments, grades, syllabus, and course materials)
+- [features/git.md](features/git.md): the git tools (dugite), the GitHub token, and the git safety settings
+- [features/run.md](features/run.md): the `run` tool and the file tools (`move`, `copy`, `delete`, `mkdir`)
+- [features/windows.md](features/windows.md): Windows with no Git for Windows (PowerShell in place of bash)
 - [features/http-tool.md](features/http-tool.md): the `http` tool
 - [features/screen.md](features/screen.md): header, footer, themes, and name
 - [features/website.md](features/website.md): the GitHub Pages site
 - [infrastructure/pi-harness.md](infrastructure/pi-harness.md): why pi, the launcher, and changes to pi internals
 - [infrastructure/distribution.md](infrastructure/distribution.md): install scripts and updates
+- [infrastructure/catai-install.md](infrastructure/catai-install.md): the hidden Windows installer for internal tests of catai

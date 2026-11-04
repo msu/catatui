@@ -28,6 +28,10 @@ import { registerSandbox } from "./sandbox.ts";
 import { registerSte } from "./ste.ts";
 import { registerUndo } from "./undo.ts";
 import { registerWebTools } from "./web.ts";
+import { registerRun } from "./run.ts";
+import { registerFileTools } from "./files.ts";
+import { registerGitTools } from "./gittools.ts";
+import { registerWindows } from "./windows.ts";
 
 // The catatui command sets this. As a plain pi package, the extension does not change the theme or model.
 const WRAPPED = process.env.CATATUI === "1";
@@ -56,10 +60,15 @@ export default async function (pi: ExtensionAPI) {
   registerExcelTools(pi);
   registerDocumentTools(pi);
   registerWebTools(pi);
+  // Tools that work with no shell and no installed git, the same on all systems.
+  registerRun(pi);
+  registerFileTools(pi);
+  registerGitTools(pi);
   if (WRAPPED) {
     registerSandbox(pi);
     registerPermissions(pi);
     registerSte(pi);
+    registerWindows(pi);
   }
   registerUndo(pi);
   registerContext(pi);

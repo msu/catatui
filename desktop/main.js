@@ -6,7 +6,7 @@
 
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell } from "electron";
 import { randomUUID } from "node:crypto";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -15,8 +15,11 @@ import { REMOVED, redactSession } from "./redact.js";
 import { detectWebApp, isLocalUrl } from "./webapp.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(HERE, "..");
-// The catatui CLI. In development it is the repository. The packaged app gets it in milestone 6.
+// The catatui package: bin/catatui.js, src/catatui, and node_modules (pi, jiti, dugite).
+// In development it is the repository. The catai installer (docs/catai/install.ps1) writes root.json with the
+// installed catatui package, so the app and the catatui command use the same files.
+const ROOT = (() => { try { return JSON.parse(readFileSync(join(HERE, "root.json"), "utf8")).root; } catch { return join(HERE, ".."); } })();
+// The catatui CLI.
 const CATATUI_BIN = join(ROOT, "bin", "catatui.js");
 
 // The same folder as bin/catatui.js. Set it before store.ts reads it.
@@ -27,7 +30,11 @@ const { createJiti } = await import(pathToFileURL(join(ROOT, "node_modules", "ji
 const jiti = createJiti(import.meta.url);
 const auth = await jiti.import(join(ROOT, "src", "catatui", "auth.ts"));
 const store = await jiti.import(join(ROOT, "src", "catatui", "store.ts"));
-const { CHANGE_TOOLS, CATCHAT_API, DEFAULT_MODEL } = await jiti.import(join(ROOT, "src", "catatui", "config.ts"));
+const { CHANGE_TOOLS, CATCHAT_API, DEFAULT_MODEL, toolPaths } = await jiti.import(join(ROOT, "src", "catatui", "config.ts"));
+// git from the dugite package (git.ts), with the safety settings. The student does not need to install git.
+const { gitSync } = await jiti.import(join(ROOT, "src", "catatui", "git.ts"));
+// The catai GitHub sign-in (a pasted token) for the git tools.
+const github = await jiti.import(join(ROOT, "src", "catatui", "github.ts"));
 // The mock class data (classes.ts), for the Classes panels.
 const classesData = await jiti.import(join(ROOT, "src", "catatui", "classes.ts"));
 
@@ -103,10 +110,12 @@ const readOrNull = (p) => { try { return readFileSync(p); } catch { return null;
 // Called for each RPC event. Keep the file before the first change by a file tool (CHANGE_TOOLS in config.ts).
 function trackFiles(c, rec) {
   if (rec.type !== "tool_execution_start" || !CHANGE_TOOLS.includes(rec.toolName)) return;
-  const path = rec.args?.path;
-  if (typeof path !== "string" || !c.project) return;
-  const full = resolve(c.project, path.replace(/^@/, ""));
-  if (!c.changed.has(full)) c.changed.set(full, readOrNull(full));
+  if (!c.project) return;
+  for (const path of toolPaths(rec.toolName, rec.args ?? {})) {
+    const full = resolve(c.project, path.replace(/^@/, ""));
+    // Only files. A folder (mkdir, or move of a folder) has no diff.
+    if (!c.changed.has(full) && !(existsSync(full) && statSync(full).isDirectory())) c.changed.set(full, readOrNull(full));
+  }
 }
 
 // A text file has no zero bytes in its first 8 KB. Excel and Word files are zip files, so they are binary.
@@ -118,10 +127,10 @@ const MAX_TREE_FILES = 5000;
 // Folders that the tree does not show when the project is not a git repository.
 const SKIP = new Set([".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".next", ".cache", "target", ".idea", ".DS_Store"]);
 
-// Run git in the project. Returns undefined if git is not installed or the folder is not a repository.
+// Run git in the project (git.ts). Returns undefined if the folder is not a repository, git fails, or the repository settings can start programs.
 function git(c, args) {
   try {
-    return execFileSync("git", args, { cwd: c.project, encoding: "utf8", maxBuffer: 20_000_000, timeout: 10_000, stdio: ["ignore", "pipe", "ignore"] });
+    return gitSync(c.project, args);
   } catch {
     return undefined;
   }
@@ -331,11 +340,7 @@ ipcMain.handle("file-preview", (e, path) => {
 });
 
 function execGitBuffer(c, args) {
-  try {
-    return execFileSync("git", args, { cwd: c.project, maxBuffer: 20_000_000, timeout: 10_000, stdio: ["ignore", "pipe", "ignore"] });
-  } catch {
-    return undefined;
-  }
+  return gitSync(c.project, args, { buffer: true });
 }
 
 ipcMain.handle("changed-files", (e) => {
@@ -635,6 +640,16 @@ ipcMain.handle("sign-out", async (e) => {
 });
 
 ipcMain.on("open-external", (_e, url) => { if (/^https?:/.test(url)) shell.openExternal(url); });
+
+// ---- GitHub sign-in (github.ts): a token for git push, pull, and clone. The renderer never gets the token. ----
+const gitHubState = () => { const s = github.readGitHub(); return s ? { login: s.login, expiryDays: github.gitHubExpiryDays(s) } : null; };
+ipcMain.handle("github-state", () => gitHubState());
+ipcMain.on("github-token-page", () => shell.openExternal(github.TOKEN_URL));
+ipcMain.handle("github-sign-in", async (_e, token) => {
+  const r = await github.signInGitHub(String(token ?? ""));
+  return "error" in r ? { error: r.error } : gitHubState();
+});
+ipcMain.handle("github-sign-out", () => { github.clearGitHub(); return null; });
 // Open a changed file in its normal app (for example Excel for .xlsx). Only files in the project.
 ipcMain.on("open-path", (e, path) => {
   const project = ctxOf(e)?.project;

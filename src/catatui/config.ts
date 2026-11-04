@@ -7,9 +7,22 @@ export const CATCHAT_ACCESS = "https://catchat-access.msu.montana.edu";
 export const CLIENT_NAME = "catatui";
 
 // Tools that change a file. sandbox.ts, permissions.ts, and undo.ts treat them all like "write".
-export const CHANGE_TOOLS = ["edit", "write", "excel_write", "docx_write"];
+// move, copy, delete, and mkdir are in files.ts. toolPaths gives the paths that each one changes.
+export const CHANGE_TOOLS = ["edit", "write", "excel_write", "docx_write", "move", "copy", "delete", "mkdir"];
 // Tools that read a file. The sandbox checks their path.
 export const READ_TOOLS = ["read", "grep", "find", "ls", "excel_read", "pdf_read", "docx_read"];
+
+// The paths in a file tool call (READ_TOOLS and CHANGE_TOOLS). move and copy have "from" and "to".
+// No path: the tool uses the project folder (for example "ls").
+export function toolPaths(toolName: string, input: Record<string, unknown>): string[] {
+  if (toolName === "move" || toolName === "copy") return [String(input.from ?? ""), String(input.to ?? "")];
+  return input.path === undefined ? [] : [String(input.path)];
+}
+
+// The git tools (gittools.ts). permissions.ts asks before the change and remote tools.
+export const GIT_READ_TOOLS = ["git_status", "git_diff", "git_log"];
+export const GIT_CHANGE_TOOLS = ["git_init", "git_commit", "git_restore"];
+export const GIT_REMOTE_TOOLS = ["git_clone", "git_pull", "git_push"];
 
 // Used when CatChat does not report model limits.
 export const DEFAULT_CONTEXT_WINDOW = 32768;

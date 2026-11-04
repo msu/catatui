@@ -1941,6 +1941,10 @@ function AccountMenu({ user, expiryDays, onSignOut }) {
   const [open, setOpen] = useState(false);
   const id = netId(user);
   const keys = useMenuKeys(open, setOpen);
+  // GitHub (github.ts): null when not signed in. undefined while it loads.
+  const [gh, setGh] = useState(undefined);
+  const [ghWindow, setGhWindow] = useState(false);
+  useEffect(() => { if (open) api.gitHubState().then(setGh); }, [open]);
   return (
     <span className="menu-wrap" {...keys}>
       <button className={`btn ${open ? "pressed" : ""}`} onClick={() => setOpen(!open)} title={id ? `Signed in to CatChat as ${id}` : "Account"}>
@@ -1953,9 +1957,60 @@ function AccountMenu({ user, expiryDays, onSignOut }) {
           <div className="account-id">{id ?? "MSU account (pasted key)"}</div>
           {expiryDays !== undefined && <div className="menu-note pad-x">The key expires in {expiryDays} days.</div>}
           <button onClick={() => { setOpen(false); onSignOut(); }}>Sign out</button>
+          <div className="menu-sep" />
+          <div className="menu-head">GitHub</div>
+          {gh ? <>
+            <div className="account-id">{gh.login}</div>
+            {gh.expiryDays !== undefined && <div className="menu-note pad-x">{gh.expiryDays <= 0 ? "The token expired." : `The token expires in ${gh.expiryDays} days.`}</div>}
+            {gh.expiryDays !== undefined && gh.expiryDays <= 14 && <button onClick={() => { setOpen(false); setGhWindow(true); }}>New token...</button>}
+            <button onClick={async () => { setOpen(false); setGh(await api.gitHubSignOut()); }}>Sign out of GitHub</button>
+          </> : gh === null && <>
+            <div className="menu-note pad-x">Sign in to push to and pull from GitHub.</div>
+            <button onClick={() => { setOpen(false); setGhWindow(true); }}>Sign in to GitHub...</button>
+          </>}
         </div>
       )}
+      {ghWindow && <GitHubSignIn onDone={(state) => { setGhWindow(false); if (state !== undefined) setGh(state); }} />}
     </span>
+  );
+}
+
+// The GitHub sign-in: the student makes a token on GitHub (the form is filled in) and pastes it here.
+function GitHubSignIn({ onDone }) {
+  const [token, setToken] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!token.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    const r = await api.gitHubSignIn(token);
+    setBusy(false);
+    if (r?.error) setError(r.error); else onDone(r);
+  };
+  return (
+    <div className="overlay" onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") { e.preventDefault(); onDone(undefined); } }}>
+      <div className="window github-window" role="dialog" aria-modal="true" aria-label="Sign in to GitHub">
+        <div className="window-title"><img src={logo} alt="" /><span>Sign In to GitHub</span></div>
+        <div className="window-body">
+          <p>catai uses a GitHub token to push, pull, and clone your repositories. It uses only this token, not your other GitHub sign-ins or SSH keys.</p>
+          <ol>
+            <li><button className="btn small" onClick={() => api.gitHubTokenPage()}>Open GitHub</button> The token form opens, filled in for catai.</li>
+            <li>Pick an expiry, then click <b>Generate token</b>.</li>
+            <li>Copy the token and paste it here.</li>
+          </ol>
+          <input className="input-field" type="password" autoFocus placeholder="ghp_..." value={token} spellCheck={false}
+            onChange={(e) => setToken(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
+          {error && <p className="error">{error}</p>}
+          <p className="muted small">To remove access later, sign out here, and delete the token on GitHub (Settings, Developer settings, Personal access tokens).</p>
+        </div>
+        <div className="window-buttons">
+          <span className="spacer" />
+          <button className="btn" onClick={() => onDone(undefined)}>Cancel</button>
+          <button className="btn primary default" onClick={submit} disabled={!token.trim() || busy}>{busy ? "Checking..." : "Sign In"}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

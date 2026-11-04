@@ -117,8 +117,20 @@ In addition to the pi tools (read, write, edit, bash, grep, find, ls), the agent
 | `docx_read`, `docx_write`   | Read and write Word `.docx` files. Python is not necessary.                    |
 | `show_page`                 | Show a quiz, form, or chart in your browser and send your answers to the agent |
 | `server`                    | Start and stop your dev server in the background, so the agent can test it     |
+| `run`                       | Run a program with arguments and no shell, for example `python main.py`        |
+| `move`, `copy`, `delete`, `mkdir` | Move, copy, and delete files and folders. `/undo` puts them back.        |
+| `git_status`, `git_diff`, `git_log` | Show the git status, the changes, and the commits                      |
+| `git_init`, `git_commit`, `git_restore` | Make a repository, commit, and put files back to the last commit   |
+| `git_clone`, `git_pull`, `git_push` | Get and send commits on GitHub (with `/github login`)                  |
 
-The write tools and `server` ask before they run, in the same way as `write` and `bash`.
+The write tools, `run`, `server`, and the git change tools ask before they run, in the same way as `write` and `bash`.
+`git_clone`, `git_pull`, and `git_push` always ask, also in `yolo` mode.
+
+catatui comes with its own git, so you do not need to install git. The git tools do not run git hooks, and they do not
+use your SSH keys or your other GitHub sign-ins. To push to GitHub, make a token for catatui with `/github login`.
+A GitHub address that starts with `git@github.com:` works too. Other SSH servers do not work in catatui.
+
+On Windows, the agent uses PowerShell, not bash, so you do not need Git for Windows.
 
 ## Commands
 
@@ -132,6 +144,9 @@ The write tools and `server` ask before they run, in the same way as `write` and
 | `/catchat`        | Show your sign-in status and get the model list again                                            |
 | `/catchat login`  | Sign in to CatChat and get a new key                                                             |
 | `/catchat logout` | Sign out of CatChat and stop catatui                                                             |
+| `/github`         | Show your GitHub sign-in for the git tools                                                       |
+| `/github login`   | Make a GitHub token for catatui and paste it                                                     |
+| `/github logout`  | Remove the GitHub token from catatui                                                             |
 | `/hotkeys`        | Show the keyboard keys                                                                           |
 
 To stop the agent while it works, press Escape.
@@ -188,10 +203,10 @@ Each `/undo` goes back one request.
 
 `/undo` has these limits:
 
-- It does not undo changes from commands, for example `npm install` or `rm`.
+- It does not undo changes from commands, for example `npm install` or `rm`, or from the git tools.
 - It works only until catatui stops.
 
-Use git to keep your work safe.
+Use git to keep your work safe. Ask the agent to commit your work.
 
 ## Problems
 

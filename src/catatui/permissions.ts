@@ -13,12 +13,14 @@
 // "/mode ask|plan|yolo" sets the mode. "/mode ta|sandbox|ste [on|off]" turns an option on or off. Tab completes these words.
 // In RPC mode (the desktop app), the status "catatui" has the mode and options as JSON, for the app controls.
 // In ask and plan mode, risky commands and changes outside the project folder always ask.
+// The git remote tools (clone, pull, push) always ask, also in yolo mode: they send to or get from GitHub.
 // The mode, ta, and the "do not ask again" choices last for one session only.
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { isAbsolute, relative, resolve } from "node:path";
-import { CHANGE_TOOLS } from "./config.ts";
+import { CHANGE_TOOLS, GIT_CHANGE_TOOLS, GIT_REMOTE_TOOLS, toolPaths } from "./config.ts";
+import { programName } from "./run.ts";
 import { sandboxOn, setSandbox } from "./sandbox.ts";
 import { setSte, steOn } from "./ste.ts";
 
@@ -45,7 +47,7 @@ const PLAN_FILE = "PLAN.md";
 
 // Commands that can run any other command. The student cannot allow them for the whole session,
 // because "do not ask again for npx" allows all of npx.
-const RUNNERS = ["npx", "sh", "bash", "zsh", "eval", "xargs", "env", "python", "python3", "node", "exec", "sudo"];
+const RUNNERS = ["npx", "sh", "bash", "zsh", "eval", "xargs", "env", "python", "python3", "py", "node", "exec", "sudo"];
 
 // These always ask, and the student cannot allow them for the whole session.
 const RISKY = [
@@ -76,11 +78,13 @@ const TA_BLOCK = "Teaching assistant mode is on. Do not change files. Give the s
 const PLAN_BLOCK = `Plan mode is on. Do not change project files. Write the plan to ${PLAN_FILE}.`;
 
 const ALLOW_EDITS = "Yes, and do not ask again for file changes in this project this session";
+const ALLOW_COMMITS = "Yes, and do not ask again for commits in this project this session";
 
 export function registerPermissions(pi: ExtensionAPI) {
   let mode: Mode = "ask";
   let ta = false;
   let editsAllowed = false;
+  let commitsAllowed = false;
   // First words of bash commands that the student allowed for this session, for example "npm".
   const allowedCommands = new Set<string>();
   // Hosts that the student allowed for GET requests from the http tool this session.
@@ -191,20 +195,58 @@ export function registerPermissions(pi: ExtensionAPI) {
 
   pi.on("tool_call", async (event, ctx) => {
     // ta blocks changes in all modes, also in yolo.
-    if (ta && CHANGE_TOOLS.includes(event.toolName)) return { block: true, reason: TA_BLOCK };
+    const changesFiles = CHANGE_TOOLS.includes(event.toolName) || GIT_CHANGE_TOOLS.includes(event.toolName) || ["git_clone", "git_pull"].includes(event.toolName);
+    if (ta && changesFiles) return { block: true, reason: TA_BLOCK };
     if (ta && event.toolName === "http" && !isRead(event.input.method)) return { block: true, reason: `${TA_BLOCK} Send only GET requests.` };
+    if (mode === "plan" && (GIT_CHANGE_TOOLS.includes(event.toolName) || ["git_clone", "git_pull"].includes(event.toolName))) return { block: true, reason: PLAN_BLOCK };
+
+    // Remote git tools: always ask, also in yolo mode.
+    if (GIT_REMOTE_TOOLS.includes(event.toolName)) {
+      const what = event.toolName === "git_push" ? `Push the commits to GitHub${event.input.url ? ` (${event.input.url})` : ""}?`
+        : event.toolName === "git_clone" ? `Clone ${event.input.url} into the project?` : "Pull the new commits from GitHub and merge them?";
+      const choice = await ask(ctx, what, ["Yes", "No"]);
+      return choice === "Yes" ? undefined : { block: true, reason: "The student did not allow this git command." };
+    }
     if (mode === "yolo") return;
 
+    if (GIT_CHANGE_TOOLS.includes(event.toolName)) {
+      if (event.toolName === "git_restore") {
+        const paths = Array.isArray(event.input.paths) ? event.input.paths.join(", ") : "";
+        const choice = await ask(ctx, `Put back ${paths} to the last commit? The changes since the last commit will be lost.`, ["Yes", "No"]);
+        return choice === "Yes" ? undefined : { block: true, reason: "The student did not allow this git command." };
+      }
+      if (commitsAllowed) return;
+      const what = event.toolName === "git_init" ? "Make the project folder a git repository?" : `Commit the changes?\n\n  ${event.input.message ?? ""}`;
+      const choice = await ask(ctx, what, event.toolName === "git_commit" ? ["Yes", ALLOW_COMMITS, "No"] : ["Yes", "No"]);
+      if (choice === ALLOW_COMMITS) commitsAllowed = true;
+      return choice?.startsWith("Yes") ? undefined : { block: true, reason: "The student did not allow this git command." };
+    }
+
     if (CHANGE_TOOLS.includes(event.toolName)) {
-      const path = String(event.input.path ?? "");
-      const rel = relative(ctx.cwd, resolve(ctx.cwd, path));
-      if (mode === "plan") return rel === PLAN_FILE ? undefined : { block: true, reason: PLAN_BLOCK };
-      const inProject = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
-      if (editsAllowed && inProject) return;
-      const where = inProject ? path : `${path} (outside the project folder)`;
-      const choice = await ask(ctx, `Allow ${event.toolName} ${where}?`, inProject ? ["Yes", ALLOW_EDITS, "No"] : ["Yes", "No"]);
+      const paths = toolPaths(event.toolName, event.input);
+      const rels = paths.map((p) => relative(ctx.cwd, resolve(ctx.cwd, p)));
+      if (mode === "plan") return rels.length && rels.every((r) => r === PLAN_FILE) ? undefined : { block: true, reason: PLAN_BLOCK };
+      const inProject = rels.every((rel) => rel !== "" && !rel.startsWith("..") && !isAbsolute(rel));
+      // delete always asks: a file in a folder can be outside the undo limits.
+      if (editsAllowed && inProject && event.toolName !== "delete") return;
+      const where = `${paths.join(" -> ")}${inProject ? "" : " (outside the project folder)"}`;
+      const choice = await ask(ctx, `Allow ${event.toolName} ${where}?`, inProject && event.toolName !== "delete" ? ["Yes", ALLOW_EDITS, "No"] : ["Yes", "No"]);
       if (choice === ALLOW_EDITS) editsAllowed = true;
       return choice?.startsWith("Yes") ? undefined : { block: true, reason: "The student did not allow this change." };
+    }
+
+    // run (run.ts): like bash, by program name. A runner program (python, node, npx, ...) can run anything,
+    // so the student cannot allow it for the whole session.
+    if (event.toolName === "run") {
+      const name = programName(String(event.input.program ?? ""));
+      const args = Array.isArray(event.input.args) ? event.input.args.map(String) : [];
+      const command = [String(event.input.program ?? ""), ...args].join(" ");
+      const risky = RISKY.some((re) => re.test(command)) || RUNNERS.includes(name);
+      if (!risky && allowedCommands.has(name)) return;
+      const always = `Yes, and do not ask again for "${name}" this session`;
+      const choice = await ask(ctx, `Run this program?\n\n  ${command}`, risky ? ["Yes", "No"] : ["Yes", always, "No"]);
+      if (choice === always) allowedCommands.add(name);
+      return choice?.startsWith("Yes") ? undefined : { block: true, reason: "The student did not allow this program." };
     }
 
     if (event.toolName === "http") {

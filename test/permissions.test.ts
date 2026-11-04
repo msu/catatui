@@ -145,3 +145,51 @@ test("/mode in RPC: the status has the mode and options as JSON, and no chat not
   assert.deepEqual(state.modes, ["ask", "plan", "yolo"]);
   assert.equal(c.notices.length, 0);
 });
+
+test("git remote tools always ask, also in yolo; with no answer they are blocked", async () => {
+  const s = setup(["Yes", "No"]);
+  await s.mode("yolo");
+  assert.equal(await s.call("git_push", {}), undefined);
+  assert.match(s.asked[0].title, /Push the commits to GitHub/);
+  assert.equal((await s.call("git_clone", { url: "https://github.com/a/b" })).block, true);
+  const none = setup([], { hasUI: false });
+  assert.equal((await none.call("git_pull", {})).block, true);
+});
+
+test("git change tools: commit can be allowed for the session, restore always asks", async () => {
+  const s = setup(["Yes, and do not ask again for commits in this project this session", "No"]);
+  assert.equal(await s.call("git_commit", { message: "m" }), undefined);
+  assert.equal(await s.call("git_commit", { message: "n" }), undefined);
+  assert.equal(s.asked.length, 1);
+  assert.equal((await s.call("git_restore", { paths: ["a.txt"] })).block, true);
+  assert.deepEqual(s.asked[1].options, ["Yes", "No"]);
+  assert.equal(await s.call("git_status", {}), undefined);
+});
+
+test("ta and plan block git changes, clone, and pull; push only asks", async () => {
+  for (const m of ["ta on", "plan"]) {
+    const s = setup(["Yes"]);
+    await s.mode(m);
+    for (const t of ["git_commit", "git_init", "git_restore", "git_clone", "git_pull"]) assert.equal((await s.call(t, { paths: [] })).block, true, `${m} ${t}`);
+    assert.equal(await s.call("git_push", {}), undefined, m);
+  }
+});
+
+test("run: asks by program name; runners never offer 'do not ask again'", async () => {
+  const s = setup([`Yes, and do not ask again for "npm" this session`, "No"]);
+  assert.equal(await s.call("run", { program: "npm", args: ["test"] }), undefined);
+  assert.equal(await s.call("run", { program: "C:\\nodejs\\npm.cmd", args: ["run", "build"] }), undefined);
+  assert.equal(s.asked.length, 1);
+  await s.call("run", { program: "python", args: ["x.py"] });
+  assert.deepEqual(s.asked[1].options, ["Yes", "No"]);
+});
+
+test("file tools: move asks with both paths; delete always asks; outside paths name the problem", async () => {
+  const s = setup(["Yes, and do not ask again for file changes in this project this session", "No", "No"]);
+  assert.equal(await s.call("move", { from: "a.txt", to: "b.txt" }), undefined);
+  assert.match(s.asked[0].title, /Allow move a.txt -> b.txt/);
+  assert.equal(await s.call("mkdir", { path: "x" }), undefined);
+  assert.equal((await s.call("delete", { path: "x" })).block, true);
+  assert.equal((await s.call("copy", { from: "a.txt", to: "../b.txt" })).block, true);
+  assert.match(s.asked[2].title, /outside the project folder/);
+});

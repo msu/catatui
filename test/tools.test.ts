@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { registerAdvising } from "../src/catatui/advising.ts";
 import { CLASSES, grade, registerClasses, summaries, TERM, upcoming } from "../src/catatui/classes.ts";
 import catatui from "../src/catatui/index.ts";
+import { registerWindows } from "../src/catatui/windows.ts";
 import { fakeCtx, fakePi } from "./fake-pi.ts";
 
 const APP_TOOLS = ["new_project", "show_widget", "show_preview", "open_view"];
@@ -29,6 +30,7 @@ test("the CLI does not load the app-only tools", async () => {
   const tools = await toolsWith({});
   for (const t of APP_TOOLS) assert.equal(tools.includes(t), false, t);
   assert.ok(tools.includes("http"));
+  for (const t of ["run", "move", "copy", "delete", "mkdir", "git_status", "git_commit", "git_push"]) assert.ok(tools.includes(t), t);
   assert.equal(tools.some((t) => t.startsWith("advising_") || t.startsWith("class")), false);
 });
 
@@ -115,4 +117,27 @@ test("advising_submit_plan: No saves nothing; Send saves a copy with warnings", 
   assert.ok(existsSync(out.saved_copy));
   assert.ok(out.warnings.includes("CSCI 476 is full in Spring 2027."));
   assert.ok(out.warnings.includes("CSCI 127 is already complete."));
+});
+
+test("Windows: bash becomes powershell, and the prompt says so; CATATUI_SHELL=bash keeps bash", async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { value: "win32" });
+  try {
+    for (const [shell, want] of [[undefined, ["read", "edit", "powershell"]], ["bash", ["read", "bash", "edit"]]] as const) {
+      if (shell) process.env.CATATUI_SHELL = shell; else delete process.env.CATATUI_SHELL;
+      let active = ["read", "bash", "edit"];
+      const { pi, fire } = fakePi();
+      pi.getActiveTools = () => active;
+      pi.setActiveTools = (t: string[]) => { active = t; };
+      registerWindows(pi);
+      await fire("session_start", {}, {});
+      assert.deepEqual(active, want);
+      const event = { systemPromptOptions: { sections: {} as Record<string, string> } };
+      await fire("before_agent_start", event, {});
+      assert.equal(!!event.systemPromptOptions.sections.windows, !shell);
+    }
+  } finally {
+    Object.defineProperty(process, "platform", platform);
+    delete process.env.CATATUI_SHELL;
+  }
 });

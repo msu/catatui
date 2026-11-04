@@ -8,6 +8,7 @@ catatui is on GitHub (`msu/catatui`). It is not on the npm registry. The install
 - The scripts check the Node.js download against the SHA-256 checksum from nodejs.org.
 - The scripts install catatui from the GitHub tarball URL, not with `github:msu/catatui`, because npm needs git for `github:` installs.
 - The scripts add `~/.catatui/app/bin` to the PATH.
+- npm runs the `postinstall` script of the `dugite` package. It downloads git for the current system (about 47 MB on Windows) from the `desktop/dugite-native` GitHub releases, and checks the checksum. If a network blocks GitHub downloads, this step fails. See [../features/git.md](../features/git.md).
 - The `catatui` command sets `CATATUI_APP`, so `catatui --update` knows that a script installed catatui.
 
 ## Script Locations

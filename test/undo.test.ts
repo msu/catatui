@@ -31,7 +31,7 @@ test("undo puts back a changed file and deletes a new file", async () => {
   assert.equal(readFileSync(join(s.dir, "a.txt"), "utf8"), "old");
   assert.equal(existsSync(join(s.dir, "b.txt")), false);
   assert.equal(s.status["catatui-undo"], "0");
-  assert.match(s.asked[0].title, /delete \(new file\): b.txt/);
+  assert.match(s.asked[0].title, /delete \(new\): b.txt/);
 });
 
 test("each request is one step, newest first", async () => {

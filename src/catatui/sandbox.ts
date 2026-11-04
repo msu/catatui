@@ -3,17 +3,21 @@
 // - READ_TOOLS and CHANGE_TOOLS (config.ts): block a path outside the project folder.
 // - bash, powershell: block a command with a path outside the project folder (/x, ~, $HOME, .., C:\).
 //   This check reads the command text only. It is not an OS sandbox, so a command can get around it.
+// - run (run.ts): the same check on the program and each argument. There is no shell, so it is more exact.
+// - git tools (gittools.ts): block a path outside the project folder. gittools.ts also refuses a repository
+//   that starts outside the project folder.
 // The sandbox applies in all modes, also in yolo.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { CHANGE_TOOLS, READ_TOOLS } from "./config.ts";
+import { CHANGE_TOOLS, GIT_CHANGE_TOOLS, GIT_READ_TOOLS, GIT_REMOTE_TOOLS, READ_TOOLS, toolPaths } from "./config.ts";
 
 const FILE_TOOLS = [...READ_TOOLS, ...CHANGE_TOOLS];
 // "server" (web.ts) runs a shell command too. Its stop, logs, and list actions have no command.
 const SHELL_TOOLS = ["bash", "powershell", "server"];
+const GIT_TOOLS = [...GIT_READ_TOOLS, ...GIT_CHANGE_TOOLS, ...GIT_REMOTE_TOOLS];
 
 // Paths outside the project folder that commands can use.
 const ALLOWED = ["/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr"];
@@ -35,7 +39,7 @@ function real(path: string): string {
   return up === path ? path : join(real(up), basename(path));
 }
 
-function inside(root: string, path: string): boolean {
+export function inside(root: string, path: string): boolean {
   const full = resolve(root, expand(path));
   if (ALLOWED.includes(full)) return true;
   const rel = relative(real(root), real(full));
@@ -76,8 +80,23 @@ export function registerSandbox(pi: ExtensionAPI) {
     });
 
     if (FILE_TOOLS.includes(event.toolName)) {
-      const path = String(event.input.path ?? ".");
-      if (!inside(ctx.cwd, path)) return reason(path);
+      for (const path of toolPaths(event.toolName, event.input)) if (!inside(ctx.cwd, path)) return reason(path);
+    }
+
+    if (GIT_TOOLS.includes(event.toolName)) {
+      const input = event.input as { path?: unknown; paths?: unknown; folder?: unknown };
+      const paths = [input.path, input.folder, ...(Array.isArray(input.paths) ? input.paths : [])].filter((p) => typeof p === "string") as string[];
+      for (const path of paths) if (!inside(ctx.cwd, path)) return reason(path);
+    }
+
+    if (event.toolName === "run") {
+      const args = Array.isArray(event.input.args) ? event.input.args.map(String) : [];
+      // Each word that can be a path, also after "=" (for example --out=../x). A URL resolves inside, so it passes.
+      for (const word of [String(event.input.program ?? ""), ...args]) {
+        for (const path of [word, word.slice(word.indexOf("=") + 1)]) {
+          if (/[\\/]|^~|^\.\.|^\$\{?HOME/.test(path) && !inside(ctx.cwd, path)) return reason(path);
+        }
+      }
     }
 
     if (SHELL_TOOLS.includes(event.toolName)) {

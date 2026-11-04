@@ -8,6 +8,9 @@ The agent can use only files in the folder where catatui started. The code is in
 - To turn it off, use `/mode` or `catatui --no-sandbox`.
 - File tools (`read`, `write`, `edit`, `grep`, `find`, `ls`): catatui blocks a path outside the folder.
 - Shell tools (`bash`, `powershell`): catatui blocks a command that contains a path outside the folder (`/x`, `~`, `$HOME`, `..`, `C:\`).
+- File change tools (`move`, `copy`, `delete`, `mkdir`): catatui checks each path (`toolPaths` in config.ts), for example both `from` and `to`.
+- `run`: catatui checks the program and each argument that looks like a path, also after `=`. There is no shell, so this check is exact for the arguments. A program can still open other files itself.
+- git tools: catatui checks `path`, `paths`, and `folder`. gittools.ts also refuses a repository that starts outside the folder.
 
 ## Decisions
 

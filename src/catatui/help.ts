@@ -45,7 +45,7 @@ Keys
 
 Tips
   Turn on ta in /mode to get hints and explanations, not answers.
-  Use git. /undo does not undo what commands did.
+  Ask the agent to commit your work with git. /undo does not undo what commands did.
   More: https://catatui.cs.montana.edu`;
 
 export function registerHelp(pi: ExtensionAPI) {

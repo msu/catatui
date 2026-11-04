@@ -910,3 +910,8 @@ body.resizing webview { pointer-events: none; }
 .queued-note { font-size: .78rem; color: var(--muted); display: flex; gap: .6rem; align-items: center; }
 .thinking-section { flex-shrink: 0; border-top: 1px solid var(--line); padding: .2rem 0 .4rem; }
 .thinking-section .thinking-levels { margin: .2rem auto .1rem; }
+
+/* GitHub sign-in window */
+.github-window { width: min(34rem, 94vw); }
+.github-window ol { padding-left: 1.3rem; line-height: 1.9; }
+.github-window .input-field { width: 100%; }

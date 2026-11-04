@@ -83,3 +83,24 @@ test("with the sandbox off, nothing is blocked", async () => {
     setSandbox(ctx as any, true);
   }
 });
+
+test("move and copy: both paths are checked", async () => {
+  assert.equal(await blocked("move", { from: "a.txt", to: "../a.txt" }), true);
+  assert.equal(await blocked("copy", { from: "/etc/passwd", to: "p.txt" }), true);
+  assert.equal(await blocked("move", { from: "a.txt", to: "b/a.txt" }), false);
+});
+
+test("git tools: paths and the clone folder are checked", async () => {
+  assert.equal(await blocked("git_restore", { paths: ["a.txt", "../x"] }), true);
+  assert.equal(await blocked("git_clone", { url: "https://github.com/a/b", folder: "~/b" }), true);
+  assert.equal(await blocked("git_diff", { path: "src" }), false);
+});
+
+test("run: the program and each argument are checked", async () => {
+  assert.equal(await blocked("run", { program: "python3", args: ["main.py", "--out=build/x"] }), false);
+  assert.equal(await blocked("run", { program: "cat", args: ["/etc/passwd"] }), true);
+  assert.equal(await blocked("run", { program: "python3", args: ["src/../../x.py"] }), true);
+  assert.equal(await blocked("run", { program: "node", args: ["--out=../x"] }), true);
+  assert.equal(await blocked("run", { program: "/usr/bin/python3", args: [] }), true);
+  assert.equal(await blocked("run", { program: "curl", args: ["https://example.com/a/b"] }), false);
+});

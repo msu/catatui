@@ -23,6 +23,10 @@ contextBridge.exposeInMainWorld("catatui", {
   signOut: () => ipcRenderer.invoke("sign-out"),
   onSignInUrl: on("sign-in-url"),
   openExternal: (url) => ipcRenderer.send("open-external", url),
+  gitHubState: () => ipcRenderer.invoke("github-state"),
+  gitHubTokenPage: () => ipcRenderer.send("github-token-page"),
+  gitHubSignIn: (token) => ipcRenderer.invoke("github-sign-in", token),
+  gitHubSignOut: () => ipcRenderer.invoke("github-sign-out"),
   // projects and sessions
   listProjects: () => ipcRenderer.invoke("list-projects"),
   listSessions: () => ipcRenderer.invoke("list-sessions"),

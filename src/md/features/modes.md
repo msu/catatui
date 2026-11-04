@@ -28,3 +28,11 @@ The code is in `src/catatui/permissions.ts`. The `/mode` command opens a panel. 
 - Commands that can run other commands (`npx`, `sh`, `python`, `sudo`, and more). If it were available, "do not ask again for npx" allows all programs.
 - Commands with `;`, `&`, `|`, a backtick, or `$(`. A chain can hide a second command after an allowed first word.
 - Risky commands: `rm`, `git push`, `git reset`, `chmod`, and `curl | sh`.
+
+The same rules apply to `run`, by program name (run.md).
+
+Other tools:
+
+- `git_restore` and `delete` always ask in ask mode, because they can lose work.
+- `git_clone`, `git_pull`, and `git_push` always ask, also in yolo mode, because they get from or send to GitHub (git.md).
+- ta and plan mode block the git change tools, `git_clone`, and `git_pull`.
