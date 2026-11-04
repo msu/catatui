@@ -8,7 +8,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CHANGE_TOOLS, READ_TOOLS } from "./config.ts";
 
 const FILE_TOOLS = [...READ_TOOLS, ...CHANGE_TOOLS];
@@ -28,8 +28,11 @@ function expand(path: string): string {
 }
 
 // The real path, so a symbolic link in the project cannot point outside it.
+// For a new file, use the real path of the nearest folder that exists, so a link to a folder outside is found too.
 function real(path: string): string {
-  return existsSync(path) ? realpathSync(path) : path;
+  if (existsSync(path)) return realpathSync(path);
+  const up = dirname(path);
+  return up === path ? path : join(real(up), basename(path));
 }
 
 function inside(root: string, path: string): boolean {

@@ -16,5 +16,5 @@ The agent can use only files in the folder where catatui started. The code is in
 ## Subtleties
 
 - The shell check reads only the command text, so a command can get around it. The README tells students this.
-- The check uses the real path, so a symbolic link in the project cannot point outside.
+- The check uses the real path, so a symbolic link in the project cannot point outside. For a new file, the check uses the real path of the nearest folder that exists, so a new file in a linked folder outside the project is blocked too.
 - catatui reads `--no-sandbox` at the first start only, so a new session (`/new`) keeps the choice from `/mode`.

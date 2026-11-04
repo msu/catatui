@@ -4,6 +4,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import logo from "./bobcat.png";
 import { FileIcon, FolderIcon } from "./icons.jsx";
 import { PlanCard, Widget } from "./widgets.jsx";
+import { isLocalUrl } from "../webapp.js";
 import { closeDialog, initialState, itemsFromMessages, notice, plain, reduce, resultText, toolSummary, WIDGET_PREFIX, widgetAnswer } from "./chat.js";
 
 const api = window.catatui;
@@ -377,7 +378,7 @@ export function App() {
   // The application menu (main.js buildMenu). Send the state, so the menu shows the permissions and options.
   const agentState = parseState(state.status.catatui);
   useEffect(() => {
-    api.menuState({ ...agentState, busy: state.busy, chat: !!info.chat, tree: showTree, canUndo: undoSteps > 0, thinking: thinking.level, thinkingLevels: thinking.levels });
+    api.menuState({ ...agentState, busy: state.busy, chat: !!info.chat, tree: showTree, webApp: !!tree.webApp, canUndo: undoSteps > 0, thinking: thinking.level, thinkingLevels: thinking.levels });
   }, [state.status.catatui, state.busy, info.chat, showTree, undoSteps, thinking]);
   // The menu actions do the same thing as the buttons. The ref has the newest functions.
   const menuActions = useRef();
@@ -392,7 +393,7 @@ export function App() {
       case "advising": return goAdvising();
       case "classes": return goClasses();
       case "history": return setHistory(true);
-      case "preview": return openSide({ type: "web" });
+      case "preview": return tree.webApp && openSide({ type: "web" });
       case "all-projects": return setPhase("projects");
       case "open": return openProject(arg).then((err) => err && local((s) => notice(s, "error", err)));
       case "close-project": return goChat();
@@ -454,7 +455,8 @@ export function App() {
         <span className="pathbar-label">Project Directory:</span>
         <FolderIcon open />
         <button className="project" title={`${info.project}\nClick to open a different project`} onClick={() => setPhase("projects")}><bdi>{info.project}</bdi></button>
-        <button className="btn small preview-btn" onClick={() => openSide({ type: "web" })} title="Show a web site or an HTML file next to the chat"><GlobeIcon /> Preview</button>
+        {tree.webApp && <button className="btn small preview-btn" onClick={() => openSide({ type: "web" })}
+          title={tree.webApp.server ? `Preview this ${tree.webApp.server.tool} app next to the chat` : "Preview the web pages of this project next to the chat"}><GlobeIcon /> Preview</button>}
         <ConversationMenu project={info.project} busy={state.busy} tick={state.items.length} onNew={newChat} onOpen={openSession} />
       </div>}
 
@@ -498,7 +500,8 @@ export function App() {
         {side.tabs.length > 0 && (
           <SidePanel side={side} width={sideWidth} setWidth={setSideWidth} onActivate={(id) => setSide((st) => ({ ...st, active: id }))}
             onClose={closeSide} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })} fileTick={fileTick} reloadTick={reloadTick}
-            files={tree.files} onAsk={askAboutFile} />
+            files={tree.files} webApp={tree.webApp} onAsk={askAboutFile}
+            onStartServer={(sv) => send(`Start the web app of this project with the server tool: ${sv.command}. When it runs, show http://localhost:${sv.port} with show_preview.`)} />
         )}
       </div>
 
@@ -975,7 +978,7 @@ function MaximizeIcon() {
   );
 }
 
-function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, fileTick, reloadTick, files, onAsk }) {
+function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, fileTick, reloadTick, files, webApp, onAsk, onStartServer }) {
   // Drag the left edge to change the width (240 px to 75% of the window).
   const drag = (e) => {
     e.preventDefault();
@@ -1013,7 +1016,7 @@ function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, file
         {active?.type === "file" && <FilePane key={active.path} path={active.path} tick={fileTick} onAsk={onAsk} onPreview={onOpenWeb} />}
         {/* The web preview stays mounted (hidden) when another tab is on, so the page keeps its state. */}
         {side.tabs.some((t) => t.type === "web") && (
-          <WebPane hidden={active?.type !== "web"} tab={side.tabs.find((t) => t.type === "web")} reloadTick={reloadTick} files={files} onOpen={onOpenWeb} />
+          <WebPane hidden={active?.type !== "web"} tab={side.tabs.find((t) => t.type === "web")} reloadTick={reloadTick} webApp={webApp} onOpen={onOpenWeb} onStartServer={onStartServer} />
         )}
       </div>
     </aside>
@@ -1054,7 +1057,7 @@ function previewUrl(input) {
 }
 
 // The web preview: an embedded browser for a local server or a project HTML file. It reloads after each agent turn.
-function WebPane({ hidden, tab, reloadTick, files, onOpen }) {
+function WebPane({ hidden, tab, reloadTick, webApp, onOpen, onStartServer }) {
   const view = useRef(null);
   const [address, setAddress] = useState(tab?.url ?? "");
   const [failed, setFailed] = useState(undefined);
@@ -1071,19 +1074,21 @@ function WebPane({ hidden, tab, reloadTick, files, onOpen }) {
     v.addEventListener("did-fail-load", fail);
     return () => { v.removeEventListener("did-navigate", nav); v.removeEventListener("did-navigate-in-page", nav); v.removeEventListener("did-fail-load", fail); };
   }, [url]);
+  // Only this project: a local server (localhost) or a file in the project. Other sites open in the browser.
   async function go(input) {
     let u = previewUrl(input);
+    if (/^https?:/i.test(u) && !isLocalUrl(u)) return setFailed("The preview shows only this project: a local server (localhost) or a project file. Open other sites in the browser.");
     if (!/^(https?|file):/i.test(u)) u = await api.fileUrl(u);
     if (u) onOpen(u); else setFailed(`There is no file ${input} in the project.`);
   }
-  const html = (files ?? []).filter((f) => /\.html?$/i.test(f) && !f.includes("node_modules/")).slice(0, 4);
+  const server = webApp?.server;
   return (
     <div className="web-pane" hidden={hidden}>
       <div className="pane-bar">
         <button className="icon-btn" onClick={() => view.current?.goBack?.()} aria-label="Back" title="Back">&larr;</button>
         <button className="icon-btn" onClick={() => view.current?.goForward?.()} aria-label="Forward" title="Forward">&rarr;</button>
         <button className="icon-btn" onClick={() => { setFailed(undefined); view.current?.reload?.(); }} aria-label="Reload" title="Reload">&#x21bb;</button>
-        <input className="input-field pane-address" value={address} placeholder="localhost:3000 or index.html" spellCheck={false}
+        <input className="input-field pane-address" value={address} placeholder={webApp?.server ? `localhost:${webApp.server.port}` : webApp?.pages?.[0] ?? "A project file"} spellCheck={false}
           onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") go(address); }} />
         {url && <button className="btn small" onClick={() => view.current?.openDevTools?.()} title="Developer tools for the page">Tools</button>}
         {url && /^https?:/.test(url) && <button className="btn small" onClick={() => api.openExternal(address || url)} title="Open in the browser">Browser</button>}
@@ -1101,12 +1106,19 @@ function WebPane({ hidden, tab, reloadTick, files, onOpen }) {
         </div>
       ) : (
         <div className="web-start">
-          <p>Show a web site that you work on, next to the chat. Type a local address or a project file above, or pick one:</p>
-          <div className="web-picks">
-            {html.map((f) => <button key={f} className="btn small" onClick={() => go(f)}><FileIcon name={f} /> {f}</button>)}
-            {["3000", "5173", "8000", "8080"].map((p) => <button key={p} className="btn small" onClick={() => go(p)}><GlobeIcon /> localhost:{p}</button>)}
-          </div>
-          <p className="muted small">The preview reloads each time the agent is done. The agent can open it with the show_preview tool.</p>
+          {server ? <>
+            <p>This project is a {server.tool} app. Start it to see it here, next to the chat.</p>
+            <div className="web-picks">
+              <button className="btn small primary" onClick={() => onStartServer?.(server)} title="The agent starts the app. It asks you first.">Start <code>{server.command}</code></button>
+              <button className="btn small" onClick={() => go(String(server.port))} title="If the app runs now"><GlobeIcon /> localhost:{server.port}</button>
+            </div>
+          </> : webApp?.pages?.length ? <>
+            <p>Show a web page of this project, next to the chat:</p>
+            <div className="web-picks">
+              {webApp.pages.map((f) => <button key={f} className="btn small" onClick={() => go(f)}><FileIcon name={f} /> {f}</button>)}
+            </div>
+          </> : <p>This project has no web pages to preview.</p>}
+          <p className="muted small">The preview reloads each time the agent is done.</p>
         </div>
       )}
     </div>

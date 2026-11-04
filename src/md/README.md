@@ -1,17 +1,18 @@
 # catatui
 
-catatui is a terminal coding agent for MSU students. It is an extension to the pi coding agent (`@earendil-works/pi-coding-agent`). It uses the MSU CatChat models. CatVibes is the MSU GUI client.
+catatui is a terminal coding agent for MSU students. I (`@earendil-works/pi-coding-agent`). It uses the MSU CatChat models. CatVibes is the MSU GUI client.
 
 ## Stack
 
 - TypeScript extension in `src/catatui/`. pi loads it with jiti, so the project has no build step.
 - `bin/catatui.js` starts pi with the extension, themes, and skills.
-- The project has no automated tests. To test the UI, run catatui in a terminal.
+- Tests in `test/` use the Node test runner (`node:test`). They use no model and no network. To test the UI, run catatui in a terminal.
 
 ## Run
 
 - To install the packages, run `npm install`.
 - To run catatui, run `node bin/catatui.js`.
+- To run the tests, run `npm test`.
 
 ## Files
 
@@ -24,6 +25,7 @@ catatui is a terminal coding agent for MSU students. It is an extension to the p
 - `assets/`: the bobcat logo
 - `docs/`: the GitHub Pages site, and the install scripts `install.sh` and `install.ps1`
 - `install.sh`, `install.ps1`: forwarders to the site for old installs
+- `test/`: the tests. `fake-pi.ts` is a small stand-in for the pi extension API.
 - `tmp/`: scratch work, plans, and TODOs. Git ignores this folder.
 
 ## Rules

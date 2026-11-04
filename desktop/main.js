@@ -11,6 +11,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, s
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { REMOVED, redactSession } from "./redact.js";
+import { detectWebApp, isLocalUrl } from "./webapp.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
@@ -170,7 +172,9 @@ ipcMain.handle("file-tree", (e) => {
   const files = new Set(listFiles(c));
   // Deleted files are not on disk, but the tree shows them with their status.
   for (const [p, s] of Object.entries(status ?? {})) if (s === "D") files.add(p);
-  return { files: [...files].sort(), git: status !== undefined, status: status ?? {}, agent };
+  // The web app in the project, for the Preview button (webapp.js). undefined: no Preview button.
+  const webApp = detectWebApp((rel) => readOrNull(join(project, rel))?.toString("utf8"), [...files]);
+  return { files: [...files].sort(), git: status !== undefined, status: status ?? {}, agent, webApp };
 });
 
 // One file for the viewer: the text before and after. "Before" is the last git commit (HEAD) for a file in git,
@@ -729,55 +733,8 @@ async function sessionOf(c, path) {
 }
 
 // ---- remove sensitive information from a conversation ----
-// pi has no API to edit a session, and its "context_edit" entry keeps the old text in the file. So the app
-// changes the session file itself: it replaces text and keeps each entry, its id, and its parent (the tree stays).
-// Then catatui loads the session again (switch_session), so the model does not see the old text.
+// redact.js changes the session file. Then catatui loads the session again (switch_session), so the model does not see the old text.
 // The text already went to CatChat when the student sent it. This does not remove it there.
-const REMOVED = "[removed]";
-const KEEP_KEYS = new Set(["type", "id", "parentId", "role", "toolCallId", "targetId", "firstKeptEntryId", "fromId", "provider", "model", "modelId", "api", "stopReason", "timestamp", "name", "path"]);
-
-// Replace each copy of `needle` in the string values of a value (not in the keys above). Returns the count.
-function replaceDeep(v, needle) {
-  let count = 0;
-  const walk = (o) => {
-    if (Array.isArray(o)) { o.forEach((x, i) => { if (typeof x === "string") { const n = x.split(needle).length - 1; if (n) { o[i] = x.split(needle).join(REMOVED); count += n; } } else walk(x); }); return; }
-    if (!o || typeof o !== "object") return;
-    for (const [k, x] of Object.entries(o)) {
-      if (KEEP_KEYS.has(k)) continue;
-      if (typeof x === "string") { const n = x.split(needle).length - 1; if (n) { o[k] = x.split(needle).join(REMOVED); count += n; } } else walk(x);
-    }
-  };
-  walk(v);
-  return count;
-}
-
-// Remove one message: its text, thinking, and tool results become "[removed]". Tool call arguments other than
-// "path" become "[removed]" too (for example the content of a write).
-function removeMessage(entry, target) {
-  const m = entry.type === "message" ? entry.message : undefined;
-  if (!m) return 0;
-  const blank = (parts) => (Array.isArray(parts) ? parts : [{ type: "text", text: String(parts ?? "") }]).map((p) => {
-    if (p.type === "text") return { type: "text", text: REMOVED };
-    if (p.type === "thinking") { const { thinkingSignature: _s, ...rest } = p; return { ...rest, thinking: REMOVED }; }
-    if (p.type === "image") return { type: "text", text: REMOVED };
-    return p;
-  });
-  if (target.ts !== undefined && m.timestamp === target.ts && (m.role === "user" || m.role === "assistant")) {
-    m.content = blank(m.content);
-    return 1;
-  }
-  if (target.toolCallId) {
-    if (m.role === "toolResult" && m.toolCallId === target.toolCallId) { m.content = [{ type: "text", text: REMOVED }]; delete m.details; return 1; }
-    if (m.role === "assistant" && Array.isArray(m.content)) {
-      let n = 0;
-      for (const p of m.content) if (p.type === "toolCall" && p.id === target.toolCallId) {
-        for (const k of Object.keys(p.arguments ?? {})) if (k !== "path" && typeof p.arguments[k] === "string") { p.arguments[k] = REMOVED; n++; }
-      }
-      return n ? 1 : 0;
-    }
-  }
-  return 0;
-}
 
 // target: { ts } (a message), { toolCallId } (a tool call and its result), or { text } (each copy of the text).
 ipcMain.handle("redact-session", async (e, target) => {
@@ -797,19 +754,10 @@ ipcMain.handle("redact-session", async (e, target) => {
     buttons: ["Remove", "Cancel"], defaultId: 1, cancelId: 1,
   });
   if (r.response !== 0) return { ok: false, cancelled: true };
-  let count = 0;
-  const lines = readFileSync(file, "utf8").split("\n").map((line) => {
-    if (!line.trim()) return line;
-    let entry;
-    try { entry = JSON.parse(line); } catch { return line; }
-    if (entry.type === "session") return line;
-    const n = target?.text ? replaceDeep(entry, target.text) : removeMessage(entry, target ?? {});
-    count += n;
-    return n ? JSON.stringify(entry) : line;
-  });
+  const { text, count } = redactSession(readFileSync(file, "utf8"), target);
   if (!count) return { ok: false, error: "catai did not find the text in this conversation." };
   const tmp = `${file}.tmp`;
-  writeFileSync(tmp, lines.join("\n"));
+  writeFileSync(tmp, text);
   renameSync(tmp, file);
   // The title came from the old text. Make a new one.
   if (readTitles()[file]) { delete titles[file]; try { writeFileSync(titlesPath(), JSON.stringify(titles, null, 1)); } catch { /* No file. */ } }
@@ -1175,7 +1123,7 @@ async function buildMenu() {
       label: "View",
       submenu: [
         { label: "Show Files", type: "checkbox", checked: st.tree !== false, accelerator: "CmdOrCtrl+B", enabled: !!inProject, click: act("toggle-tree") },
-        { label: "Web Preview", accelerator: "CmdOrCtrl+Shift+P", click: act("preview") },
+        { label: "Web Preview", accelerator: "CmdOrCtrl+Shift+P", enabled: !!st.webApp, click: act("preview") },
         { type: "separator" },
         { label: "Next Area", accelerator: "F6", click: act("next-area") },
         { label: "Previous Area", accelerator: "Shift+F6", click: act("prev-area") },
@@ -1339,7 +1287,7 @@ ipcMain.handle("widget-frame", (_e, html) => {
 if (process.env.CATATUI_DESKTOP_USER_DATA) app.setPath("userData", process.env.CATATUI_DESKTOP_USER_DATA);
 
 // The web preview (<webview> in the side panel): no preload, no Node, sandboxed, and only http, https, and file
-// pages. Links that open a new window go to the normal browser.
+// pages. Links to other sites and links that open a new window go to the normal browser.
 app.on("web-contents-created", (_e, contents) => {
   contents.on("will-attach-webview", (ev, prefs, params) => {
     delete prefs.preload;
@@ -1349,6 +1297,10 @@ app.on("web-contents-created", (_e, contents) => {
     if (!/^(https?|file):/i.test(params.src ?? "")) ev.preventDefault();
   });
   if (contents.getType() === "webview") {
+    // The preview shows only this project. A link to another site opens in the normal browser.
+    contents.on("will-navigate", (ev, url) => {
+      if (/^https?:/i.test(url) && !isLocalUrl(url)) { ev.preventDefault(); shell.openExternal(url); }
+    });
     contents.setWindowOpenHandler(({ url }) => {
       if (/^https?:/.test(url)) shell.openExternal(url);
       return { action: "deny" };
