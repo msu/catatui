@@ -527,7 +527,7 @@ async function snapshot() {
     while (Date.now() < until) {
       await new Promise((r) => setTimeout(r, 1000));
       // CATATUI_DESKTOP_ANSWER=1 clicks the first option of each dialog (for example "Yes").
-      if (process.env.CATATUI_DESKTOP_ANSWER) await win.webContents.executeJavaScript(`document.querySelector(".options button")?.click()`);
+      if (process.env.CATATUI_DESKTOP_ANSWER) await win.webContents.executeJavaScript(`document.querySelector(".window-buttons .btn.default")?.click()`);
       if (await win.webContents.executeJavaScript(`!!document.querySelector(".dialog") || !document.querySelector(".working")`)) break;
     }
   }

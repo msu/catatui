@@ -11,6 +11,8 @@ import { registerContext } from "./context.ts";
 import { registerDocumentTools } from "./documents.ts";
 import { registerExcelTools } from "./excel.ts";
 import { registerHelp } from "./help.ts";
+import { registerMsu } from "./msu.ts";
+import { registerNewProject } from "./project.ts";
 import { CATCHAT_API, DEFAULT_MODEL, PREFERRED_MODELS, PROVIDER_ID } from "./config.ts";
 import { fetchModels } from "./models.ts";
 import { setFooter } from "./footer.ts";
@@ -57,6 +59,8 @@ export default async function (pi: ExtensionAPI) {
   registerUndo(pi);
   registerContext(pi);
   registerHelp(pi);
+  registerMsu(pi);
+  registerNewProject(pi);
 
   pi.registerProvider(PROVIDER_ID, {
     name: "MSU CatChat",

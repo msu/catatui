@@ -86,6 +86,26 @@ export function App() {
     if (r.success) setModel(r.data?.model);
   }
 
+  // new_project (project.ts) asks the app to move to a new project folder. When the agent is done, open the
+  // folder (this starts catatui there) and send the goal to the new chat, so the work goes on there.
+  const switchTo = state.status["catatui-switch"];
+  const switching = useRef(false);
+  useEffect(() => {
+    if (!switchTo || state.busy || switching.current) return;
+    switching.current = true;
+    (async () => {
+      try {
+        const { path, goal } = JSON.parse(switchTo);
+        const from = info.project;
+        const err = await openProject(path);
+        if (err) return local((s) => notice(s, "error", err));
+        await send(`I moved here from ${from} to start a new project. The goal: ${goal}\nRead README.md, then help me start.`);
+      } finally {
+        switching.current = false;
+      }
+    })();
+  }, [switchTo, state.busy]);
+
   // The chat goes to the bottom when the student sends a message or adds a file.
   const [scrollTick, setScrollTick] = useState(0);
 
@@ -514,7 +534,7 @@ function ago(ms) {
 }
 
 // Status keys that the mode menu shows. catatui sends the mode and options as JSON in "catatui".
-const CONTROLLED = ["catatui", "catatui-undo", "mode", "ta", "sandbox", "ste"];
+const CONTROLLED = ["catatui", "catatui-undo", "catatui-switch", "mode", "ta", "sandbox", "ste"];
 
 function parseState(json) {
   try {

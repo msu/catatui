@@ -29,6 +29,7 @@ What it can do
   Quizzes        show a quiz or form in your browser   "Quiz me on recursion in the browser"
   Web servers    run your app and test it              "Start my web app and check that / works"
   Web pages      read docs and call APIs               "Read the docs at https://... and explain X"
+  New projects   make a folder for a new task          "I want to plan my semester"
 
 Commands
   /mode          ask, plan, or yolo mode; ta (teaching assistant), sandbox, and ste options
