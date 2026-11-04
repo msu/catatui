@@ -26,4 +26,4 @@ The `show_widget` tool shows a small widget inline in the chat of the desktop ap
 - A live html widget has a "Done" button. If the page never calls `catai.submit`, the student clicks Done, and the agent continues.
 - In the app (RPC mode), the system prompt tells the model that the chat can show widgets and HTML pages. Without it, the model said that the chat shows only text.
 
-- Only in the desktop app: the app starts catatui with `CATATUI_APP=1`, and only then catatui loads this tool. The CLI is for experts in a terminal or an editor, so it does not load it.
+- Only in the desktop app: the app starts catatui with `CATAI=1`, and only then catatui loads this tool. The CLI is for experts in a terminal or an editor, so it does not load it.

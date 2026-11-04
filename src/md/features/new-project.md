@@ -15,4 +15,4 @@ The `new_project` tool makes a new project folder for a new, separate task, and 
 
 - The sandbox does not check `new_project`, because it has no `path` parameter. The approval question is the control.
 
-- Only in the desktop app: the app starts catatui with `CATATUI_APP=1`, and only then catatui loads this tool. The CLI is for experts in a terminal or an editor, so it does not load it.
+- Only in the desktop app: the app starts catatui with `CATAI=1`, and only then catatui loads this tool. The CLI is for experts in a terminal or an editor, so it does not load it.

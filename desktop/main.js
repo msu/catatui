@@ -378,7 +378,7 @@ function spawnEntry(folder) {
   const proc = spawn(process.execPath, [CATATUI_BIN, "--mode", "rpc"], {
     cwd: folder,
     env: {
-      ...process.env, ELECTRON_RUN_AS_NODE: "1", CATATUI_APP: "1",
+      ...process.env, ELECTRON_RUN_AS_NODE: "1", CATAI: "1",
       ...(isAdvising(folder) ? { CATATUI_ADVISING: "1" } : {}),
       ...(folder === CLASSES_ROOT ? { CATATUI_CLASSES: "1" } : isClasses(folder) ? { CATATUI_CLASS: basename(folder) } : {}),
     },

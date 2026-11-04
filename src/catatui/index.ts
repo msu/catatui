@@ -65,9 +65,9 @@ export default async function (pi: ExtensionAPI) {
   registerContext(pi);
   registerHelp(pi);
   registerMsu(pi);
-  // The desktop app sets CATATUI_APP=1. These tools need the app (inline widgets, the side panel, the app areas,
+  // The desktop app (catai) sets CATAI=1. These tools need the app (inline widgets, the side panel, the app areas,
   // a new project window). The CLI is for experts in a terminal or an editor, so it does not load them.
-  if (process.env.CATATUI_APP === "1") {
+  if (process.env.CATAI === "1") {
     registerNewProject(pi);
     registerWidget(pi);
     registerPreview(pi);
