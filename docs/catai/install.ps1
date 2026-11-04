@@ -64,13 +64,17 @@
     Move-Item (Join-Path $src.FullName "desktop") $Catai
 
     # 3. The packages and the build. npm and Vite need node on the PATH. Use npm.cmd, because the
-    # default execution policy blocks npm.ps1. npm downloads Electron (about 100 MB) from GitHub.
+    # default execution policy blocks npm.ps1. install.js downloads Electron (about 100 MB) from GitHub.
     $env:Path = "$node;$env:Path"
     Push-Location $Catai
     try {
       Write-Host "Installing the catai packages (Electron). This can take some minutes..."
       & $npm install --no-fund --no-audit --loglevel=error
       if ($LASTEXITCODE -ne 0) { Fail "npm cannot install the catai packages. Read the npm error above, then run this script again." }
+      # Electron 44 has no postinstall script: it downloads its program on first use. Download it now.
+      Write-Host "Downloading Electron..."
+      & (Join-Path $node "node.exe") (Join-Path $Catai "node_modules\electron\install.js")
+      if ($LASTEXITCODE -ne 0) { Fail "cannot download Electron. Check that this computer can download from github.com, then run this script again." }
       Write-Host "Building catai..."
       & $npm run build --silent
       if ($LASTEXITCODE -ne 0) { Fail "the catai build failed. Read the error above." }
