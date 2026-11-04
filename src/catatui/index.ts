@@ -32,6 +32,7 @@ import { registerRun } from "./run.ts";
 import { registerFileTools } from "./files.ts";
 import { registerGitTools } from "./gittools.ts";
 import { registerWindows } from "./windows.ts";
+import { registerIdleCompact } from "./idle-compact.ts";
 
 // The catatui command sets this. As a plain pi package, the extension does not change the theme or model.
 const WRAPPED = process.env.CATATUI === "1";
@@ -69,6 +70,7 @@ export default async function (pi: ExtensionAPI) {
     registerPermissions(pi);
     registerSte(pi);
     registerWindows(pi);
+    registerIdleCompact(pi);
   }
   registerUndo(pi);
   registerContext(pi);

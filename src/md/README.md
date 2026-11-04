@@ -50,6 +50,7 @@ catatui is a terminal coding agent for MSU students. I (`@earendil-works/pi-codi
 - [features/ste.md](features/ste.md): Simplified Technical English option
 - [features/undo.md](features/undo.md): the `/undo` command
 - [features/context.md](features/context.md): the `/context` grid
+- [features/idle-compact.md](features/idle-compact.md): compaction while the student is away
 - [features/excel.md](features/excel.md): the `excel_read` and `excel_write` tools
 - [features/documents.md](features/documents.md): the `pdf_read`, `docx_read`, and `docx_write` tools
 - [features/web.md](features/web.md): the `show_page` and `server` tools

@@ -236,6 +236,9 @@ export function App() {
     if (queue) cmd.streamingBehavior = "followUp";
     // A queued message shows at the end of the chat until the agent takes it.
     if (queue) local((s) => ({ ...s, queued: [...s.queued, text] }));
+    // pi refuses a prompt while a compaction runs. A compaction while idle (idle-compact.ts) is not
+    // necessary when the student is back, so stop it first. The context stays as it was.
+    if (state.status["idle-compact"] && !text.startsWith("/")) await api.command({ type: "abort" });
     const r = await api.command(cmd);
     if (!r.success) local((s) => notice({ ...s, queued: queue ? s.queued.filter((q) => q !== text) : s.queued }, "error", r.error ?? "catatui did not accept the message."));
     if (text.startsWith("/model")) refreshModel();
