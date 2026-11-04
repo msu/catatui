@@ -64,17 +64,32 @@
     Move-Item (Join-Path $src.FullName "desktop") $Catai
 
     # 3. The packages and the build. npm and Vite need node on the PATH. Use npm.cmd, because the
-    # default execution policy blocks npm.ps1. install.js downloads Electron (about 100 MB) from GitHub.
+    # default execution policy blocks npm.ps1. Electron (about 100 MB) comes from GitHub.
     $env:Path = "$node;$env:Path"
     Push-Location $Catai
     try {
       Write-Host "Installing the catai packages (Electron). This can take some minutes..."
       & $npm install --no-fund --no-audit --loglevel=error
       if ($LASTEXITCODE -ne 0) { Fail "npm cannot install the catai packages. Read the npm error above, then run this script again." }
-      # Electron 44 has no postinstall script: it downloads its program on first use. Download it now.
-      Write-Host "Downloading Electron..."
-      & (Join-Path $node "node.exe") (Join-Path $Catai "node_modules\electron\install.js")
-      if ($LASTEXITCODE -ne 0) { Fail "cannot download Electron. Check that this computer can download from github.com, then run this script again." }
+      # Electron 44 has no postinstall script: it downloads its program on first use, and it unzips with a native
+      # module that Windows can refuse to load. So download and unpack Electron here, with the checksum from the
+      # Electron package. This makes the same files as the Electron install.js: dist\ and path.txt.
+      $epkg = Join-Path $Catai "node_modules\electron"
+      $ever = (Get-Content (Join-Path $epkg "package.json") -Raw | ConvertFrom-Json).version
+      $earch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+      $ename = "electron-v$ever-win32-$earch.zip"
+      $esum = (Get-Content (Join-Path $epkg "checksums.json") -Raw | ConvertFrom-Json).$ename
+      if (-not $esum) { Fail "the Electron package has no checksum for $ename." }
+      Write-Host "Downloading Electron $ever ($earch)..."
+      $ezip = Join-Path $tmp $ename
+      try { Invoke-WebRequest "https://github.com/electron/electron/releases/download/v$ever/$ename" -OutFile $ezip -UseBasicParsing }
+      catch { Fail "cannot download Electron. Check that this computer can download from github.com, then run this script again." }
+      if ((Get-FileHash $ezip -Algorithm SHA256).Hash.ToLower() -ne $esum) { Fail "the Electron download is damaged. Run this script again." }
+      $edist = Join-Path $epkg "dist"
+      if (Test-Path $edist) { Remove-Item -Recurse -Force $edist }
+      Expand-Archive $ezip -DestinationPath $edist
+      # No line end: the Electron package reads path.txt as it is.
+      [IO.File]::WriteAllText((Join-Path $epkg "path.txt"), "electron.exe")
       Write-Host "Building catai..."
       & $npm run build --silent
       if ($LASTEXITCODE -ne 0) { Fail "the catai build failed. Read the error above." }
