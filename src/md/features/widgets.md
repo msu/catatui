@@ -19,3 +19,9 @@ The `show_widget` tool shows a small widget inline in the chat of the desktop ap
 - A `show_widget` call with no type (a failed call) shows as a normal tool card.
 - The frame height comes from the lowest element in the page, not from the frame. A page with `height: 100%` would grow without end.
 - `CATATUI_DESKTOP_FRAME_JS` runs JavaScript in the first widget frame (for tests). `CATATUI_DESKTOP_AFTER` is the wait after it (milliseconds).
+
+## Games and other pages with no answer
+
+- An html widget with `wait: false` returns at once. The page stays in the chat, and the student can use it. Use it for a game, a simulation, or an animation.
+- A live html widget has a "Done" button. If the page never calls `catai.submit`, the student clicks Done, and the agent continues.
+- In the app (RPC mode), the system prompt tells the model that the chat can show widgets and HTML pages. Without it, the model said that the chat shows only text.

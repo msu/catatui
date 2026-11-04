@@ -36,15 +36,22 @@ const isFolder = (p) => { try { return statSync(p).isDirectory(); } catch { retu
 // Chats: each chat has its own folder under Documents/catai/Chats. The student does not see these folders.
 // A chat is a project in a hidden folder: the same tools, but the app shows no file tree.
 const CHATS_ROOT = join(homedir(), "Documents", "catai", "Chats");
-const isChat = (p) => !!p && (p === CHATS_ROOT || p.startsWith(`${CHATS_ROOT}/`) || p.startsWith(`${CHATS_ROOT}\\`));
+const inside = (root, p) => !!p && (p === root || p.startsWith(`${root}/`) || p.startsWith(`${root}\\`));
+const isPlainChat = (p) => inside(CHATS_ROOT, p);
+// Advising: one folder for all advising sessions. catatui starts there with the advisor prompt and tools (advising.ts).
+const ADVISING_ROOT = join(homedir(), "Documents", "catai", "Advising");
+const isAdvising = (p) => inside(ADVISING_ROOT, p);
+// A chat and an advising session have no file tree and no path row. Projects are all other folders.
+const isChat = (p) => isPlainChat(p) || isAdvising(p);
+const kindOf = (p) => (isAdvising(p) ? "advising" : isPlainChat(p) ? "chat" : "project");
 
 // A folder for a new chat. If the newest chat folder is empty and has no chat yet, use it again,
-// so that each launch does not leave an empty folder.
+// so that each launch does not leave an empty folder. A folder that is open in a window is not used again.
 async function newChatFolder() {
   mkdirSync(CHATS_ROOT, { recursive: true });
   const folders = readdirSync(CHATS_ROOT, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
   const newest = folders.at(-1);
-  if (newest) {
+  if (newest && !windowFor(join(CHATS_ROOT, newest))) {
     const path = join(CHATS_ROOT, newest);
     const { SessionManager } = await pi();
     if (readdirSync(path).length === 0 && (await SessionManager.list(path)).length === 0) return path;
@@ -58,37 +65,41 @@ async function newChatFolder() {
   return path;
 }
 
-/** @type {BrowserWindow | undefined} */
-let win;
-/** @type {import("node:child_process").ChildProcess | undefined} */
-let child;
-let stopping = false;
-let project = "";
+// ---- windows ----
+// Each window shows one chat, project, or advising session. Each window has a context:
+// { win, project, child (its catatui process), changed (the files the agent changed), modeRestored, menuState,
+//   openSession (a session to open after the start) }. A folder is open in one window only.
+/** @type {Map<number, any>} */
+const windows = new Map();
+const ctxOf = (e) => windows.get(e.sender.id);
+const windowFor = (folder) => [...windows.values()].find((c) => c.project === folder);
+const focusedCtx = () => windows.get(BrowserWindow.getFocusedWindow()?.webContents.id) ?? [...windows.values()].at(-1);
+const titleFor = (p) => (isAdvising(p) ? "catai - Advising" : isChat(p) ? "catai - Chat" : p ? `catai - ${basename(p)}` : "catai");
 let nextId = 1;
 /** @type {Map<string, (r: unknown) => void>} */
 const pending = new Map();
 /** @type {AbortController | undefined} */
 let signIn;
 
-const toRenderer = (channel, data) => win?.webContents.send(channel, data);
+const toRenderer = (c, channel, data) => { if (c?.win && !c.win.isDestroyed()) c.win.webContents.send(channel, data); };
+const toAll = (channel, data) => { for (const c of windows.values()) toRenderer(c, channel, data); };
 
 // ---- changed files ----
 
 // The files that the agent changed in this chat: full path -> the file before the first change (null: no file).
 // The Files panel compares this with the file now. So an /undo or a change by the student shows correctly.
-/** @type {Map<string, Buffer | null>} */
-let changed = new Map();
+// Each window context has its own map: full path -> Buffer | null.
 const MAX_DIFF_BYTES = 300_000;
 
 const readOrNull = (p) => { try { return readFileSync(p); } catch { return null; } };
 
 // Called for each RPC event. Keep the file before the first change by a file tool (CHANGE_TOOLS in config.ts).
-function trackFiles(rec) {
+function trackFiles(c, rec) {
   if (rec.type !== "tool_execution_start" || !CHANGE_TOOLS.includes(rec.toolName)) return;
   const path = rec.args?.path;
-  if (typeof path !== "string" || !project) return;
-  const full = resolve(project, path.replace(/^@/, ""));
-  if (!changed.has(full)) changed.set(full, readOrNull(full));
+  if (typeof path !== "string" || !c.project) return;
+  const full = resolve(c.project, path.replace(/^@/, ""));
+  if (!c.changed.has(full)) c.changed.set(full, readOrNull(full));
 }
 
 // A text file has no zero bytes in its first 8 KB. Excel and Word files are zip files, so they are binary.
@@ -101,17 +112,18 @@ const MAX_TREE_FILES = 5000;
 const SKIP = new Set([".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".next", ".cache", "target", ".idea", ".DS_Store"]);
 
 // Run git in the project. Returns undefined if git is not installed or the folder is not a repository.
-function git(args) {
+function git(c, args) {
   try {
-    return execFileSync("git", args, { cwd: project, encoding: "utf8", maxBuffer: 20_000_000, timeout: 10_000, stdio: ["ignore", "pipe", "ignore"] });
+    return execFileSync("git", args, { cwd: c.project, encoding: "utf8", maxBuffer: 20_000_000, timeout: 10_000, stdio: ["ignore", "pipe", "ignore"] });
   } catch {
     return undefined;
   }
 }
 
 // All files in the project. In a git repository, git gives the list, so .gitignore applies.
-function listFiles() {
-  const fromGit = git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
+function listFiles(c) {
+  const project = c.project;
+  const fromGit = git(c, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
   if (fromGit !== undefined) return fromGit.split("\0").filter(Boolean).filter((p) => existsSync(join(project, p))).slice(0, MAX_TREE_FILES);
   const out = [];
   const walk = (dir) => {
@@ -127,8 +139,8 @@ function listFiles() {
 }
 
 // git status for each changed file: "M" (modified), "A" (added), "D" (deleted), "?" (new, not in git), "R" (renamed).
-function gitStatus() {
-  const out = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+function gitStatus(c) {
+  const out = git(c, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
   if (out === undefined) return undefined;
   const status = {};
   const parts = out.split("\0");
@@ -144,11 +156,13 @@ function gitStatus() {
 }
 
 // The tree: all files, the git status, and the files that the agent changed in this chat.
-ipcMain.handle("file-tree", () => {
+ipcMain.handle("file-tree", (e) => {
+  const c = ctxOf(e);
+  const project = c?.project;
   if (!project) return { files: [], git: false, status: {}, agent: [] };
-  const status = gitStatus();
-  const agent = [...changed.keys()].map((full) => relative(project, full)).filter((r) => !r.startsWith("..") && !isAbsolute(r));
-  const files = new Set(listFiles());
+  const status = gitStatus(c);
+  const agent = [...c.changed.keys()].map((full) => relative(project, full)).filter((r) => !r.startsWith("..") && !isAbsolute(r));
+  const files = new Set(listFiles(c));
   // Deleted files are not on disk, but the tree shows them with their status.
   for (const [p, s] of Object.entries(status ?? {})) if (s === "D") files.add(p);
   return { files: [...files].sort(), git: status !== undefined, status: status ?? {}, agent };
@@ -156,21 +170,24 @@ ipcMain.handle("file-tree", () => {
 
 // One file for the viewer: the text before and after. "Before" is the last git commit (HEAD) for a file in git,
 // or the copy before the agent's first change in this chat. If nothing changed, before and after are the same.
-ipcMain.handle("file-view", (_e, path) => {
+ipcMain.handle("file-view", (e, path) => {
+  const c = ctxOf(e);
+  const project = c?.project;
+  if (!project) return { error: "No project is open." };
   const full = resolve(project, path);
   const rel = relative(project, full);
   if (!project || rel.startsWith("..") || isAbsolute(rel)) return { error: "The file is not in the project." };
   const after = readOrNull(full);
   let before = after;
   let base = "";
-  const inHead = git(["cat-file", "-e", `HEAD:${rel}`]) !== undefined;
+  const inHead = git(c, ["cat-file", "-e", `HEAD:${rel}`]) !== undefined;
   if (inHead) {
-    const head = execGitBuffer(["show", `HEAD:${rel}`]);
+    const head = execGitBuffer(c, ["show", `HEAD:${rel}`]);
     if (head) { before = head; base = "last commit"; }
-  } else if (changed.has(full)) {
-    before = changed.get(full);
+  } else if (c.changed.has(full)) {
+    before = c.changed.get(full);
     base = "before the agent";
-  } else if (gitStatus()?.[rel] === "?") {
+  } else if (gitStatus(c)?.[rel] === "?") {
     before = null;
     base = "new file";
   }
@@ -189,7 +206,10 @@ ipcMain.handle("file-view", (_e, path) => {
 
 // The right-click menu of a file or a folder in the tree. A native menu, so it looks like the other apps.
 // Open, Show in Finder, and Copy path happen here. "add" and "diff" go back to the renderer.
-ipcMain.handle("file-menu", (_e, path, opts) => new Promise((done) => {
+ipcMain.handle("file-menu", (e, path, opts) => new Promise((done) => {
+  const c = ctxOf(e);
+  const project = c?.project;
+  if (!project) return done(undefined);
   const full = resolve(project, path);
   const rel = relative(project, full);
   if (!project || rel.startsWith("..") || isAbsolute(rel)) return done(undefined);
@@ -200,23 +220,23 @@ ipcMain.handle("file-menu", (_e, path, opts) => new Promise((done) => {
       { label: "Add to chat", click: () => { picked = "add"; } },
       { label: "Open", click: () => shell.openPath(full) },
       ...(opts?.canDiff ? [{ label: "Diff", click: () => { picked = "diff"; } }] : []),
-      ...(opts?.canRollback ? [{ label: "Roll back to last commit...", click: async () => { if (await rollBack(rel)) toRenderer("files-changed"); } }] : []),
+      ...(opts?.canRollback ? [{ label: "Roll back to last commit...", click: async () => { if (await rollBack(c, rel)) toRenderer(c, "files-changed"); } }] : []),
       { type: "separator" },
     ]),
     { label: reveal, click: () => shell.showItemInFolder(full) },
     { label: "Copy path", click: () => clipboard.writeText(full) },
     { label: "Copy relative path", click: () => clipboard.writeText(rel) },
   ];
-  Menu.buildFromTemplate(template).popup({ window: win, callback: () => done(picked) });
+  Menu.buildFromTemplate(template).popup({ window: c.win, callback: () => done(picked) });
 }));
 
 // Roll back one changed file. A file in the last commit: git puts back that version (also for a deleted file).
 // A new file (not in the last commit): it goes to the trash, so the student can get it back.
 // A native question comes first, because the changes are lost.
-async function rollBack(rel) {
-  const full = resolve(project, rel);
-  const inHead = git(["cat-file", "-e", `HEAD:${rel}`]) !== undefined;
-  const r = await dialog.showMessageBox(win, {
+async function rollBack(c, rel) {
+  const full = resolve(c.project, rel);
+  const inHead = git(c, ["cat-file", "-e", `HEAD:${rel}`]) !== undefined;
+  const r = await dialog.showMessageBox(c.win, {
     type: "warning",
     message: `Roll back ${basename(rel)}?`,
     detail: inHead
@@ -229,9 +249,9 @@ async function rollBack(rel) {
   if (r.response !== 0) return false;
   try {
     if (inHead) {
-      if (git(["checkout", "HEAD", "--", rel]) === undefined) throw new Error("git could not put back the file.");
+      if (git(c, ["checkout", "HEAD", "--", rel]) === undefined) throw new Error("git could not put back the file.");
     } else {
-      git(["rm", "--cached", "--quiet", "--", rel]); // if it was added to git; no error if not
+      git(c, ["rm", "--cached", "--quiet", "--", rel]); // if it was added to git; no error if not
       await shell.trashItem(full);
     }
     return true;
@@ -242,7 +262,8 @@ async function rollBack(rel) {
 }
 
 // A dropped file: its path in the project. Files outside the project are refused, because the sandbox blocks them.
-ipcMain.handle("project-path", (_e, full) => {
+ipcMain.handle("project-path", (e, full) => {
+  const project = ctxOf(e)?.project;
   if (!project || typeof full !== "string") return { error: "No project is open." };
   const rel = relative(project, full);
   if (!full || rel.startsWith("..") || isAbsolute(rel)) return { error: `${basename(full)} is not in the project folder. Copy it into ${basename(project)} first.` };
@@ -255,7 +276,9 @@ const MAX_IMAGE_BYTES = 15_000_000;
 
 // A short preview of a file for the file card in the chat: the size, and the first lines of a text file.
 const PREVIEW_LINES = 30;
-ipcMain.handle("file-preview", (_e, path) => {
+ipcMain.handle("file-preview", (e, path) => {
+  const project = ctxOf(e)?.project;
+  if (!project) return { error: "No project is open." };
   const full = resolve(project, path);
   const rel = relative(project, full);
   if (!project || rel.startsWith("..") || isAbsolute(rel)) return { error: "The file is not in the project." };
@@ -269,17 +292,20 @@ ipcMain.handle("file-preview", (_e, path) => {
   return { size: data.length, binary: false, lines: lines.length, text: lines.slice(0, PREVIEW_LINES).join("\n"), cut: lines.length > PREVIEW_LINES };
 });
 
-function execGitBuffer(args) {
+function execGitBuffer(c, args) {
   try {
-    return execFileSync("git", args, { cwd: project, maxBuffer: 20_000_000, timeout: 10_000, stdio: ["ignore", "pipe", "ignore"] });
+    return execFileSync("git", args, { cwd: c.project, maxBuffer: 20_000_000, timeout: 10_000, stdio: ["ignore", "pipe", "ignore"] });
   } catch {
     return undefined;
   }
 }
 
-ipcMain.handle("changed-files", () => {
+ipcMain.handle("changed-files", (e) => {
+  const c = ctxOf(e);
+  const project = c?.project;
   const files = [];
-  for (const [full, before] of changed) {
+  if (!project) return files;
+  for (const [full, before] of c.changed) {
     const after = readOrNull(full);
     if (before === null && after === null) continue;
     if (before && after && before.equals(after)) continue;
@@ -300,18 +326,32 @@ ipcMain.handle("changed-files", () => {
 
 // ---- catatui child process ----
 
-// Start catatui for the project folder. Read stdout as JSONL: split only on LF (see pi docs/rpc.md, Framing).
-function startChild() {
-  stopping = false;
-  child = spawn(process.execPath, [CATATUI_BIN, "--mode", "rpc"], {
-    cwd: project,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+// The catatui processes, by folder. catatui cannot change its folder, so each chat and project has its own process.
+// Each window has one active process (its `child`). When a window moves to another folder, the old process stays
+// (parked), so a switch back is fast. The app also starts a process in advance for the folder of the one-click
+// switch. At most POOL_PARKED processes are parked. The oldest parked one stops first.
+// Each entry: { folder, proc, changed (the files the agent changed), status (the last setStatus per key),
+// key (the CatChat key at the start), ready (resolves when catatui answers), used (time) }.
+const POOL_PARKED = 2;
+const ownerOf = (proc) => [...windows.values()].find((c) => c.child === proc);
+/** @type {Map<string, any>} */
+const pool = new Map();
+
+// Start catatui in a folder. Read stdout as JSONL: split only on LF (see pi docs/rpc.md, Framing).
+// Events go to the renderer only from the active process. The setStatus events are kept for each process,
+// so the renderer gets them again when the process becomes active.
+function spawnEntry(folder) {
+  const proc = spawn(process.execPath, [CATATUI_BIN, "--mode", "rpc"], {
+    cwd: folder,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...(isAdvising(folder) ? { CATATUI_ADVISING: "1" } : {}) },
     stdio: ["pipe", "pipe", "pipe"],
   });
+  const entry = { folder, proc, changed: new Map(), status: new Map(), key: store.readCredential()?.access, used: Date.now(), stopping: false };
+  pool.set(folder, entry);
 
   let buf = "";
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
+  proc.stdout.setEncoding("utf8");
+  proc.stdout.on("data", (chunk) => {
     buf += chunk;
     let nl;
     while ((nl = buf.indexOf("\n")) >= 0) {
@@ -322,95 +362,181 @@ function startChild() {
       try {
         rec = JSON.parse(line);
       } catch {
-        toRenderer("rpc-stderr", `Not JSON on stdout: ${line.slice(0, 200)}`);
+        toRenderer(ownerOf(proc), "rpc-stderr", `Not JSON on stdout: ${line.slice(0, 200)}`);
         continue;
       }
       if (rec.type === "response" && rec.id && pending.has(rec.id)) {
         pending.get(rec.id)(rec);
         pending.delete(rec.id);
-      } else {
-        trackFiles(rec);
-        toRenderer("rpc-event", rec);
-        if (rec.type === "agent_settled") titleForOpenChat().catch(() => {});
+        continue;
       }
+      if (rec.type === "extension_ui_request" && rec.method === "setStatus") entry.status.set(rec.statusKey, rec);
+      const c = ownerOf(proc);
+      if (!c) continue;
+      trackFiles(c, rec);
+      rememberMode(c, rec);
+      toRenderer(c, "rpc-event", rec);
+      if (rec.type === "agent_settled") titleForOpenChat(c).catch(() => {});
     }
   });
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (t) => toRenderer("rpc-stderr", t));
-  const me = child;
-  child.on("exit", (code, signal) => {
-    for (const resolve of pending.values()) resolve({ type: "response", success: false, error: "catatui stopped." });
-    pending.clear();
-    if (child === me) child = undefined;
+  proc.stderr.setEncoding("utf8");
+  proc.stderr.on("data", (t) => toRenderer(ownerOf(proc), "rpc-stderr", t));
+  proc.on("exit", (code, signal) => {
+    for (const [id, resolve] of pending) {
+      if (id.startsWith(`${proc.pid}:`)) { resolve({ type: "response", success: false, error: "catatui stopped." }); pending.delete(id); }
+    }
+    if (pool.get(folder) === entry) pool.delete(folder);
+    const c = ownerOf(proc);
+    if (!c) return;
+    c.child = undefined;
     // A stop that the app asked for (sign-out, new sign-in) is not an error.
-    if (!stopping) toRenderer("rpc-exit", { code, signal });
+    if (!entry.stopping) toRenderer(c, "rpc-exit", { code, signal });
   });
+  entry.ready = commandTo(proc, { type: "get_state" });
+  return entry;
 }
 
 // Close stdin for an orderly stop (pi docs/rpc.md, Shutdown). Kill it if it does not stop in 3 seconds.
-function stopChild() {
-  const c = child;
-  if (!c) return Promise.resolve();
-  stopping = true;
+function stopEntry(entry) {
+  entry.stopping = true;
+  pool.delete(entry.folder);
   return new Promise((resolve) => {
-    const timer = setTimeout(() => c.kill(), 3000);
-    c.once("exit", () => { clearTimeout(timer); resolve(); });
-    c.stdin.end();
+    if (entry.proc.exitCode !== null) return resolve();
+    const timer = setTimeout(() => entry.proc.kill(), 3000);
+    entry.proc.once("exit", () => { clearTimeout(timer); resolve(); });
+    entry.proc.stdin.end();
   });
 }
 
-function write(rec) {
-  if (!child?.stdin.writable) return false;
-  child.stdin.write(`${JSON.stringify(rec)}\n`);
+// Stop all catatui processes (sign-out).
+async function stopChild() {
+  await Promise.all([...pool.values()].map(stopEntry));
+  for (const c of windows.values()) c.child = undefined;
+}
+
+// Make the process for `project` active: a parked one, or a new one. A process from before a new sign-in
+// stops, because pi reads the key at the start. Then the renderer gets the status again.
+async function activate(c) {
+  let entry = pool.get(c.project);
+  if (entry && (entry.key !== store.readCredential()?.access || entry.proc.exitCode !== null)) {
+    await stopEntry(entry);
+    entry = undefined;
+  }
+  entry ??= spawnEntry(c.project);
+  entry.used = Date.now();
+  c.child = entry.proc;
+  c.changed = entry.changed;
+  await entry.ready;
+  for (const rec of entry.status.values()) toRenderer(c, "rpc-event", rec);
+  // Stop the oldest parked processes (no window has them).
+  const parked = [...pool.values()].filter((e) => !ownerOf(e.proc)).sort((a, b) => b.used - a.used);
+  for (const e of parked.slice(POOL_PARKED)) stopEntry(e);
+  return entry;
+}
+
+// Start a process in advance for the folder of the one-click switch: from a chat the last project,
+// from a project the last chat. It waits 2 seconds, so it does not slow the start of the active process.
+let warmTimer;
+function warmOther(c) {
+  clearTimeout(warmTimer);
+  warmTimer = setTimeout(async () => {
+    const project = c.project;
+    let folder;
+    if (isChat(project)) {
+      folder = readState().lastProject;
+    } else {
+      const { SessionManager } = await pi();
+      folder = (await SessionManager.listAll()).sort((a, b) => new Date(b.modified) - new Date(a.modified)).find((s) => isChat(s.cwd) && isFolder(s.cwd))?.cwd;
+    }
+    if (!folder || folder === project || pool.has(folder) || !isFolder(folder)) return;
+    spawnEntry(folder).used = Date.now() - 1;
+  }, 2000);
+}
+
+function write(rec, proc) {
+  if (!proc?.stdin.writable) return false;
+  proc.stdin.write(`${JSON.stringify(rec)}\n`);
   return true;
 }
 
-function command(cmd) {
-  const id = `d${nextId++}`;
+// A command to a process. The id starts with the process id, so a stop answers only its own commands.
+function commandTo(proc, cmd) {
+  const id = `${proc?.pid}:${nextId++}`;
   return new Promise((resolve) => {
-    if (!write({ ...cmd, id })) return resolve({ type: "response", success: false, error: "catatui is not running." });
+    if (!write({ ...cmd, id }, proc)) return resolve({ type: "response", success: false, error: "catatui is not running." });
     pending.set(id, resolve);
   });
 }
+const command = (c, cmd) => commandTo(c?.child, cmd);
 
 // ---- IPC from the renderer ----
 
-ipcMain.handle("rpc-command", (_e, cmd) => {
+ipcMain.handle("rpc-command", (e, cmd) => {
+  const c = ctxOf(e);
   // A new chat or an old chat starts a new list of changed files.
-  if (cmd?.type === "new_session" || cmd?.type === "switch_session") changed = new Map();
-  return command(cmd);
+  if (cmd?.type === "new_session" || cmd?.type === "switch_session") c?.changed.clear();
+  return command(c, cmd);
 });
 // The answer to a dialog (extension_ui_request). It has no response.
-ipcMain.on("ui-response", (_e, response) => write({ type: "extension_ui_response", ...response }));
+ipcMain.on("ui-response", (e, response) => write({ type: "extension_ui_response", ...response }, ctxOf(e)?.child));
 
 // The sign-in state and the project, for the first screen.
-ipcMain.handle("info", () => {
+ipcMain.handle("info", (e) => {
+  const c = ctxOf(e);
+  const project = c?.project ?? "";
+  // A session to open after the start (a window opened for an old chat). Only once.
+  const openSession = c?.openSession;
+  if (c) c.openSession = undefined;
   const cred = store.readCredential();
   // resumeProject: the app last worked in this project (not in a chat). The chat start screen offers it.
   const st = readState();
   // lastProject: the Project button opens it with one click from a chat.
   const lastProject = st.lastProject && isFolder(st.lastProject) && st.lastProject !== project ? st.lastProject : undefined;
   const resumeProject = st.lastKind === "project" ? lastProject : undefined;
-  return { project, chat: isChat(project), resumeProject, lastProject, signedIn: !!cred, user: cred?.user, expiryDays: store.expiryDays(cred) };
+  return { project, chat: isChat(project), kind: kindOf(project), resumeProject, lastProject, openSession, signedIn: !!cred, user: cred?.user, expiryDays: store.expiryDays(cred) };
 });
 
 // Start catatui, or start it again so that pi reads a new sign-in. Resolves when catatui answers.
-ipcMain.handle("start", async () => {
-  if (!project) return { type: "response", success: false, error: "Open a project folder first." };
-  await stopChild();
-  changed = new Map();
-  startChild();
-  return command({ type: "get_state" });
+ipcMain.handle("start", async (e) => {
+  const c = ctxOf(e);
+  if (!c?.project) return { type: "response", success: false, error: "Open a project folder first." };
+  c.modeRestored = false;
+  await activate(c);
+  await restoreMode(c);
+  warmOther(c);
+  return command(c, { type: "get_state" });
 });
 
+// catatui keeps the mode (ask, plan, yolo) and ta for one session only. The app starts catatui again for each
+// chat and project, so it keeps the last mode and ta in state.json and sets them again after each start.
+// Before the restore, catatui sends its start state (ask). The app does not save that.
+function rememberMode(c, rec) {
+  if (!c.modeRestored || rec.type !== "extension_ui_request" || rec.method !== "setStatus" || rec.statusKey !== "catatui") return;
+  try {
+    const { mode, ta } = JSON.parse(rec.statusText);
+    saveState({ agentMode: { mode, ta: !!ta } });
+  } catch { /* Not JSON: ignore it. */ }
+}
+async function restoreMode(c) {
+  const saved = readState().agentMode;
+  // A parked process can have an old mode, so set the mode and ta each time.
+  if (saved) {
+    await command(c, { type: "prompt", message: `/mode ${["ask", "plan", "yolo"].includes(saved.mode) ? saved.mode : "ask"}` });
+    await command(c, { type: "prompt", message: `/mode ta ${saved.ta ? "on" : "off"}` });
+  }
+  c.modeRestored = true;
+}
+
 // MSU SSO (CatChat App Connect), the same flow as the CLI. The renderer shows the URL in case no browser opens.
-ipcMain.handle("sign-in-sso", async () => {
+ipcMain.handle("sign-in-sso", async (e) => {
+  const c = ctxOf(e);
+  const win = c?.win;
   signIn?.abort();
   signIn = new AbortController();
   try {
     const cred = await auth.ssoLogin({
-      onAuth: ({ url }) => { shell.openExternal(url); toRenderer("sign-in-url", url); },
-      onProgress: (m) => toRenderer("sign-in-progress", m),
+      onAuth: ({ url }) => { shell.openExternal(url); toRenderer(c, "sign-in-url", url); },
+      onProgress: (m) => toRenderer(c, "sign-in-progress", m),
       signal: signIn.signal,
     });
     store.saveCredential(cred);
@@ -450,14 +576,19 @@ ipcMain.handle("sign-in-key", async (_e, raw) => {
   }
 });
 
-ipcMain.handle("sign-out", async () => {
+// Sign out: stop all catatui processes and close the other windows.
+ipcMain.handle("sign-out", async (e) => {
+  const c = ctxOf(e);
   await stopChild();
   store.clearSignIn();
+  for (const o of windows.values()) if (o !== c) o.win.close();
 });
 
 ipcMain.on("open-external", (_e, url) => { if (/^https?:/.test(url)) shell.openExternal(url); });
 // Open a changed file in its normal app (for example Excel for .xlsx). Only files in the project.
-ipcMain.on("open-path", (_e, path) => {
+ipcMain.on("open-path", (e, path) => {
+  const project = ctxOf(e)?.project;
+  if (!project) return;
   const full = resolve(project, path);
   const rel = relative(project, full);
   if (project && !rel.startsWith("..") && !isAbsolute(rel)) shell.openPath(full);
@@ -484,7 +615,8 @@ async function listProjects() {
 }
 
 // All catatui chats (sessions), in all project folders, newest first. Each has its folder.
-ipcMain.handle("list-sessions", async () => {
+ipcMain.handle("list-sessions", async (e) => {
+  const project = ctxOf(e)?.project;
   const { SessionManager } = await pi();
   const home = homedir();
   return (await SessionManager.listAll())
@@ -494,7 +626,7 @@ ipcMain.handle("list-sessions", async () => {
     .map((s) => ({
       path: s.path, name: s.name, first: s.firstMessage, modified: new Date(s.modified).getTime(), count: s.messageCount,
       cwd: s.cwd, folder: s.cwd === home ? "~" : s.cwd.startsWith(`${home}/`) ? `~${s.cwd.slice(home.length)}` : s.cwd,
-      here: s.cwd === project, exists: isFolder(s.cwd), chat: isChat(s.cwd),
+      here: s.cwd === project, exists: isFolder(s.cwd), chat: isChat(s.cwd), kind: kindOf(s.cwd),
       title: readTitles()[s.path], projectName: basename(s.cwd),
       _s: s,
     }))
@@ -503,6 +635,41 @@ ipcMain.handle("list-sessions", async () => {
       const { _s, ...rest } = x;
       return rest;
     });
+});
+
+// ---- conversations (the sessions of a project) ----
+
+// A session file of this window's folder, or undefined. Rename and delete work only on these.
+async function sessionOf(c, path) {
+  if (!c?.project || typeof path !== "string") return undefined;
+  const { SessionManager } = await pi();
+  return (await SessionManager.list(c.project)).find((x) => x.path === path);
+}
+
+// Rename: the app title (titles.json), which the menus show.
+ipcMain.handle("rename-session", async (e, path, title) => {
+  const clean = String(title ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!clean || !(await sessionOf(ctxOf(e), path))) return { ok: false };
+  saveTitle(path, clean);
+  toAll("titles-updated");
+  return { ok: true };
+});
+
+// Delete: a question first, then the session file goes to the trash (the student can get it back).
+ipcMain.handle("delete-session", async (e, path) => {
+  const c = ctxOf(e);
+  const s = await sessionOf(c, path);
+  if (!s) return { ok: false };
+  const r = await dialog.showMessageBox(c.win, {
+    type: "warning",
+    message: `Delete the conversation "${readTitles()[path] ?? (s.name || s.firstMessage || "").slice(0, 60)}"?`,
+    detail: "The conversation goes to the trash. The files in the project do not change.",
+    buttons: ["Delete", "Cancel"], defaultId: 1, cancelId: 1,
+  });
+  if (r.response !== 0) return { ok: false };
+  try { await shell.trashItem(path); } catch (err) { return { ok: false, error: err.message }; }
+  toAll("titles-updated");
+  return { ok: true };
 });
 
 // ---- chat titles ----
@@ -561,19 +728,19 @@ function pumpTitles() {
     titleQueue.delete(path);
     titleRunning++;
     makeTitle(chatText(s))
-      .then((t) => { if (t) { saveTitle(path, t); toRenderer("titles-updated"); } })
+      .then((t) => { if (t) { saveTitle(path, t); toAll("titles-updated"); } })
       .catch(() => {})
       .finally(() => { titleRunning--; pumpTitles(); });
   }
 }
 
 // After the agent is done, make a title for the open chat if it has none.
-async function titleForOpenChat() {
-  const st = await command({ type: "get_state" });
+async function titleForOpenChat(c) {
+  const st = await command(c, { type: "get_state" });
   const file = st.data?.sessionFile;
-  if (!file || readTitles()[file] || !project) return;
+  if (!file || readTitles()[file] || !c.project) return;
   const { SessionManager } = await pi();
-  const s = (await SessionManager.list(project)).find((x) => x.path === file);
+  const s = (await SessionManager.list(c.project)).find((x) => x.path === file);
   if (s) queueTitles([s]);
 }
 
@@ -599,7 +766,7 @@ ipcMain.handle("list-folders", (_e, path) => {
   let folders = [];
   try {
     folders = readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && !e.name.startsWith(".") && !(dir === join(homedir(), "Documents", "catai") && e.name === "Chats"))
+      .filter((e) => e.isDirectory() && !e.name.startsWith(".") && !(dir === join(homedir(), "Documents", "catai") && ["Chats", "Advising"].includes(e.name)))
       .map((e) => e.name)
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   } catch { /* The folder cannot be read. */ }
@@ -617,28 +784,62 @@ ipcMain.handle("make-folder", (_e, parent, name) => {
   return { path };
 });
 
-// A new chat: a new chat folder. The renderer then calls "start".
-ipcMain.handle("new-chat", async () => {
-  await stopChild();
-  project = await newChatFolder();
-  saveState({ lastKind: "chat" });
-  win?.setTitle("catai - Chat");
-  return { ok: true, path: project };
+// Advising: the advising folder. The renderer then calls "start", and "new_session" for a new advising session.
+ipcMain.handle("advising", (e) => {
+  mkdirSync(ADVISING_ROOT, { recursive: true });
+  return moveTo(ctxOf(e), ADVISING_ROOT);
 });
 
-ipcMain.handle("pick-folder", async () => {
-  const r = await dialog.showOpenDialog(win, { title: "Open a project folder", properties: ["openDirectory", "createDirectory"] });
+// A new chat: a new chat folder. The renderer then calls "start".
+ipcMain.handle("new-chat", async (e) => moveTo(ctxOf(e), await newChatFolder()));
+
+ipcMain.handle("pick-folder", async (e) => {
+  const r = await dialog.showOpenDialog(ctxOf(e)?.win, { title: "Open a project folder", properties: ["openDirectory", "createDirectory"] });
   return r.canceled ? undefined : r.filePaths[0];
 });
 
-// Change the project. The renderer then calls "start", which starts catatui in the new folder.
-ipcMain.handle("open-project", async (_e, path) => {
+// Change the project of a window. The renderer then calls "start", which starts catatui in the new folder.
+// sessionPath: an old chat to open there.
+ipcMain.handle("open-project", async (e, path, sessionPath) => {
   if (!isFolder(path)) return { ok: false, error: `The folder ${path} does not exist.` };
-  await stopChild();
-  project = path;
-  saveState(isChat(path) ? { lastKind: "chat" } : { lastProject: path, lastKind: "project" });
-  win?.setTitle(isChat(path) ? "catai - Chat" : `catai - ${basename(path)}`);
+  return moveTo(ctxOf(e), path, sessionPath);
+});
+
+// Move a window to a folder. If another window has the folder, bring that window to the front (and open the
+// session there). The renderer gets { moved: true } and does nothing.
+function moveTo(c, path, sessionPath) {
+  const other = windowFor(path);
+  if (other && other !== c) {
+    focusWindow(other);
+    if (sessionPath) toRenderer(other, "open-session", sessionPath);
+    return { ok: false, moved: true };
+  }
+  if (!c) return { ok: false, error: "No window." };
+  c.project = path;
+  saveState(isChat(path) ? { lastKind: kindOf(path) } : { lastProject: path, lastKind: "project" });
+  c.win.setTitle(titleFor(path));
   buildMenu();
+  saveWindows();
+  return { ok: true, path };
+}
+
+function focusWindow(c) {
+  if (c.win.isMinimized()) c.win.restore();
+  c.win.show();
+  c.win.focus();
+}
+
+// Open a folder in a new window (or bring its window to the front). No folder: a new chat.
+// sessionPath: an old chat to open in the window.
+ipcMain.handle("open-in-window", async (_e, path, sessionPath) => {
+  if (path && !isFolder(path)) return { ok: false, error: `The folder ${path} does not exist.` };
+  const other = path && windowFor(path);
+  if (other) {
+    focusWindow(other);
+    if (sessionPath) toRenderer(other, "open-session", sessionPath);
+    return { ok: true };
+  }
+  createWindow(path || (await newChatFolder()), { openSession: sessionPath, cascade: true });
   return { ok: true };
 });
 
@@ -656,23 +857,30 @@ function saveState(data) {
   } catch { /* The app works without it. */ }
 }
 
-// A folder on the command line opens as a project. Without one, the app starts a chat (the default).
-async function startProject() {
+// The windows at start. A folder on the command line opens as a project, in one window.
+// Without one, the windows from the last run open again (each folder must still exist). Else a new chat.
+async function startWindows() {
   const arg = process.argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith("-") && a !== ".");
-  if (arg && isFolder(arg)) return resolve(arg);
-  return newChatFolder();
+  if (arg && isFolder(arg)) return [{ project: resolve(arg), bounds: SNAPSHOT ? undefined : fitBounds(readState().window) }];
+  if (!SNAPSHOT) {
+    const seen = new Set();
+    const saved = (readState().windows ?? []).filter((w) => w?.project && isFolder(w.project) && !seen.has(w.project) && seen.add(w.project));
+    if (saved.length) return saved.map((w) => ({ project: w.project, bounds: fitBounds(w) }));
+  }
+  return [{ project: await newChatFolder(), bounds: SNAPSHOT ? undefined : fitBounds(readState().window) }];
 }
 
 // ---- application menu ----
 // Most items send an action to the renderer ("menu" event), which does the same thing as the button.
 // The renderer sends its state ("menu-state"): the permissions, the options, busy, and chat or project.
-let menuState = { mode: "ask", busy: false, chat: true };
-ipcMain.on("menu-state", (_e, st) => {
-  if (JSON.stringify(st) === JSON.stringify(menuState)) return;
-  menuState = st;
-  buildMenu();
+// The menu shows the state of the focused window. It is built again when another window gets the focus.
+ipcMain.on("menu-state", (e, st) => {
+  const c = ctxOf(e);
+  if (!c || JSON.stringify(st) === JSON.stringify(c.menuState)) return;
+  c.menuState = st;
+  if (c === focusedCtx()) buildMenu();
 });
-const act = (action) => () => win?.webContents.send("menu", action);
+const act = (action) => () => toRenderer(focusedCtx(), "menu", action);
 const SITE = "https://catatui.cs.montana.edu";
 
 // The About window. The standard macOS About panel shows the Electron icon in development, so the app
@@ -680,7 +888,7 @@ const SITE = "https://catatui.cs.montana.edu";
 function showAbout() {
   let cli = "";
   try { cli = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8")).version; } catch { /* Not in a package. */ }
-  dialog.showMessageBox(win, {
+  dialog.showMessageBox(focusedCtx()?.win, {
     title: "About catai",
     message: "catai",
     detail: `Version ${app.getVersion()}${cli ? ` (catatui ${cli})` : ""}\nMontana State University\n${SITE}`,
@@ -692,7 +900,9 @@ function showAbout() {
 
 async function buildMenu() {
   const mac = process.platform === "darwin";
-  const st = menuState;
+  const c = focusedCtx();
+  const st = c?.menuState ?? { mode: "ask", busy: false, chat: true };
+  const project = c?.project;
   const recent = (await listProjects().catch(() => [])).slice(0, 10);
   const inProject = project && !isChat(project);
   const option = (key, label) => ({ label, type: "checkbox", checked: !!st[key], click: (item) => act(`option:${key}:${item.checked ? "on" : "off"}`)() });
@@ -717,9 +927,12 @@ async function buildMenu() {
       submenu: [
         { label: "New Chat", accelerator: "CmdOrCtrl+N", enabled: !st.busy, click: act("new-chat") },
         { label: "New Project...", accelerator: "CmdOrCtrl+Shift+N", enabled: !st.busy, click: act("new-project") },
-        { label: "New Chat in This Project", accelerator: "CmdOrCtrl+Alt+N", enabled: !st.busy && !!inProject, click: act("new-chat-here") },
+        { label: "New Window", accelerator: "CmdOrCtrl+Alt+N", click: async () => createWindow(await newChatFolder(), { cascade: true }) },
+        { label: "New Conversation", accelerator: mac ? "Cmd+Ctrl+N" : "Ctrl+Alt+Shift+N", enabled: !st.busy && !!inProject, click: act("new-chat-here") },
+        { label: "Advising", accelerator: "CmdOrCtrl+Shift+A", enabled: !st.busy, click: act("advising") },
         { type: "separator" },
         { label: "Open Project...", accelerator: "CmdOrCtrl+O", enabled: !st.busy, click: act("all-projects") },
+        { label: "Show All History...", accelerator: "CmdOrCtrl+Y", enabled: !st.busy, click: act("history") },
         {
           label: "Open Recent Project",
           enabled: !st.busy && recent.length > 0,
@@ -776,8 +989,7 @@ async function buildMenu() {
 // The window place and size from the last run, if it still fits on a screen. The screens can change between
 // runs (a laptop without its second screen). If the title bar is not on a screen now, the window opens centered on
 // the main screen. If the window is larger than its screen now, it gets smaller.
-function savedBounds() {
-  const b = readState().window;
+function fitBounds(b) {
   if (!b || ![b.x, b.y, b.width, b.height].every(Number.isFinite)) return undefined;
   const area = screen.getAllDisplays().map((d) => d.workArea).find((a) =>
     // The top 40 pixels of the window (the title bar) must be on this screen, at least 120 pixels wide.
@@ -792,17 +1004,72 @@ function savedBounds() {
   };
 }
 
-// Save the place and size when the window moves or changes size (after 500 ms), and when it closes.
-function rememberBounds(w) {
-  let timer;
+// Save the open windows (folder, place, size) when a window moves, changes size, or changes its folder, and at quit.
+// When the last window closes, the list keeps it, so the next start opens it again.
+let quitting = false;
+let windowsTimer;
+function saveWindows(now = false) {
+  if (SNAPSHOT || quitting) return;
+  clearTimeout(windowsTimer);
   const save = () => {
-    if (w.isDestroyed() || w.isMinimized() || w.isFullScreen()) return;
-    saveState({ window: { ...w.getNormalBounds(), maximized: w.isMaximized() } });
+    const list = [...windows.values()].filter((c) => c.project && !c.win.isDestroyed())
+      .map((c) => ({ project: c.project, ...c.win.getNormalBounds(), maximized: c.win.isMaximized() }));
+    if (list.length) saveState({ windows: list, window: list[0] });
   };
-  const later = () => { clearTimeout(timer); timer = setTimeout(save, 500); };
-  w.on("move", later);
-  w.on("resize", later);
-  w.on("close", () => { clearTimeout(timer); save(); });
+  if (now) save(); else windowsTimer = setTimeout(save, 500);
+}
+app.on("before-quit", () => { saveWindows(true); quitting = true; });
+
+// A new window for a folder. cascade: put it a little below and right of the focused window.
+function createWindow(project, { bounds, openSession, cascade } = {}) {
+  const from = cascade ? focusedCtx()?.win : undefined;
+  if (from && !bounds) {
+    const b = from.getNormalBounds();
+    bounds = fitBounds({ x: b.x + 28, y: b.y + 28, width: b.width, height: b.height });
+  }
+  const win = new BrowserWindow({
+    show: !SNAPSHOT,
+    width: bounds?.width ?? 1000,
+    height: bounds?.height ?? 760,
+    ...(bounds ? { x: bounds.x, y: bounds.y } : {}),
+    minWidth: 520,
+    minHeight: 400,
+    title: titleFor(project),
+    backgroundColor: "#101317",
+    icon: ICON,
+    webPreferences: { preload: join(HERE, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  const c = { win, project, child: undefined, changed: new Map(), modeRestored: false, menuState: undefined, openSession };
+  const id = win.webContents.id;
+  windows.set(id, c);
+  if (project && !isChat(project)) saveState({ lastProject: project, lastKind: "project" });
+  if (bounds?.maximized) win.maximize();
+  win.on("move", () => saveWindows());
+  win.on("resize", () => saveWindows());
+  win.on("focus", () => buildMenu());
+  // The window title is "catai - <folder>" (titleFor), not the page title.
+  win.on("page-title-updated", (e) => e.preventDefault());
+  win.on("closed", () => {
+    // The window's catatui process stays parked (a fast start if the folder opens again).
+    const wasLast = windows.size === 1;
+    windows.delete(id);
+    if (!wasLast) saveWindows(true);
+    buildMenu();
+  });
+  // Links in answers open in the normal browser, not in the app.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) shell.openExternal(url);
+    return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (e, url) => {
+    if (url !== win.webContents.getURL()) {
+      e.preventDefault();
+      if (/^https?:/.test(url)) shell.openExternal(url);
+    }
+  });
+  win.loadFile(join(HERE, "dist", "index.html"));
+  saveWindows();
+  return c;
 }
 
 // For tests: CATATUI_DESKTOP_SNAPSHOT=out.png runs with a hidden window, sends CATATUI_DESKTOP_PROMPT,
@@ -844,41 +1111,12 @@ app.whenReady().then(async () => {
     return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": WIDGET_CSP } });
   });
   if (process.platform === "darwin") app.dock?.setIcon(ICON);
-  project = await startProject();
-  if (project && !isChat(project)) saveState({ lastProject: project, lastKind: "project" });
-
-  const bounds = SNAPSHOT ? undefined : savedBounds();
-  win = new BrowserWindow({
-    show: !SNAPSHOT,
-    width: bounds?.width ?? 1000,
-    height: bounds?.height ?? 760,
-    ...(bounds ? { x: bounds.x, y: bounds.y } : {}),
-    minWidth: 520,
-    minHeight: 400,
-    title: isChat(project) ? "catai - Chat" : project ? `catai - ${basename(project)}` : "catai",
-    backgroundColor: "#101317",
-    icon: ICON,
-    webPreferences: { preload: join(HERE, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
-  if (bounds?.maximized) win.maximize();
-  if (!SNAPSHOT) rememberBounds(win);
-  // Links in answers open in the normal browser, not in the app.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) shell.openExternal(url);
-    return { action: "deny" };
-  });
-  win.webContents.on("will-navigate", (e, url) => {
-    if (url !== win.webContents.getURL()) {
-      e.preventDefault();
-      if (/^https?:/.test(url)) shell.openExternal(url);
-    }
-  });
-  win.loadFile(join(HERE, "dist", "index.html"));
+  const first = (await startWindows()).map((w) => createWindow(w.project, { bounds: w.bounds }))[0];
   buildMenu();
-  if (SNAPSHOT) snapshot();
+  if (SNAPSHOT) snapshot(first.win);
 });
 
-async function snapshot() {
+async function snapshot(win) {
   const { writeFileSync } = await import("node:fs");
   const prompt = process.env.CATATUI_DESKTOP_PROMPT;
   await new Promise((r) => win.webContents.once("did-finish-load", r));
@@ -928,12 +1166,14 @@ async function snapshot() {
     await new Promise((r) => setTimeout(r, 2000));
   }
   await new Promise((r) => setTimeout(r, 1000));
+  // The open windows, for tests: the title and the folder of each.
+  console.log(`windows: ${[...windows.values()].map((c) => `${c.win.getTitle()} [${basename(c.project)}] child=${!!c.child}`).join(" | ")}`);
   writeFileSync(SNAPSHOT, (await win.webContents.capturePage()).toPNG());
   app.quit();
 }
 
 app.on("window-all-closed", () => {
   signIn?.abort();
-  child?.stdin.end();
+  for (const e of pool.values()) e.proc.stdin.end();
   app.quit();
 });

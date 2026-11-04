@@ -14,6 +14,7 @@ import { registerHelp } from "./help.ts";
 import { registerMsu } from "./msu.ts";
 import { registerNewProject } from "./project.ts";
 import { registerWidget } from "./widget.ts";
+import { registerAdvising } from "./advising.ts";
 import { CATCHAT_API, DEFAULT_MODEL, PREFERRED_MODELS, PROVIDER_ID } from "./config.ts";
 import { fetchModels } from "./models.ts";
 import { setFooter } from "./footer.ts";
@@ -63,6 +64,8 @@ export default async function (pi: ExtensionAPI) {
   registerMsu(pi);
   registerNewProject(pi);
   registerWidget(pi);
+  // The desktop app starts catatui with this in the advising folder.
+  if (process.env.CATATUI_ADVISING === "1") registerAdvising(pi);
 
   pi.registerProvider(PROVIDER_ID, {
     name: "MSU CatChat",

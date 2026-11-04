@@ -590,3 +590,159 @@ button.project:hover { color: var(--blue); text-decoration: underline; }
 .files { width: min(32%, 30rem); min-width: 14rem; flex-shrink: 1; }
 .main-col { min-width: 26rem; }
 .pathbar-label { font-weight: 600; font-size: .85rem; color: var(--muted); white-space: nowrap; margin-right: .2rem; }
+
+/* The Chats and Projects buttons show the chat name and the project name. They have a fixed width, so they
+   do not change size when the student switches. A long name gets "...". */
+.kind-switch .split > button:first-child { width: 13rem; max-width: none; display: inline-flex; align-items: center; gap: .35rem; text-align: left; }
+.split-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) { .kind-switch .split > button:first-child { width: 9rem; } }
+
+/* The session button (upper right): "Chat: <name>", "Project: <name>", or "Advising". Fixed width, so it does
+   not change size when the student switches. */
+.session-btn { width: 19rem; display: inline-flex; align-items: center; gap: .4rem; text-align: left; }
+.session-btn .ficon { width: 1.05rem; height: 1.05rem; flex-shrink: 0; }
+.session-btn.kind-project { background: #dfe8f7; color: var(--blue); }
+.session-btn.kind-advising { background: #f6ecd0; color: #5c4300; }
+@media (max-width: 860px) { .session-btn { width: 12rem; } }
+.menu.session { width: 24rem; max-width: none; max-height: 75vh; overflow: auto; }
+.menu-icon-row { flex-direction: row !important; align-items: center; gap: .5rem; }
+.menu-icon-row .ficon { width: 1.1rem; height: 1.1rem; }
+.history-icon .ficon { width: 1.2rem; height: 1.2rem; }
+@media (prefers-color-scheme: dark) {
+  .session-btn.kind-project { background: #2a3b5c; color: #fff; }
+  .session-btn.kind-advising { background: #4a3c14; color: #fff; }
+}
+
+/* The session button is on the left, after the app name. */
+.top > .session-menu { margin-left: 1rem; -webkit-app-region: no-drag; }
+.session-btn { width: 15rem; font-size: .85rem; padding: .3rem .6rem; }
+@media (max-width: 860px) { .session-btn { width: 11rem; } }
+/* The menu: the new items on the left, the recent items on the right. */
+.menu.session { left: 0; right: auto; width: min(44rem, 92vw); flex-direction: row; padding: 0; overflow: hidden; max-height: none; }
+.session-col { flex: 1; min-width: 0; padding: .3rem; display: flex; flex-direction: column; }
+.session-col.recent { flex: 1.3; border-left: 1px solid var(--btn-border); background: var(--bg); }
+.menu-icon-row .grow { flex: 1; }
+.ficon-pad { width: 1.1rem; display: inline-block; }
+.shortcut { font-family: inherit; font-size: .75rem; color: var(--muted); background: none; border: 0; padding: 0; white-space: nowrap; }
+/* The History window. */
+.history-window { width: min(44rem, 94vw); height: min(40rem, 86vh); display: flex; flex-direction: column; }
+.history-tools { display: flex; gap: .6rem; align-items: center; padding: .7rem .9rem; border-bottom: 1px solid var(--line); }
+.history-tools .input-field { flex: 1; padding: .45rem .6rem; }
+.segmented { display: inline-flex; border: 1px solid var(--btn-border); border-radius: 7px; overflow: hidden; }
+.segmented button { border: 0; border-radius: 0; background: linear-gradient(var(--btn-top), var(--btn-bottom)); color: var(--fg); padding: .35rem .7rem; font-size: .85rem; }
+.segmented button + button { border-left: 1px solid var(--btn-border); }
+.segmented button.on { background: #dfe8f7; color: var(--blue); font-weight: 600; }
+.history-list { flex: 1; min-height: 0; overflow: auto; padding: .3rem .5rem; }
+.history-list .history-row { background: none; border: 0; border-radius: 6px; text-align: left; color: var(--fg); }
+.history-list .history-row.selected { background: var(--user); }
+@media (prefers-color-scheme: dark) { .segmented button.on { background: #2a3b5c; color: #fff; } }
+
+/* The advising start screen. */
+.advising-intro { max-width: 40rem; margin: 0 auto; text-align: center; }
+.advising-intro > .ficon { width: 3.2rem; height: 3.2rem; }
+.advising-intro h2 { margin: .4rem 0 .2rem; color: var(--blue); font-size: 1.5rem; }
+.advising-intro > p { color: var(--muted); line-height: 1.5; }
+.advising-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: .7rem; margin: 1.2rem 0; text-align: left; }
+.advising-card { display: flex; flex-direction: column; gap: .3rem; padding: .8rem 1rem; border: 1px solid var(--btn-border); border-radius: 10px; background: var(--panel); color: var(--fg); box-shadow: var(--shadow); cursor: pointer; font-weight: 400; }
+.advising-card:hover { border-color: var(--gold); }
+.advising-card strong { color: var(--blue); }
+.advising-card span { color: var(--muted); font-size: .85rem; }
+.demo-note { font-size: .8rem; }
+.demo-badge { display: inline-block; background: #f6ecd0; color: #5c4300; border-radius: 4px; padding: 0 .4rem; font-weight: 700; font-size: .7rem; text-transform: uppercase; margin-right: .3rem; }
+@media (prefers-color-scheme: dark) { .advising-intro h2, .advising-card strong { color: #9db8ec; } .demo-badge { background: #4a3c14; color: #fff; } }
+.history-list .history-row { display: flex; width: 100%; padding: .45rem .6rem; }
+
+/* The advising tasks panel (left, like the file tree). */
+.advising-tasks .tree-body { padding: .5rem; display: flex; flex-direction: column; gap: .45rem; }
+.advising-task { display: flex; flex-direction: column; gap: .2rem; text-align: left; padding: .6rem .7rem; border: 1px solid var(--btn-border); border-radius: 8px; background: var(--panel); color: var(--fg); font-weight: 400; cursor: pointer; }
+.advising-task:hover:not(:disabled) { border-color: var(--gold); background: var(--user); }
+.advising-task:disabled { opacity: .55; cursor: default; }
+.advising-task strong { color: var(--blue); font-size: .9rem; }
+.advising-task span { color: var(--muted); font-size: .78rem; line-height: 1.35; }
+.advising-tasks .demo-note { margin: 0; border-top: 1px solid var(--line); padding: .6rem .8rem; }
+@media (prefers-color-scheme: dark) { .advising-task strong { color: #9db8ec; } }
+
+/* The plan card (advising_submit_plan). */
+.plan-card { max-width: 38rem; margin: .6rem 0; border: 1px solid var(--btn-border); border-radius: 12px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+.plan-card.live { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(212, 160, 23, .25), var(--shadow); }
+.plan-head { display: flex; align-items: center; gap: .7rem; padding: .8rem 1rem; background: linear-gradient(135deg, #002f87, #1f4fae); color: #fff; }
+.plan-avatar { width: 2.4rem; height: 2.4rem; border-radius: 50%; background: #d4a017; color: #002f87; display: grid; place-items: center; font-weight: 800; }
+.plan-to { flex: 1; min-width: 0; }
+.plan-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; opacity: .8; }
+.plan-advisor { font-weight: 700; }
+.plan-total { background: rgba(255, 255, 255, .16); border-radius: 999px; padding: .2rem .7rem; font-weight: 700; font-size: .85rem; white-space: nowrap; }
+.plan-terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .7rem; padding: .9rem 1rem; }
+.plan-term { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--bg); }
+.plan-term-head { display: flex; justify-content: space-between; align-items: center; padding: .45rem .7rem; font-weight: 700; color: var(--blue); border-bottom: 1px solid var(--line); background: var(--panel); }
+.plan-badge { background: #f6ecd0; color: #5c4300; border-radius: 999px; padding: .05rem .5rem; font-size: .72rem; }
+.plan-course { display: grid; grid-template-columns: 5.2rem 1fr auto; gap: .5rem; padding: .35rem .7rem; font-size: .85rem; align-items: baseline; }
+.plan-course + .plan-course { border-top: 1px dashed var(--line); }
+.plan-code { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; font-size: .8rem; }
+.plan-title { color: var(--fg); min-width: 0; }
+.plan-cr { color: var(--muted); font-size: .78rem; }
+.plan-warnings { margin: 0 1rem .8rem; padding: .6rem .8rem; border-radius: 8px; background: #fff6dd; border: 1px solid #f0d58a; color: #5c4300; font-size: .85rem; }
+.plan-warnings ul { margin: .3rem 0 0; padding-left: 1.2rem; }
+.plan-note { margin: 0 1rem .8rem; padding: .5rem .8rem; border-left: 3px solid var(--gold); color: var(--muted); font-size: .85rem; font-style: italic; }
+.plan-actions { display: flex; justify-content: flex-end; gap: .5rem; padding: .7rem 1rem; border-top: 1px solid var(--line); background: var(--bg); }
+.plan-status { padding: .6rem 1rem; border-top: 1px solid var(--line); font-size: .85rem; color: var(--muted); }
+.plan-status.sent { background: #e7f5ea; color: #1a5d2a; }
+@media (prefers-color-scheme: dark) {
+  .plan-term-head { color: #9db8ec; }
+  .plan-warnings { background: #3a3014; border-color: #6b5520; color: #f3e2b0; }
+  .plan-status.sent { background: #173322; color: #b7e4c2; }
+}
+
+/* A recent row with the "open in a new window" button on the right. The button shows when the pointer is on the row. */
+.row-with-action { position: relative; }
+.new-window-btn { position: absolute; right: .4rem; top: 50%; transform: translateY(-50%); opacity: 0; width: 1.8rem; height: 1.8rem; display: grid; place-items: center; color: var(--muted); }
+.row-with-action:hover .new-window-btn, .new-window-btn:focus-visible { opacity: 1; }
+.new-window-btn:hover { color: var(--blue); background: var(--user); }
+.new-window-btn .ficon { width: 1rem; height: 1rem; }
+.menu-icon-row > .ficon[viewBox="0 0 20 20"] { color: var(--muted); }
+
+/* A tooltip from data-tip (the native title tooltip does not show on a button that fades in). */
+[data-tip] { position: relative; }
+[data-tip]:hover::after { content: attr(data-tip); position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; white-space: nowrap; background: #1d2433; color: #fff; font-size: .72rem; padding: .25rem .5rem; border-radius: 5px; pointer-events: none; }
+.new-window-btn .ficon, .window-icon { width: 1.15rem; height: 1.15rem; }
+.history-icon.is-advising { background: #f6ecd0; }
+/* The recent buttons at the top of a new chat. They fade away when the chat starts. */
+.recent-strip { max-width: 52rem; margin: 0 auto 1rem; padding: .2rem 0; transition: opacity .4s ease, transform .4s ease; }
+.recent-strip.fading { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+.recent-strip-head { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 .4rem .2rem; }
+.recent-strip-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: .5rem; }
+.recent-chip { display: flex; align-items: center; gap: .55rem; text-align: left; padding: .55rem .7rem; border: 1px solid var(--btn-border); border-radius: 10px; background: var(--panel); color: var(--fg); box-shadow: var(--shadow); cursor: pointer; font-weight: 400; min-width: 0; }
+.recent-chip:hover { border-color: var(--gold); background: var(--user); }
+.recent-chip > .ficon { width: 1.3rem; height: 1.3rem; flex-shrink: 0; }
+.recent-chip-text { display: flex; flex-direction: column; min-width: 0; }
+.recent-chip-title { font-weight: 600; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent-chip-sub { font-size: .72rem; color: var(--muted); }
+.recent-chip.kind-advising { background: #fbf4e0; }
+@media (prefers-color-scheme: dark) { .recent-chip.kind-advising { background: #3a3014; } .history-icon.is-advising { background: #4a3c14; } }
+.row-with-action .new-window-btn[data-tip] { position: absolute; }
+
+/* The start screen of a chat or a project: the catai brand. */
+.empty.brand { gap: .2rem; }
+.empty.brand img { width: 7rem; height: auto; margin-bottom: .2rem; }
+.brand-name { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 800; font-size: 3rem; color: var(--blue); letter-spacing: .02em; line-height: 1; }
+.brand-tag { color: var(--muted); font-size: .95rem; letter-spacing: .03em; border-top: 2px solid var(--gold); padding-top: .45rem; margin-top: .4rem; }
+@media (prefers-color-scheme: dark) { .brand-name { color: #9db8ec; } }
+/* The brand is in the middle of the free space, so the screen does not scroll. */
+.empty.brand { flex: 1; margin-top: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 12rem; }
+.brand-tag { align-self: center; padding-left: 1rem; padding-right: 1rem; }
+
+/* The Conversation menu on the right of the project bar. */
+.conversation-menu { margin-left: auto; flex-shrink: 0; }
+.conversation-btn { width: 17rem; display: inline-flex; align-items: center; gap: .35rem; text-align: left; }
+.conversation-btn .ficon { width: .95rem; height: .95rem; flex-shrink: 0; }
+.menu.conversations { width: 24rem; max-width: none; max-height: 60vh; overflow: auto; }
+.conv-row { position: relative; display: flex; align-items: center; border-radius: 6px; }
+.conv-row:hover { background: var(--user); }
+.conv-row.current { box-shadow: inset 3px 0 var(--gold); }
+.menu .conv-open { flex: 1; min-width: 0; background: none; }
+.menu .conv-open:hover { background: none; }
+.conv-actions { display: flex; gap: .1rem; padding-right: .3rem; opacity: 0; }
+.conv-row:hover .conv-actions, .conv-actions:focus-within { opacity: 1; }
+.conv-actions .icon-btn { width: 1.7rem; height: 1.7rem; display: grid; place-items: center; }
+.conv-actions svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.conv-edit { flex: 1; margin: .25rem .4rem; padding: .35rem .5rem; }
+@media (max-width: 860px) { .conversation-btn { width: 12rem; } }

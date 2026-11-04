@@ -3,7 +3,7 @@ import { marked } from "marked";
 import { useEffect, useReducer, useRef, useState } from "react";
 import logo from "./bobcat.png";
 import { FileIcon, FolderIcon } from "./icons.jsx";
-import { Widget } from "./widgets.jsx";
+import { PlanCard, Widget } from "./widgets.jsx";
 import { closeDialog, initialState, itemsFromMessages, notice, plain, reduce, resultText, toolSummary, WIDGET_PREFIX, widgetAnswer } from "./chat.js";
 
 const api = window.catatui;
@@ -45,16 +45,62 @@ export function App() {
     setInfo(i);
     if (!i.signedIn || (i.expiryDays !== undefined && i.expiryDays <= 0)) return setPhase("signin");
     if (!i.project) return setPhase("projects");
-    setPhase("loading");
+    // From the chat screen, keep the screen while catatui starts. A parked catatui is ready at once.
+    if (phase !== "chat") setPhase("loading");
     // Clear the chat before the start, so the status that catatui sends at start (the mode) stays.
     local(() => initialState);
     const r = await api.start();
     setModel(r.success ? r.data?.model : undefined);
+    // A window opened for an old chat: open it.
+    if (i.openSession) await api.command({ type: "switch_session", sessionPath: i.openSession });
+    // A project opens its last conversation, if catatui started a new, empty one.
+    if (i.kind === "project" && !i.openSession) {
+      const m0 = await api.command({ type: "get_messages" });
+      if (!m0.data?.messages?.length) {
+        const last = ((await api.listSessions()) ?? []).find((x) => x.cwd === i.project);
+        if (last) await api.command({ type: "switch_session", sessionPath: last.path });
+      }
+    }
+    // Advising has one session. If catatui started a new one, open the old one.
+    if (i.kind === "advising") {
+      const session = ((await api.listSessions()) ?? []).find((x) => x.kind === "advising");
+      if (session && session.path !== r.data?.sessionFile) await api.command({ type: "switch_session", sessionPath: session.path });
+    }
+    // A parked catatui can have a chat open. Show its messages.
+    const m = await api.command({ type: "get_messages" });
+    const items = itemsFromMessages(m.data?.messages);
+    if (items.length) {
+      local((s) => ({ ...s, items }));
+      setScrollTick((t) => t + 1);
+    }
     setPhase("chat");
+    refreshNames(i);
   }
 
-  async function openProject(path) {
-    const r = await api.openProject(path);
+  // The names on the Chats and Projects buttons: the open chat (or the last chat), and the open project (or the last project).
+  const [names, setNames] = useState({});
+  const namesSeq = useRef(0);
+  async function refreshNames(i = info) {
+    // Only the newest call sets the names. An older call can end later.
+    const seq = ++namesSeq.current;
+    const [sessions, st] = await Promise.all([api.listSessions(), api.command({ type: "get_state" })]);
+    if (seq !== namesSeq.current) return;
+    const chats = (sessions ?? []).filter((x) => x.kind === "chat" && x.exists);
+    const label = (x) => x && (x.title ?? shortText(x.name ?? x.first));
+    const open = i.chat ? chats.find((x) => x.path === st.data?.sessionFile) : undefined;
+    const base = (p) => p?.split(/[\\/]/).pop();
+    setNames({
+      chat: i.kind === "advising" ? "Academic advisor" : i.chat ? label(open) ?? "New chat" : label(chats[0]),
+      project: i.chat ? base(i.lastProject) : base(i.project),
+    });
+  }
+  useEffect(() => api.onTitlesUpdated(() => refreshNames()), [info]);
+  useEffect(() => { if (!state.busy && phase === "chat") refreshNames(); }, [state.busy]);
+
+  // Open a folder in this window. If another window has it, that window comes to the front (MOVED).
+  async function openProject(path, sessionPath) {
+    const r = await api.openProject(path, sessionPath);
+    if (r.moved) return MOVED;
     if (!r.ok) return r.error;
     await boot();
   }
@@ -63,7 +109,8 @@ export function App() {
   // A chat from History. If it is in a different folder, open that project first.
   async function openAnySession(s) {
     if (!s.here) {
-      const err = await openProject(s.cwd);
+      const err = await openProject(s.cwd, s.path);
+      if (err === MOVED) return;
       if (err) return local((st) => notice(st, "error", err));
     }
     await openSession(s.path);
@@ -76,6 +123,7 @@ export function App() {
     local((s) => ({ ...s, items: itemsFromMessages(m.data?.messages), busy: false, dialogs: [] }));
     // An opened chat starts at the bottom, at the newest message.
     setScrollTick((t) => t + 1);
+    refreshNames();
     refreshModel();
   }
 
@@ -88,21 +136,20 @@ export function App() {
   // "New chat" (Chat menu): a new chat folder.
   async function startChat() {
     if (state.busy) return;
-    await api.newChat();
+    if ((await api.newChat()).moved) return;
+    await boot();
+  }
+
+  // Advising: there is one advising session. Open the advising folder, then the session (if there is one).
+  async function goAdvising() {
+    if (state.busy) return;
+    if ((await api.advising()).moved) return;
     await boot();
   }
 
   // Close the project and go back to chat.
   async function goChat() {
     if (info.chat || state.busy) return;
-    await startChat();
-  }
-
-  // The Chat button from a project: open the last chat. If there is no chat, start a new chat.
-  async function lastChat() {
-    if (info.chat || state.busy) return;
-    const last = ((await api.listSessions()) ?? []).find((s) => s.chat && s.exists);
-    if (last) return openAnySession(last);
     await startChat();
   }
 
@@ -167,10 +214,12 @@ export function App() {
   const [selectedFile, setSelectedFile] = useState(undefined);
   // The "Select a folder for your project" window.
   const [picking, setPicking] = useState(false);
+  // The "History" window: all chats and projects, with a search.
+  const [history, setHistory] = useState(false);
   const [treeTick, setTreeTick] = useState(0);
   useEffect(() => {
     if (phase === "chat" && !state.busy) api.fileTree().then(setTree);
-  }, [phase, state.busy, state.items.length, treeTick]);
+  }, [phase, state.busy, state.items.length, treeTick, info.project]);
   // catatui sends the number of undo steps (undo.ts). Undo is on only if there is a step.
   const undoSteps = Number(state.status["catatui-undo"] ?? 0);
   // File cards read the file again when this changes: after each tool, after Undo, and after a refresh.
@@ -245,6 +294,8 @@ export function App() {
       case "new-chat": return startChat();
       case "new-project": return setPicking(true);
       case "new-chat-here": return newChat();
+      case "advising": return goAdvising();
+      case "history": return setHistory(true);
       case "all-projects": return setPhase("projects");
       case "open": return openProject(arg).then((err) => err && local((s) => notice(s, "error", err)));
       case "close-project": return goChat();
@@ -260,6 +311,10 @@ export function App() {
     }
   };
   useEffect(() => api.onMenu((a) => menuActions.current(a)), []);
+  // Another window asks this window to open one of its old chats.
+  const openSessionRef = useRef();
+  openSessionRef.current = openSession;
+  useEffect(() => api.onOpenSession((path) => openSessionRef.current(path)), []);
 
   // Drag and drop: files from the tree, or from Finder or Explorer (only files in the project).
   const [dropping, setDropping] = useState(false);
@@ -288,13 +343,10 @@ export function App() {
         <div className="title">
           <strong className="app-name">catai</strong>
         </div>
-        <div className="kind-switch" role="tablist" aria-label="Chat or project">
-          <ChatSplit info={info} busy={state.busy} onLast={lastChat} onNew={startChat} onOpen={openAnySession} />
-          <ProjectSplit info={info} busy={state.busy} onOpen={openProject} onAll={() => setPhase("projects")} onNew={() => setPicking(true)} onNewChat={newChat} />
-        </div>
+        <SessionMenu info={info} name={names.chat} busy={state.busy} onNewChat={startChat} onNewProject={() => setPicking(true)}
+          onNewChatHere={newChat} onAdvising={goAdvising} onOpen={openAnySession} onAllProjects={() => setPhase("projects")} onHistory={() => setHistory(true)} />
         <div className="actions">
           {Object.entries(state.status).filter(([k]) => !CONTROLLED.includes(k)).map(([k, v]) => <span key={k} className="chip">{plain(v)}</span>)}
-          <ChatsMenu busy={state.busy} onOpen={openAnySession} />
           <AccountMenu user={info.user} expiryDays={info.expiryDays} onSignOut={signOut} />
         </div>
       </header>
@@ -303,6 +355,7 @@ export function App() {
         <span className="pathbar-label">Project Directory:</span>
         <FolderIcon open />
         <button className="project" title={`${info.project}\nClick to open a different project`} onClick={() => setPhase("projects")}><bdi>{info.project}</bdi></button>
+        <ConversationMenu project={info.project} busy={state.busy} tick={state.items.length} onNew={newChat} onOpen={openSession} />
       </div>}
 
       {info.expiryDays !== undefined && (
@@ -313,6 +366,7 @@ export function App() {
       )}
 
       <div className="body">
+        {info.kind === "advising" && <AdvisingTasks busy={state.busy} onAsk={send} />}
         {info.chat ? null : showTree
           ? <FileTree tree={tree} selected={selectedFile} onEscape={focusComposer} onSelect={selectFile} onOpen={askAboutFile} onDiff={setViewing} onRefresh={() => setTreeTick((t) => t + 1)} onCollapse={() => setShowTree(false)} />
           : <button className="tree-strip" onClick={() => setShowTree(true)} title="Show the files">»</button>}
@@ -324,7 +378,8 @@ export function App() {
           {dropping && <div className="drop-hint">Drop the file to add it to the chat</div>}
           <Chat items={state.items} busy={state.busy} onShowChanges={setViewing} changed={tree} scrollTick={scrollTick} fileTick={fileTick}
             widgets={state.widgets} onWidgetAnswer={(req, data) => { api.respond({ id: req.id, value: JSON.stringify(data) }); local((st) => closeDialog(st, req.id)); }}
-            resume={info.chat ? info.resumeProject : undefined} onResume={openProject} />
+            resume={info.kind === "chat" ? info.resumeProject : undefined} onResume={openProject} advising={info.kind === "advising"} onAsk={send}
+            kind={info.kind} project={info.project} onOpenSession={openAnySession} />
           <Composer busy={state.busy} onSend={send} onStop={stop} editorText={state.editorText}
             clearEditorText={() => local((s) => ({ ...s, editorText: undefined }))}
             canUndo={undoSteps > 0} onUndo={() => send("/undo")}
@@ -332,6 +387,7 @@ export function App() {
         </div>
       </div>
 
+      {history && <HistoryWindow info={info} onClose={() => setHistory(false)} onOpen={(s) => { setHistory(false); openAnySession(s); }} />}
       {picking && <FolderPicker onCancel={() => setPicking(false)} onPick={async (p) => { setPicking(false); const err = await openProject(p); if (err) local((st) => notice(st, "error", err)); }} />}
 
       {state.dialogs[0] && (
@@ -345,6 +401,8 @@ export function App() {
 
 // A user message that starts with this is a file card: the student double-clicked the file in the tree.
 const FILE_PREFIX = "[file] ";
+// openProject returns this when another window has the folder. That window comes to the front.
+const MOVED = Symbol("moved");
 
 // Paths -> a tree of folders. Each folder: { dirs: Map, files: [] }.
 function buildTree(paths) {
@@ -708,33 +766,103 @@ function useMenuKeys(open, setOpen) {
   return { ref: wrap, onKeyDown, onBlur };
 }
 
-// A split button in the Chat and Project switch. The main part switches with one click (onMain).
-// If this kind is already on, the main part opens the menu. The ▾ part always opens the menu.
-// load() gets the menu data when the menu opens. menu(data, close) draws the menu items.
-function Split({ on, busy, icon, label, title, onMain, load, menu }) {
+// The conversations of a project (right side of the project bar). The button shows the open conversation.
+// The menu: New Conversation, and each conversation of the project with Rename and Delete.
+function ConversationMenu({ project, busy, tick, onNew, onOpen }) {
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState(undefined);
-  async function toggle() {
-    if (!open) setData(await load());
-    setOpen(!open);
+  const [list, setList] = useState([]);
+  const [current, setCurrent] = useState(undefined);
+  const [editing, setEditing] = useState(undefined);
+  const [draft, setDraft] = useState("");
+  const load = async () => {
+    const [all, st] = await Promise.all([api.listSessions(), api.command({ type: "get_state" })]);
+    setList((all ?? []).filter((s) => s.cwd === project));
+    setCurrent(st.data?.sessionFile);
+  };
+  useEffect(() => { if (!busy) load(); }, [project, busy, tick]);
+  useEffect(() => api.onTitlesUpdated(load), [project]);
+  const keys = useMenuKeys(open && !editing, setOpen);
+  const close = () => { setOpen(false); setEditing(undefined); };
+  const cur = list.find((s) => s.path === current);
+  const label = cur ? sessionTitle(cur) : "New conversation";
+  async function rename(s) {
+    if (draft.trim() && draft.trim() !== sessionTitle(s)) await api.renameSession(s.path, draft);
+    setEditing(undefined);
   }
-  const close = () => setOpen(false);
-  const keys = useMenuKeys(open && !!data, setOpen);
+  async function remove(s) {
+    if (!(await api.deleteSession(s.path)).ok) return;
+    if (s.path === current) await onNew();
+    await load();
+  }
   return (
-    <span className="menu-wrap split" {...keys}>
-      <button role="tab" aria-selected={on} className={on ? "on" : ""} onClick={on ? toggle : onMain} disabled={busy} title={title}>
-        {icon} {label}
+    <span className="menu-wrap conversation-menu" {...keys}>
+      <button className={`btn small conversation-btn ${open ? "pressed" : ""}`} disabled={busy} onClick={async () => { if (!open) await load(); setOpen(!open); }}
+        title={busy ? "Wait until the agent is done" : "The conversations in this project"}>
+        <ChatIcon /> <span className="split-label">{label}</span> <Caret />
       </button>
-      <button className={`split-arrow ${on ? "on" : ""} ${open ? "pressed" : ""}`} onClick={toggle} disabled={busy} aria-label={`${label} menu`}><Caret /></button>
-      {open && data && <div className="menu kind-menu" tabIndex={-1} onMouseLeave={close}>{menu(data, close)}</div>}
+      {open && (
+        <div className="menu conversations" tabIndex={-1} onMouseLeave={() => { if (!editing) close(); }}>
+          <button className="menu-strong menu-icon-row" onClick={() => { close(); onNew(); }}>
+            <ChatIcon /> <span className="grow">New Conversation</span> <Shortcut k={MAC ? "Cmd+Ctrl+N" : "Ctrl+Alt+Shift+N"} />
+          </button>
+          <div className="menu-sep" />
+          <div className="menu-head">Conversations in {project.split(/[\\/]/).pop()}</div>
+          {list.length === 0 && <div className="menu-empty">No conversations yet.</div>}
+          {list.map((s) => (
+            <div key={s.path} className={`conv-row ${s.path === current ? "current" : ""}`}>
+              {editing === s.path ? (
+                <input className="input-field conv-edit" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+                  onBlur={() => rename(s)}
+                  onKeyDown={(e) => { if (e.key === "Enter") rename(s); if (e.key === "Escape") { e.stopPropagation(); setEditing(undefined); } }} />
+              ) : (
+                <button className="conv-open" onClick={() => { close(); if (s.path !== current) onOpen(s.path); }}>
+                  <span className="history-title">{sessionTitle(s)}</span>
+                  <span className="history-sub">{ago(s.modified)} {"\u00b7"} {s.count} message{s.count === 1 ? "" : "s"}{s.path === current ? " \u00b7 open" : ""}</span>
+                </button>
+              )}
+              {editing !== s.path && (
+                <span className="conv-actions">
+                  <button className="icon-btn" data-tip="Rename" aria-label="Rename" onClick={() => { setDraft(sessionTitle(s)); setEditing(s.path); }}>
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 14.5V16h1.5l8.6-8.6-1.5-1.5zM15.3 6.2l-1.5-1.5 1.1-1.1a1 1 0 0 1 1.4 0l.1.1a1 1 0 0 1 0 1.4z" /></svg>
+                  </button>
+                  <button className="icon-btn" data-tip="Delete" aria-label="Delete" onClick={() => remove(s)}>
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 6h10M8 6V4.5h4V6M6.5 6l.7 9.5h5.6l.7-9.5" /></svg>
+                  </button>
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </span>
+  );
+}
+
+// The small button that opens a recent item in a new window.
+function NewWindowButton({ onClick }) {
+  return (
+    <button className="icon-btn new-window-btn" onClick={onClick} aria-label="Open in a new window" data-tip="Open in a new window">
+      <WindowIcon />
+    </button>
+  );
+}
+
+function WindowIcon() {
+  return (
+    <svg className="ficon window-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="2" y="4" width="17" height="14" rx="2" fill="#fff" stroke="#002f87" strokeWidth="1.6" />
+      <path d="M2 8h17" stroke="#002f87" strokeWidth="1.6" />
+      <circle cx="4.6" cy="6" r=".7" fill="#002f87" /><circle cx="6.8" cy="6" r=".7" fill="#002f87" />
+      <circle cx="18.5" cy="17.5" r="5" fill="#d4a017" />
+      <path d="M18.5 15v5M16 17.5h5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
   );
 }
 
 function HistoryRow({ icon, title, sub, current, onClick, hint }) {
   return (
     <button className={`history-row ${current ? "current" : ""}`} onClick={onClick} title={hint}>
-      <span className={`history-icon ${icon === "chat" ? "is-chat" : "is-project"}`}>{icon === "chat" ? <ChatIcon /> : <FolderIcon open={false} />}</span>
+      <span className={`history-icon is-${icon}`}><KindIcon kind={icon} open={false} /></span>
       <span className="history-text">
         <span className="history-title">{title}</span>
         <span className="history-sub">{sub}</span>
@@ -743,47 +871,240 @@ function HistoryRow({ icon, title, sub, current, onClick, hint }) {
   );
 }
 
-// Chat: one click from a project opens the last chat. The menu has "New chat" and the five last chats.
-function ChatSplit({ info, busy, onLast, onNew, onOpen }) {
+// The session button (upper right): "Chat: <name>", "Project: <name>", or "Advising".
+// The menu: New Chat, New Project..., Advising, the five last chats and projects, and all of the history.
+const KIND_NAMES = { chat: "Chat", project: "Project", advising: "Advising" };
+
+function KindIcon({ kind, open }) {
+  if (kind === "chat") return <ChatIcon />;
+  if (kind === "advising") return <AdvisingIcon />;
+  return <FolderIcon open={open} />;
+}
+
+function AdvisingIcon() {
   return (
-    <Split on={info.chat} busy={busy} icon={<ChatIcon />} label="Chats" onMain={onLast}
-      title="Ask questions and get help. catai keeps the files of a chat in a hidden folder."
-      load={async () => ((await api.listSessions()) ?? []).filter((s) => s.chat && s.exists).slice(0, 5)}
-      menu={(chats, close) => (
-        <>
-          <button className="menu-strong" onClick={() => { close(); onNew(); }}>New chat</button>
-          {chats.length > 0 && <div className="menu-head">Recent chats</div>}
-          {chats.map((s) => (
-            <HistoryRow key={s.path} icon="chat" title={s.title ?? shortText(s.name ?? s.first)} sub={ago(s.modified)}
-              onClick={() => { close(); onOpen(s); }} />
-          ))}
-        </>
-      )} />
+    <svg className="ficon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3 1.5 8 12 13l10.5-5z" fill="#002f87" />
+      <path d="M5.5 10.5V15c0 1.8 3 3.5 6.5 3.5s6.5-1.7 6.5-3.5v-4.5L12 13.6z" fill="#d4a017" />
+      <path d="M21.5 8.5V14" stroke="#002f87" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
   );
 }
 
-// Project: one click from a chat opens the last project (or the folder picker if there is none).
-// The menu has "New project...", "New chat in this project", the five last projects, and "All projects...".
-function ProjectSplit({ info, busy, onOpen, onAll, onNew, onNewChat }) {
-  const name = info.project ? info.project.split(/[\\/]/).pop() : "";
+// Keyboard shortcuts as the menu bar shows them (main.js buildMenu).
+const MAC = navigator.userAgent.includes("Mac");
+const keyText = (k) => (MAC ? k.replace("Ctrl+", "\u2303").replace("Alt+", "\u2325").replace("Shift+", "\u21e7").replace("Cmd+", "\u2318") : k.replace("Cmd+", "Ctrl+"));
+const Shortcut = ({ k }) => <kbd className="shortcut">{keyText(k)}</kbd>;
+
+// The start screen of the advising session: what the advisor can do, and example questions. A click sends one.
+const ADVISING_EXAMPLES = [
+  ["Plan next semester", "What classes should I take next semester? I want to graduate on time."],
+  ["Check my progress", "How far am I from my degree? Show what is done and what is left."],
+  ["Review my transcript", "Show my transcript and my GPA. Which grades are a problem?"],
+  ["Map out graduation", "Make a plan for each semester until I graduate."],
+  ["Send my plan", "Send my plan for next semester to my advisor for approval."],
+];
+
+// The left panel of the advising view: the advising tasks. A click sends the task. It is always there.
+function AdvisingTasks({ busy, onAsk }) {
   return (
-    <Split on={!info.chat} busy={busy} icon={<FolderIcon open={!info.chat} />} label={info.chat ? "Projects" : `Project: ${name}`}
-      onMain={() => (info.lastProject ? onOpen(info.lastProject) : onNew())}
-      title={info.lastProject ? `Open ${info.lastProject.split(/[\\/]/).pop()}` : "Work in a folder of files: code, papers, spreadsheets"}
-      load={async () => ((await api.listProjects()) ?? []).slice(0, 5)}
-      menu={(projects, close) => (
-        <>
-          <button className="menu-strong" onClick={() => { close(); onNew(); }}>New project...</button>
-          {!info.chat && <button onClick={() => { close(); onNewChat(); }}>New chat in this project</button>}
-          {projects.length > 0 && <div className="menu-head">Recent projects</div>}
-          {projects.map((p) => (
-            <HistoryRow key={p.path} icon="project" title={p.name} sub={<><bdi>{p.display}</bdi> · {ago(p.modified)}</>}
-              current={p.path === info.project} hint={p.path} onClick={() => { close(); onOpen(p.path); }} />
-          ))}
-          <div className="menu-sep" />
-          <button onClick={() => { close(); onAll(); }}>All projects...</button>
-        </>
-      )} />
+    <aside className="tree advising-tasks">
+      <div className="tree-head"><span className="small muted">Advising tasks</span></div>
+      <div className="tree-body">
+        {ADVISING_EXAMPLES.map(([title, q]) => (
+          <button key={title} className="advising-task" disabled={busy} onClick={() => onAsk(q)} title={busy ? "Wait until the advisor is done" : q}>
+            <strong>{title}</strong>
+            <span>{q}</span>
+          </button>
+        ))}
+      </div>
+      <p className="demo-note pad"><span className="demo-badge">Demo</span> Mock student data.</p>
+    </aside>
+  );
+}
+
+function AdvisingIntro() {
+  return (
+    <div className="empty advising-intro">
+      <AdvisingIcon />
+      <h2>Academic Advising</h2>
+      <p>Plan your classes and check your progress toward your degree. The advisor reads your transcript, your major
+        requirements, and next semester's classes.</p>
+      <p>Pick a task on the left, or ask a question below.</p>
+      <p className="demo-note"><span className="demo-badge">Demo</span> The student record and the class list are mock data. For official decisions, talk to your advisor.</p>
+    </div>
+  );
+}
+
+// A new chat: the eight last chats, projects, and the advising session as buttons at the top. A click opens one
+// (Cmd+click: in a new window). When the chat starts, the buttons fade away.
+function RecentStrip({ hide, current, onOpen, onOpenNew }) {
+  const [list, setList] = useState([]);
+  const [gone, setGone] = useState(hide);
+  useEffect(() => { api.listSessions().then((all) => setList(recentItems((all ?? []).filter((s) => s.cwd !== current && s.exists), 8))); }, [current]);
+  useEffect(() => api.onTitlesUpdated(() => api.listSessions().then((all) => setList(recentItems((all ?? []).filter((s) => s.cwd !== current && s.exists), 8)))), [current]);
+  useEffect(() => {
+    if (!hide) return setGone(false);
+    const t = setTimeout(() => setGone(true), 450);
+    return () => clearTimeout(t);
+  }, [hide]);
+  if (gone || list.length === 0) return null;
+  return (
+    <div className={`recent-strip ${hide ? "fading" : ""}`}>
+      <div className="recent-strip-head">Continue where you left off</div>
+      <div className="recent-strip-items">
+        {list.map((s) => (
+          <button key={s.path} className={`recent-chip kind-${s.kind}`} title={`${sessionSub(s)}\n${MAC ? "\u2318" : "Ctrl+"}click: open in a new window`}
+            onClick={(e) => ((e.metaKey || e.ctrlKey) ? onOpenNew(s) : onOpen(s))}>
+            <KindIcon kind={s.kind} open={false} />
+            <span className="recent-chip-text">
+              <span className="recent-chip-title">{sessionTitle2(s)}</span>
+              <span className="recent-chip-sub">{KIND_NAMES[s.kind]} {"\u00b7"} {ago(s.modified)}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// The session menu: the new items (with their shortcuts) on the left, the five last chats and projects on the right.
+function SessionMenu({ info, name, busy, onNewChat, onNewProject, onNewChatHere, onAdvising, onOpen, onAllProjects, onHistory }) {
+  const [open, setOpen] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  // Qwen makes the titles in the background. Read the list again when new titles are there.
+  useEffect(() => api.onTitlesUpdated(() => { if (open) api.listSessions().then(setSessions); }), [open]);
+  async function toggle() {
+    if (!open) setSessions(await api.listSessions());
+    setOpen(!open);
+  }
+  const close = () => setOpen(false);
+  const keys = useMenuKeys(open, setOpen);
+  const kind = info.kind ?? (info.chat ? "chat" : "project");
+  const projectName = info.project?.split(/[\\/]/).pop();
+  const label = kind === "advising" ? "Advising" : `${KIND_NAMES[kind]}: ${kind === "project" ? projectName : name ?? "New chat"}`;
+  const recent = recentItems(sessions, 5);
+  const item = (icon, text, k, onClick, cls = "") => (
+    <button className={`menu-icon-row ${cls}`} onClick={() => { close(); onClick(); }}>
+      {icon} <span className="grow">{text}</span> {k && <Shortcut k={k} />}
+    </button>
+  );
+  return (
+    <span className="menu-wrap session-menu" {...keys}>
+      <button className={`btn session-btn kind-${kind} ${open ? "pressed" : ""}`} onClick={toggle} disabled={busy}
+        title={busy ? "Wait until the agent is done" : info.project}>
+        <KindIcon kind={kind} open /> <span className="split-label">{label}</span> <Caret />
+      </button>
+      {open && (
+        <div className="menu session" tabIndex={-1} onMouseLeave={close}>
+          <div className="session-col">
+            {item(<ChatIcon />, "New Chat", "Cmd+N", onNewChat, "menu-strong")}
+            {item(<FolderIcon open={false} />, "New Project...", "Cmd+Shift+N", onNewProject, "menu-strong")}
+            {item(<AdvisingIcon />, "Advising", "Cmd+Shift+A", onAdvising, `menu-strong ${kind === "advising" ? "current" : ""}`)}
+            <div className="menu-sep" />
+            {item(<WindowIcon />, "New catai Window", "Cmd+Alt+N", () => api.openInWindow(), "menu-strong")}
+          </div>
+          <div className="session-col recent">
+            <div className="menu-head">Recent</div>
+            {recent.length === 0 && <div className="menu-empty">No chats or projects yet.</div>}
+            {recent.map((s) => (
+              <div key={s.path} className="row-with-action">
+                <HistoryRow icon={s.kind} title={sessionTitle(s)} sub={sessionSub(s)}
+                  current={s.cwd === info.project} hint={`${s.kind === "project" ? s.cwd : "Chat"}\n${MAC ? "\u2318" : "Ctrl+"}click: open in a new window`}
+                  onClick={(e) => { close(); if (e.metaKey || e.ctrlKey) api.openInWindow(s.cwd, s.path); else onOpen(s); }} />
+                <NewWindowButton onClick={() => { close(); api.openInWindow(s.cwd, s.path); }} />
+              </div>
+            ))}
+            <div className="menu-sep" />
+            {item(<span className="ficon-pad" />, "Show All History...", "Cmd+Y", onHistory)}
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+// The last chats, projects, and the advising session, newest first.
+function recentItems(sessions, max) {
+  const out = [];
+  for (const s of sessions ?? []) {
+    if (out.length === max) break;
+    // A project and the advising session show once (their last chat).
+    if (s.kind !== "chat" && out.some((r) => r.kind === s.kind && r.cwd === s.cwd)) continue;
+    out.push(s);
+  }
+  return out;
+}
+const sessionTitle = (s) => (s.kind === "advising" ? "Academic advising" : s.title ?? shortText(s.name ?? s.first));
+const sessionTitle2 = (s) => (s.kind === "project" ? s.projectName : sessionTitle(s));
+const sessionSub = (s) => `${s.kind === "project" ? `Project ${s.projectName}` : KIND_NAMES[s.kind] ?? "Chat"} \u00b7 ${ago(s.modified)}`;
+
+// "History": a window with all chats and projects. A search, and a filter for the type (all, chats, projects, advising).
+// Up and Down move, Enter opens, Escape closes.
+function HistoryWindow({ info, onClose, onOpen }) {
+  const [sessions, setSessions] = useState(undefined);
+  const [query, setQuery] = useState("");
+  const [type, setType] = useState("all");
+  const [sel, setSel] = useState(0);
+  useEffect(() => { api.listSessions().then(setSessions); }, []);
+  useEffect(() => api.onTitlesUpdated(() => api.listSessions().then(setSessions)), []);
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = (sessions ?? [])
+    .filter((s) => type === "all" || s.kind === type)
+    .filter((s) => words.every((w) => `${sessionTitle(s)} ${s.projectName ?? ""} ${s.first ?? ""}`.toLowerCase().includes(w)));
+  useEffect(() => setSel(0), [query, type]);
+  useEffect(() => { document.querySelector(".history-list .history-row.selected")?.scrollIntoView({ block: "nearest" }); }, [sel]);
+  const openNew = (s) => { onClose(); api.openInWindow(s.cwd, s.path); };
+  const onKey = (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && shown[sel]?.exists) { e.preventDefault(); return openNew(shown[sel]); }
+    if (e.key === "Escape") { e.preventDefault(); onClose(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setSel((i) => Math.min(shown.length - 1, i + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setSel((i) => Math.max(0, i - 1)); }
+    else if (e.key === "Enter" && shown[sel]?.exists) { e.preventDefault(); onOpen(shown[sel]); }
+  };
+  const TYPES = [["all", "All"], ["chat", "Chats"], ["project", "Projects"], ["advising", "Advising"]];
+  return (
+    <div className="overlay" onKeyDown={onKey}>
+      <div className="window history-window" role="dialog" aria-modal="true" aria-label="History">
+        <div className="window-title"><img src={logo} alt="" /><span>History</span></div>
+        <div className="history-tools">
+          <input className="input-field" type="search" autoFocus placeholder="Search chats and projects" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <div className="segmented" role="radiogroup" aria-label="Type">
+            {TYPES.map(([k, t]) => (
+              <button key={k} role="radio" aria-checked={type === k} className={type === k ? "on" : ""} onClick={() => setType(k)}>{t}</button>
+            ))}
+          </div>
+        </div>
+        <div className="history-list">
+          {sessions === undefined && <div className="list-empty">Loading...</div>}
+          {sessions && shown.length === 0 && <div className="list-empty">Nothing matches.</div>}
+          {shown.map((s, i) => {
+            const day = dayName(s.modified);
+            const head = i === 0 || dayName(shown[i - 1].modified) !== day;
+            return (
+              <div key={s.path}>
+                {head && <div className="menu-head">{day}</div>}
+                <button className={`history-row ${i === sel ? "selected" : ""} ${s.cwd === info.project ? "current" : ""}`} disabled={!s.exists}
+                  title={s.exists ? s.cwd : `${s.cwd} does not exist now`} onMouseEnter={() => setSel(i)} onClick={() => onOpen(s)}>
+                  <span className={`history-icon is-${s.kind}`}><KindIcon kind={s.kind} open={false} /></span>
+                  <span className="history-text">
+                    <span className="history-title">{sessionTitle(s)}</span>
+                    <span className="history-sub">{sessionSub(s)}</span>
+                  </span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="window-buttons">
+          <span className="picker-target">{sessions ? `${shown.length} of ${sessions.length}` : ""}</span>
+          <span className="spacer" />
+          <button className="btn" onClick={onClose}>Close</button>
+          <button className="btn" disabled={!shown[sel]?.exists} onClick={() => openNew(shown[sel])} title={`${MAC ? "\u2318" : "Ctrl+"}Enter`}>Open in New Window</button>
+          <button className="btn primary default" disabled={!shown[sel]?.exists} onClick={() => onOpen(shown[sel])}>Open</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -858,45 +1179,6 @@ function FolderPicker({ onPick, onCancel }) {
         </div>
       </div>
     </div>
-  );
-}
-
-function ChatsMenu({ busy, onOpen }) {
-  const [open, setOpen] = useState(false);
-  const [sessions, setSessions] = useState([]);
-  // Qwen makes the titles in the background. Read the list again when new titles are there.
-  useEffect(() => api.onTitlesUpdated(() => { if (open) api.listSessions().then(setSessions); }), [open]);
-  async function toggle() {
-    if (!open) setSessions(await api.listSessions());
-    setOpen(!open);
-  }
-  const keys = useMenuKeys(open, setOpen);
-  return (
-    <span className="menu-wrap" {...keys}>
-      <button className={`btn ${open ? "pressed" : ""}`} onClick={toggle} disabled={busy} title={busy ? "Wait until the agent is done" : "Your chats and projects"}>History <Caret /></button>
-      {open && (
-        <div className="menu history" tabIndex={-1} onMouseLeave={() => setOpen(false)}>
-          {sessions.length === 0 && <div className="menu-empty">No chats yet.</div>}
-          {sessions.map((s, i) => {
-            const day = dayName(s.modified);
-            const head = i === 0 || dayName(sessions[i - 1].modified) !== day;
-            return (
-              <div key={s.path}>
-                {head && <div className="menu-head">{day}</div>}
-                <button className="history-row" disabled={!s.exists} onClick={() => { setOpen(false); onOpen(s); }}
-                  title={s.exists ? (s.chat ? "Chat" : s.cwd) : `${s.cwd} does not exist now`}>
-                  <span className={`history-icon ${s.chat ? "is-chat" : "is-project"}`}>{s.chat ? <ChatIcon /> : <FolderIcon open={false} />}</span>
-                  <span className="history-text">
-                    <span className="history-title">{s.title ?? shortText(s.name ?? s.first)}</span>
-                    <span className="history-sub">{s.chat ? "Chat" : `Project ${s.projectName}`} · {ago(s.modified)}</span>
-                  </span>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </span>
   );
 }
 
@@ -1177,7 +1459,7 @@ function AccountMenu({ user, expiryDays, onSignOut }) {
   );
 }
 
-function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer }) {
+function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession }) {
   const end = useRef(null);
   const box = useRef(null);
   // Keep the newest text in view, unless the student scrolled up to read.
@@ -1196,15 +1478,13 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
 
   return (
     <main className="chat" ref={box} tabIndex={-1} onKeyDown={(e) => { if (e.key === "Escape") document.querySelector(".composer textarea")?.focus(); }}>
-      {items.length === 0 && (
-        <div className="empty">
+      {kind === "chat" && <RecentStrip hide={items.length > 0} current={project} onOpen={onOpenSession} onOpenNew={(s) => api.openInWindow(s.cwd, s.path)} />}
+      {items.length === 0 && advising && <AdvisingIntro />}
+      {items.length === 0 && !advising && (
+        <div className="empty brand">
           <img src={logo} alt="" />
-          <p>Ask anything in plain words. Type <code>/help</code> to see what catai can do.</p>
-          {resume && (
-            <button className="btn resume" onClick={() => onResume(resume)} title={resume}>
-              <FolderIcon open={false} /> Resume project {resume.split(/[\\/]/).pop()}
-            </button>
-          )}
+          <div className="brand-name">catai</div>
+          <div className="brand-tag">{kind === "project" ? `Project ${project?.split(/[\\/]/).pop()}` : "Your AI Agent at Montana State University"}</div>
         </div>
       )}
       {items.map((it, i) => <Item key={i} it={it} onShowChanges={onShowChanges} changed={changed} fileTick={fileTick} widgets={widgets} onWidgetAnswer={onWidgetAnswer} />)}
@@ -1215,6 +1495,23 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
 }
 
 function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer }) {
+  // advising_submit_plan: the plan card. It is live while its request waits. After that, the result has the plan and the status.
+  if (it.kind === "tool" && it.name === "advising_submit_plan") {
+    const req = it.running ? widgets.find((w) => w.title.startsWith(`${WIDGET_PREFIX}{"type":"plan"`)) : undefined;
+    let spec;
+    let result;
+    try { spec = req ? JSON.parse(req.title.slice(WIDGET_PREFIX.length)) : undefined; } catch { /* Not JSON. */ }
+    const text = resultText(it.result) ?? "";
+    try { result = text.includes("{") ? JSON.parse(text.slice(text.indexOf("{"))) : undefined; } catch { /* Not JSON. */ }
+    spec ??= result?.plan;
+    // A call that stopped early (for example the app closed) has no plan in the result. Use the arguments.
+    if (!spec && Array.isArray(it.args?.terms)) {
+      spec = { advisor: "your advisor", message: it.args.message, warnings: [],
+        terms: it.args.terms.map((t) => ({ term: t.term, credits: (t.courses ?? []).length * 3, courses: (t.courses ?? []).map((c) => ({ course: c, title: "", credits: 3 })) })) };
+      if (!it.running) result ??= { submitted: false };
+    }
+    if (spec) return <PlanCard spec={spec} result={result} running={it.running} onSubmit={req ? (data) => onWidgetAnswer(req, data) : undefined} />;
+  }
   // show_widget: draw the widget. It is live while its request waits (the same JSON, or the only waiting widget).
   if (it.kind === "tool" && it.name === "show_widget" && it.args?.type) {
     const req = it.running ? (widgets.find((w) => w.title === `${WIDGET_PREFIX}${JSON.stringify(it.args)}`) ?? (widgets.length === 1 ? widgets[0] : undefined)) : undefined;

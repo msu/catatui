@@ -34,7 +34,7 @@ export function Widget({ spec, answer, onSubmit }) {
       {/* Models sometimes put HTML tags in the title. Show the text only. */}
       <div className="widget-title">{String(spec.title ?? "").replace(/<[^>]*>/g, "").trim()}</div>
       <div className="widget-body">{body}</div>
-      {!live && answer === undefined && !["chart", "table"].includes(spec.type) && <div className="widget-note">No answer.</div>}
+      {!live && answer === undefined && !["chart", "table"].includes(spec.type) && spec.wait !== false && <div className="widget-note">No answer.</div>}
     </div>
   );
 }
@@ -217,7 +217,64 @@ function HtmlFrame({ spec, answer, live, onSubmit }) {
   return (
     <>
       {url && <iframe ref={frame} className="widget-frame" src={url} sandbox="allow-scripts" title={spec.title} style={{ height }} />}
-      {answer !== undefined && <div className="widget-note">Answer: {JSON.stringify(answer)}</div>}
+      {/* A page that never calls catai.submit (for example a game) must not keep the agent waiting. */}
+      {live && <div className="widget-actions"><button className="btn" onClick={() => onSubmit({ done: true })} title="Tell the agent that you are done with this page">Done</button></div>}
+      {answer !== undefined && !answer?.done && <div className="widget-note">Answer: {JSON.stringify(answer)}</div>}
     </>
   );
+}
+
+// The plan card for advising_submit_plan (src/catatui/advising.ts): the plan for each term, the warnings, and the
+// note to the advisor. While it waits, it has "Send to advisor" and "Not now". After that, it shows the status.
+export function PlanCard({ spec, result, running, onSubmit }) {
+  const live = !!onSubmit;
+  const total = spec.terms.reduce((a, t) => a + t.credits, 0);
+  return (
+    <div className={`plan-card ${live ? "live" : ""}`}>
+      <div className="plan-head">
+        <div className="plan-avatar" aria-hidden="true">{initials(spec.advisor)}</div>
+        <div className="plan-to">
+          <div className="plan-label">Plan for review</div>
+          <div className="plan-advisor">To: {spec.advisor}</div>
+        </div>
+        <div className="plan-total">{total} credits</div>
+      </div>
+      <div className="plan-terms">
+        {spec.terms.map((t) => (
+          <section key={t.term} className="plan-term">
+            <div className="plan-term-head"><span>{t.term}</span><span className="plan-badge">{t.credits} cr</span></div>
+            {t.courses.map((c) => (
+              <div key={c.course} className="plan-course">
+                <span className="plan-code">{c.course}</span>
+                <span className="plan-title">{c.title}</span>
+                <span className="plan-cr">{c.credits}</span>
+              </div>
+            ))}
+          </section>
+        ))}
+      </div>
+      {spec.warnings?.length > 0 && (
+        <div className="plan-warnings">
+          <strong>Check before you send</strong>
+          <ul>{spec.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+        </div>
+      )}
+      {spec.message && <blockquote className="plan-note">{spec.message}</blockquote>}
+      {live && (
+        <div className="plan-actions">
+          <button className="btn" onClick={() => onSubmit({ send: false })}>Not now</button>
+          <button className="btn primary" onClick={() => onSubmit({ send: true })}>Send to advisor</button>
+        </div>
+      )}
+      {!live && running && <div className="plan-status">Waiting...</div>}
+      {!live && result?.submitted === true && (
+        <div className="plan-status sent">Sent. Confirmation <strong>{result.confirmation}</strong>. Expect a reply {result.reply_expected}.</div>
+      )}
+      {!live && result?.submitted === false && <div className="plan-status">Not sent.</div>}
+    </div>
+  );
+}
+
+function initials(name) {
+  return String(name ?? "").replace(/\(.*?\)/g, "").replace(/^Dr\.\s*/, "").split(/\s+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 }

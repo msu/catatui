@@ -154,7 +154,7 @@ export function registerWebTools(pi: ExtensionAPI) {
       "charts, and step-by-step exercises. The tool returns the submitted JSON. Keep pages self-contained.",
     promptSnippet: "Show an interactive HTML page (quiz, form, chart) in the student's browser and get the answers",
     promptGuidelines: [
-      "Use show_page when the student asks for a quiz, a form, or a chart, or when a short interactive page helps the student learn. Do not use it for normal answers.",
+      "Use show_page when the student asks for a quiz, a form, or a chart in the browser. Do not use it for normal answers.",
       "After show_page returns, give feedback on the answers in the terminal.",
     ],
     parameters: PAGE_PARAMS,

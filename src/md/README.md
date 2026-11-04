@@ -56,6 +56,7 @@ catatui is a terminal coding agent for MSU students. It is an extension to the p
 - [features/msu.md](features/msu.md): MSU context in the system prompt, and the class schedule question
 - [features/new-project.md](features/new-project.md): the `new_project` tool
 - [features/widgets.md](features/widgets.md): the `show_widget` tool and the inline widgets
+- [features/advising.md](features/advising.md): the academic advising demo (mock transcript, requirements, and classes)
 - [features/http-tool.md](features/http-tool.md): the `http` tool
 - [features/screen.md](features/screen.md): header, footer, themes, and name
 - [features/website.md](features/website.md): the GitHub Pages site
