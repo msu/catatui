@@ -509,8 +509,15 @@ const command = (c, cmd) => commandTo(c?.child, cmd);
 
 // ---- IPC from the renderer ----
 
-ipcMain.handle("rpc-command", (e, cmd) => {
+ipcMain.handle("rpc-command", async (e, cmd) => {
   const c = ctxOf(e);
+  // The thinking level: keep it in state.json, so each catatui start gets it (restoreMode).
+  if (cmd?.type === "set_thinking_level" || cmd?.type === "cycle_thinking_level") {
+    const r = await command(c, cmd);
+    const level = cmd.type === "set_thinking_level" ? cmd.level : r.data?.level;
+    if (r.success && level) saveState({ agentMode: { ...(readState().agentMode ?? {}), thinking: level } });
+    return r;
+  }
   // A new chat or an old chat starts a new list of changed files.
   if (cmd?.type === "new_session" || cmd?.type === "switch_session") c?.changed.clear();
   return command(c, cmd);
@@ -552,7 +559,7 @@ function rememberMode(c, rec) {
   if (!c.modeRestored || rec.type !== "extension_ui_request" || rec.method !== "setStatus" || rec.statusKey !== "catatui") return;
   try {
     const { mode, ta } = JSON.parse(rec.statusText);
-    saveState({ agentMode: { mode, ta: !!ta } });
+    saveState({ agentMode: { ...(readState().agentMode ?? {}), mode, ta: !!ta } });
   } catch { /* Not JSON: ignore it. */ }
 }
 async function restoreMode(c) {
@@ -561,6 +568,7 @@ async function restoreMode(c) {
   if (saved) {
     await command(c, { type: "prompt", message: `/mode ${["ask", "plan", "yolo"].includes(saved.mode) ? saved.mode : "ask"}` });
     await command(c, { type: "prompt", message: `/mode ta ${saved.ta ? "on" : "off"}` });
+    if (saved.thinking) await command(c, { type: "set_thinking_level", level: saved.thinking });
   }
   c.modeRestored = true;
 }
@@ -1190,6 +1198,15 @@ async function buildMenu() {
         { type: "separator" },
         { label: "Options", enabled: false },
         option("ta", "Teaching Assistant"), option("sandbox", "Sandbox"), option("ste", "Simple English"),
+        { type: "separator" },
+        {
+          label: "Thinking",
+          enabled: (st.thinkingLevels ?? []).length > 1,
+          submenu: (st.thinkingLevels ?? []).length > 1
+            ? st.thinkingLevels.map((l) => ({ label: l, type: "radio", checked: st.thinking === l, click: act(`thinking:${l}`) }))
+            : [{ label: "This model does not think", enabled: false }],
+        },
+        { label: "Next Thinking Level", accelerator: "CmdOrCtrl+Shift+T", enabled: (st.thinkingLevels ?? []).length > 1, click: act("next-thinking") },
       ],
     },
     { role: "windowMenu" },

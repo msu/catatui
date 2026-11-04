@@ -51,6 +51,7 @@ export function App() {
     local(() => initialState);
     const r = await api.start();
     setModel(r.success ? r.data?.model : undefined);
+    refreshThinking();
     // A window opened for an old chat: open it.
     if (i.openSession) await api.command({ type: "switch_session", sessionPath: i.openSession });
     // A project opens its last conversation, if catatui started a new, empty one.
@@ -183,6 +184,23 @@ export function App() {
   async function refreshModel() {
     const r = await api.command({ type: "get_state" });
     if (r.success) setModel(r.data?.model);
+    refreshThinking();
+  }
+
+  // The thinking level (pi): off ... high, as the model supports. Shift+Tab in the message box and
+  // Agent > Next Thinking Level go to the next level, like Shift+Tab in the terminal.
+  const [thinking, setThinking] = useState({ level: undefined, levels: [] });
+  async function refreshThinking() {
+    const [st, lv] = await Promise.all([api.command({ type: "get_state" }), api.command({ type: "get_available_thinking_levels" })]);
+    setThinking({ level: st.data?.thinkingLevel, levels: lv.data?.levels ?? [] });
+  }
+  async function setThinkingLevel(level) {
+    await api.command({ type: "set_thinking_level", level });
+    refreshThinking();
+  }
+  async function cycleThinking() {
+    await api.command({ type: "cycle_thinking_level" });
+    refreshThinking();
   }
 
   // new_project (project.ts) asks the app to move to a new project folder. When the agent is done, open the
@@ -213,15 +231,18 @@ export function App() {
     // An extension command (/undo, /mode plan) runs at once, also while the agent works.
     // Other text waits until the agent is done.
     const cmd = { type: "prompt", message: text };
-    if (state.busy && !text.startsWith("/")) cmd.streamingBehavior = "followUp";
+    const queue = state.busy && !text.startsWith("/");
+    if (queue) cmd.streamingBehavior = "followUp";
+    // A queued message shows at the end of the chat until the agent takes it.
+    if (queue) local((s) => ({ ...s, queued: [...s.queued, text] }));
     const r = await api.command(cmd);
-    if (!r.success) local((s) => notice(s, "error", r.error ?? "catatui did not accept the message."));
+    if (!r.success) local((s) => notice({ ...s, queued: queue ? s.queued.filter((q) => q !== text) : s.queued }, "error", r.error ?? "catatui did not accept the message."));
     if (text.startsWith("/model")) refreshModel();
   }
 
   async function pickModel(m) {
     const r = await api.command({ type: "set_model", provider: m.provider, modelId: m.id });
-    if (r.success) setModel(r.data);
+    if (r.success) { setModel(r.data); refreshThinking(); }
     else local((s) => notice(s, "error", r.error ?? "catatui did not change the model."));
   }
 
@@ -231,7 +252,17 @@ export function App() {
     setPhase("signin");
   }
 
-  const stop = () => api.command({ type: "abort" });
+  // Take the queued messages back into the message box (pi: clear_queue returns their text).
+  async function unqueue() {
+    const r = await api.command({ type: "clear_queue" });
+    const texts = [...(r.data?.steering ?? []), ...(r.data?.followUp ?? [])];
+    local((s) => ({ ...s, queued: [], editorText: texts.length ? texts.join("\n\n") : s.editorText }));
+  }
+  // Stop: first take the queued messages back (else pi sends them after the stop), then stop the agent.
+  const stop = async () => {
+    if (state.queued.length) await unqueue();
+    return api.command({ type: "abort" });
+  };
 
   // The file tree (left) and the file viewer (right). Read the tree again when the agent is done and after
   // each notice (for example "Undo complete"), so the git status and the changed files stay correct.
@@ -346,8 +377,8 @@ export function App() {
   // The application menu (main.js buildMenu). Send the state, so the menu shows the permissions and options.
   const agentState = parseState(state.status.catatui);
   useEffect(() => {
-    api.menuState({ ...agentState, busy: state.busy, chat: !!info.chat, tree: showTree, canUndo: undoSteps > 0 });
-  }, [state.status.catatui, state.busy, info.chat, showTree, undoSteps]);
+    api.menuState({ ...agentState, busy: state.busy, chat: !!info.chat, tree: showTree, canUndo: undoSteps > 0, thinking: thinking.level, thinkingLevels: thinking.levels });
+  }, [state.status.catatui, state.busy, info.chat, showTree, undoSteps, thinking]);
   // The menu actions do the same thing as the buttons. The ref has the newest functions.
   const menuActions = useRef();
   menuActions.current = (action) => {
@@ -369,6 +400,8 @@ export function App() {
       case "stop": return stop();
       case "undo": return send("/undo");
       case "mode": return send(`/mode ${arg}`);
+      case "thinking": return setThinkingLevel(arg);
+      case "next-thinking": return cycleThinking();
       case "option": return send(`/mode ${rest[0]} ${rest[1]}`);
       case "help": return send("/help");
       case "next-area": return moveArea(1);
@@ -453,11 +486,14 @@ export function App() {
             resume={info.kind === "chat" ? info.resumeProject : undefined} onResume={openProject} advising={info.kind === "advising"} onAsk={send}
             kind={info.kind} project={info.project} onOpenSession={openAnySession} onRemove={removeFromChat}
             onPin={(p) => openSide({ type: "file", path: p })} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })}
-            onOpenView={(view, course) => (view === "advising" ? goAdvising() : goClasses(course))} />
+            onOpenView={(view, course) => (view === "advising" ? goAdvising() : goClasses(course))}
+            queued={state.queued} onUnqueue={unqueue} />
           <Composer context={lastAssistantText(state.items)} busy={state.busy} onSend={send} onStop={stop} editorText={state.editorText}
             clearEditorText={() => local((s) => ({ ...s, editorText: undefined }))}
             canUndo={undoSteps > 0} onUndo={() => send("/undo")}
-            below={<AgentMenu model={model} busy={state.busy} onPick={pickModel} state={parseState(state.status.catatui)} onCommand={send} />} />
+            below={<AgentMenu model={model} busy={state.busy} onPick={pickModel} state={parseState(state.status.catatui)} onCommand={send}
+              thinking={thinking} onThinking={setThinkingLevel} />}
+            onCycleThinking={thinking.levels.length > 1 ? cycleThinking : undefined} />
         </div>
         {side.tabs.length > 0 && (
           <SidePanel side={side} width={sideWidth} setWidth={setSideWidth} onActivate={(id) => setSide((st) => ({ ...st, active: id }))}
@@ -1670,7 +1706,17 @@ function ModeMenu({ state, onCommand }) {
 
 // One button for the model and the permissions: "Qwen3.8-27B · ask ▾". The menu opens upward.
 // "Permissions" is the app name for the catatui modes (ask, plan, yolo). The CLI command is still /mode.
-function AgentMenu({ model, busy, onPick, state, onCommand }) {
+const THINKING_NOTES = {
+  off: "No thinking. The fastest answers.",
+  minimal: "Very little thinking.",
+  low: "Short thinking. Fast.",
+  medium: "The default.",
+  high: "Thinks longer. Slower, better for hard problems.",
+  xhigh: "Thinks very long.",
+  max: "The most thinking.",
+};
+
+function AgentMenu({ model, busy, onPick, state, onCommand, thinking, onThinking }) {
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState([]);
   async function toggle() {
@@ -1686,7 +1732,7 @@ function AgentMenu({ model, busy, onPick, state, onCommand }) {
     <span className="menu-wrap agent-menu" {...keys}>
       <button className={`btn mode-${perm} ${open ? "pressed" : ""}`} onClick={toggle} title="Permissions, options, and model">
         <span className="agent-model">{model?.id ?? "No model"}</span>
-        <span className="agent-perm">{perm}{state?.ta ? " + ta" : ""}</span> <Caret />
+        <span className="agent-perm">{perm}{state?.ta ? " + ta" : ""}{thinking?.level && thinking.levels.length > 1 && thinking.level !== "medium" ? ` \u00b7 ${thinking.level}` : ""}</span> <Caret />
       </button>
       {open && (
         <div className="menu up agent" tabIndex={-1} onMouseLeave={() => setOpen(false)}>
@@ -1724,6 +1770,18 @@ function AgentMenu({ model, busy, onPick, state, onCommand }) {
             ))}
             {models.length === 0 && <div className="menu-empty">No models. Check your sign-in.</div>}
             </div>
+            {thinking?.levels.length > 1 && (
+              <div className="thinking-section">
+                    <div className="menu-head">Thinking <span className="menu-head-key">{MAC ? "\u21e7Tab" : "Shift+Tab"}</span></div>
+                    <div className="thinking-levels" role="radiogroup" aria-label="Thinking level">
+                      {thinking.levels.map((l) => (
+                        <button key={l} role="radio" aria-checked={thinking.level === l} className={thinking.level === l ? "on" : ""}
+                          title={THINKING_NOTES[l] ?? l} onClick={() => onThinking(l)}>{l}</button>
+                      ))}
+                    </div>
+              </div>
+            )}
+
            </div>
           </div>
         </div>
@@ -1889,7 +1947,7 @@ function AccountMenu({ user, expiryDays, onSignOut }) {
   );
 }
 
-function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove, onPin, onOpenWeb, onOpenView }) {
+function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove, onPin, onOpenWeb, onOpenView, queued, onUnqueue }) {
   const end = useRef(null);
   const box = useRef(null);
   // Keep the newest text in view, unless the student scrolled up to read.
@@ -1927,7 +1985,8 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
       )}
       {items.map((it, i) => {
         const item = <Item key={i} it={it} onShowChanges={onShowChanges} changed={changed} fileTick={fileTick} widgets={widgets} onWidgetAnswer={onWidgetAnswer}
-          onPin={onPin} onRemove={busy ? undefined : onRemove} onOpenWeb={onOpenWeb} onOpenView={busy ? undefined : onOpenView} />;
+          onPin={onPin} onRemove={busy ? undefined : onRemove} onOpenWeb={onOpenWeb} onOpenView={busy ? undefined : onOpenView}
+          live={busy && i === items.length - 1} />;
         // File cards have their own buttons. A removed message has nothing to remove.
         if (it.kind === "user" && (it.text.startsWith(FILE_PREFIX) || it.text === "[removed]")) return item;
         // "Remove" on a message or a tool call, when the agent is not working.
@@ -1942,13 +2001,22 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
           </div>
         );
       })}
-      {busy && <div className="working">Working...</div>}
+      {busy && <div className="working">Working<Dots /></div>}
+      {queued?.length > 0 && (
+        <div className="queued">
+          {queued.map((q, i) => <div key={i} className="msg user queued-msg">{q.startsWith(FILE_PREFIX) ? shortText(q) : q}</div>)}
+          <div className="queued-note">
+            Queued: {queued.length === 1 ? "this message waits" : `these ${queued.length} messages wait`} until the agent is done.
+            <button className="link-btn" onClick={onUnqueue}>Edit</button>
+          </div>
+        </div>
+      )}
       <div ref={end} />
     </main>
   );
 }
 
-function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, onPin, onRemove, onOpenWeb, onOpenView }) {
+function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, onPin, onRemove, onOpenWeb, onOpenView, live }) {
   // advising_submit_plan: the plan card. It is live while its request waits. After that, the result has the plan and the status.
   if (it.kind === "tool" && it.name === "advising_submit_plan") {
     const req = it.running ? widgets.find((w) => w.title.startsWith(`${WIDGET_PREFIX}{"type":"plan"`)) : undefined;
@@ -2020,7 +2088,7 @@ function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, o
     <div className="msg assistant">
       {it.blocks.map((b, i) =>
         b.type === "thinking" ? (
-          <details key={i} className="thinking"><summary>Thinking</summary><div>{b.text}</div></details>
+          <details key={i} className="thinking"><summary>Thinking{live && i === it.blocks.length - 1 && <Dots />}</summary><div>{b.text}</div></details>
         ) : (
           <div key={i} className="md" dangerouslySetInnerHTML={{ __html: marked.parse(b.text) }} />
         ),
@@ -2088,7 +2156,7 @@ function Tool({ it }) {
 }
 
 // The message box, with a toolbar under it: the model, the mode, and Undo (children), and Send or Stop.
-function Composer({ busy, onSend, onStop, editorText, clearEditorText, canUndo, onUndo, below, context }) {
+function Composer({ busy, onSend, onStop, editorText, clearEditorText, canUndo, onUndo, below, context, onCycleThinking }) {
   const [text, setText] = useState("");
   const ref = useRef(null);
   // The suggestion: the rest of the message in gray after the text. Tab accepts it, Escape hides it.
@@ -2134,6 +2202,8 @@ function Composer({ busy, onSend, onStop, editorText, clearEditorText, canUndo, 
           onSelect={(e) => { if (hint && e.target.selectionStart !== text.length) setHint(""); }}
           onKeyDown={(e) => {
             if (e.key === "Tab" && hint && !e.shiftKey) { e.preventDefault(); setText(text + hint); setHint(""); return; }
+            // Shift+Tab: the next thinking level, like in the terminal.
+            if (e.key === "Tab" && e.shiftKey && onCycleThinking) { e.preventDefault(); onCycleThinking(); return; }
             if (e.key === "Escape" && hint) { e.preventDefault(); setHint(""); return; }
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
             if (e.key === "Escape" && busy) onStop();
@@ -2150,6 +2220,9 @@ function Composer({ busy, onSend, onStop, editorText, clearEditorText, canUndo, 
     </footer>
   );
 }
+
+// ".", "..", "...", "." again: the model is still working.
+const Dots = () => <span className="dots" aria-hidden="true">...</span>;
 
 // The text of the last answer, for the suggestions (the student often answers it).
 function lastAssistantText(items) {

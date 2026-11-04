@@ -14,6 +14,7 @@ export const initialState = {
   widgets: [], // show_widget requests (input dialogs with a "[widget] " title) that wait for an answer
   status: {}, // setStatus entries, by key
   editorText: undefined, // set_editor_text from catatui; the input box takes it once
+  queued: [], // messages that the student sent while the agent worked; they wait until it is done
 };
 
 const DIALOGS = ["select", "confirm", "input", "editor"];
@@ -52,7 +53,13 @@ export function reduce(state, rec) {
     case "message_start": {
       const m = rec.message;
       // ts: the message timestamp. "Remove" uses it to find the message in the session file.
-      if (m.role === "user") return { ...state, items: [...state.items, { kind: "user", text: userText(m.content), ts: m.timestamp }] };
+      if (m.role === "user") {
+        // A queued message starts now: take it out of the queue.
+        const text = userText(m.content);
+        const i = state.queued.indexOf(text);
+        const queued = i >= 0 ? state.queued.filter((_q, k) => k !== i) : state.queued;
+        return { ...state, queued, items: [...state.items, { kind: "user", text, ts: m.timestamp }] };
+      }
       if (m.role === "assistant") return { ...state, items: [...state.items, { kind: "assistant", blocks: [], ts: m.timestamp }] };
       return state;
     }
