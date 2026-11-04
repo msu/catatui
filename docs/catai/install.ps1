@@ -29,8 +29,10 @@
 
   # 1. catatui. catai starts catatui for each project, and uses its files (root.json below).
   Write-Host "Installing catatui (catai uses it)..."
-  try { $script = (Invoke-WebRequest "$Site/install.ps1" -UseBasicParsing).Content }
+  try { $content = (Invoke-WebRequest "$Site/install.ps1" -UseBasicParsing).Content }
   catch { Fail "cannot get the catatui installer from $Site. Check your network connection." }
+  # GitHub Pages sends .ps1 files as application/octet-stream, so PowerShell gives bytes, not text.
+  $script = if ($content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($content) } else { $content }
   Invoke-Expression $script
   $node = Join-Path $App "node"
   $npm = Join-Path $node "npm.cmd"
