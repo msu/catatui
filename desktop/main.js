@@ -32,6 +32,31 @@ const pi = async () => (piModule ??= await import(pathToFileURL(join(ROOT, "node
 
 const isFolder = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
 
+// Chats: each chat has its own folder under Documents/catai/Chats. The student does not see these folders.
+// A chat is a project in a hidden folder: the same tools, but the app shows no file tree.
+const CHATS_ROOT = join(homedir(), "Documents", "catai", "Chats");
+const isChat = (p) => !!p && (p === CHATS_ROOT || p.startsWith(`${CHATS_ROOT}/`) || p.startsWith(`${CHATS_ROOT}\\`));
+
+// A folder for a new chat. If the newest chat folder is empty and has no chat yet, use it again,
+// so that each launch does not leave an empty folder.
+async function newChatFolder() {
+  mkdirSync(CHATS_ROOT, { recursive: true });
+  const folders = readdirSync(CHATS_ROOT, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  const newest = folders.at(-1);
+  if (newest) {
+    const path = join(CHATS_ROOT, newest);
+    const { SessionManager } = await pi();
+    if (readdirSync(path).length === 0 && (await SessionManager.list(path)).length === 0) return path;
+  }
+  const d = new Date();
+  const two = (n) => String(n).padStart(2, "0");
+  let name = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}.${two(d.getMinutes())}.${two(d.getSeconds())}`;
+  while (existsSync(join(CHATS_ROOT, name))) name += "+";
+  const path = join(CHATS_ROOT, name);
+  mkdirSync(path);
+  return path;
+}
+
 /** @type {BrowserWindow | undefined} */
 let win;
 /** @type {import("node:child_process").ChildProcess | undefined} */
@@ -174,6 +199,7 @@ ipcMain.handle("file-menu", (_e, path, opts) => new Promise((done) => {
       { label: "Add to chat", click: () => { picked = "add"; } },
       { label: "Open", click: () => shell.openPath(full) },
       ...(opts?.canDiff ? [{ label: "Diff", click: () => { picked = "diff"; } }] : []),
+      ...(opts?.canRollback ? [{ label: "Roll back to last commit...", click: async () => { if (await rollBack(rel)) toRenderer("files-changed"); } }] : []),
       { type: "separator" },
     ]),
     { label: reveal, click: () => shell.showItemInFolder(full) },
@@ -182,6 +208,37 @@ ipcMain.handle("file-menu", (_e, path, opts) => new Promise((done) => {
   ];
   Menu.buildFromTemplate(template).popup({ window: win, callback: () => done(picked) });
 }));
+
+// Roll back one changed file. A file in the last commit: git puts back that version (also for a deleted file).
+// A new file (not in the last commit): it goes to the trash, so the student can get it back.
+// A native question comes first, because the changes are lost.
+async function rollBack(rel) {
+  const full = resolve(project, rel);
+  const inHead = git(["cat-file", "-e", `HEAD:${rel}`]) !== undefined;
+  const r = await dialog.showMessageBox(win, {
+    type: "warning",
+    message: `Roll back ${basename(rel)}?`,
+    detail: inHead
+      ? "The file goes back to the version in the last commit. Your changes to it are lost."
+      : "This file is not in the last commit, so rolling back removes it. It goes to the trash.",
+    buttons: ["Roll back", "Cancel"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (r.response !== 0) return false;
+  try {
+    if (inHead) {
+      if (git(["checkout", "HEAD", "--", rel]) === undefined) throw new Error("git could not put back the file.");
+    } else {
+      git(["rm", "--cached", "--quiet", "--", rel]); // if it was added to git; no error if not
+      await shell.trashItem(full);
+    }
+    return true;
+  } catch (e) {
+    dialog.showErrorBox("Roll back failed", `catai could not roll back ${rel}: ${e.message}`);
+    return false;
+  }
+}
 
 // A dropped file: its path in the project. Files outside the project are refused, because the sandbox blocks them.
 ipcMain.handle("project-path", (_e, full) => {
@@ -327,7 +384,10 @@ ipcMain.on("ui-response", (_e, response) => write({ type: "extension_ui_response
 // The sign-in state and the project, for the first screen.
 ipcMain.handle("info", () => {
   const cred = store.readCredential();
-  return { project, signedIn: !!cred, user: cred?.user, expiryDays: store.expiryDays(cred) };
+  // resumeProject: the app last worked in this project (not in a chat). The chat start screen offers it.
+  const st = readState();
+  const resumeProject = st.lastKind === "project" && st.lastProject && isFolder(st.lastProject) && st.lastProject !== project ? st.lastProject : undefined;
+  return { project, chat: isChat(project), resumeProject, signedIn: !!cred, user: cred?.user, expiryDays: store.expiryDays(cred) };
 });
 
 // Start catatui, or start it again so that pi reads a new sign-in. Resolves when catatui answers.
@@ -406,7 +466,7 @@ ipcMain.handle("list-projects", async () => {
   const { SessionManager } = await pi();
   const byCwd = new Map();
   for (const s of await SessionManager.listAll()) {
-    if (!s.cwd) continue;
+    if (!s.cwd || isChat(s.cwd)) continue;
     // "display" is the path with ~ for the home folder, so the list is shorter.
     const home = homedir();
     const display = s.cwd === home ? "~" : s.cwd.startsWith(`${home}/`) ? `~${s.cwd.slice(home.length)}` : s.cwd;
@@ -429,8 +489,17 @@ ipcMain.handle("list-sessions", async () => {
     .map((s) => ({
       path: s.path, name: s.name, first: s.firstMessage, modified: new Date(s.modified).getTime(), count: s.messageCount,
       cwd: s.cwd, folder: s.cwd === home ? "~" : s.cwd.startsWith(`${home}/`) ? `~${s.cwd.slice(home.length)}` : s.cwd,
-      here: s.cwd === project, exists: isFolder(s.cwd),
+      here: s.cwd === project, exists: isFolder(s.cwd), chat: isChat(s.cwd),
     }));
+});
+
+// A new chat: a new chat folder. The renderer then calls "start".
+ipcMain.handle("new-chat", async () => {
+  await stopChild();
+  project = await newChatFolder();
+  saveState({ lastKind: "chat" });
+  win?.setTitle("catai - Chat");
+  return { ok: true, path: project };
 });
 
 ipcMain.handle("pick-folder", async () => {
@@ -443,8 +512,8 @@ ipcMain.handle("open-project", async (_e, path) => {
   if (!isFolder(path)) return { ok: false, error: `The folder ${path} does not exist.` };
   await stopChild();
   project = path;
-  saveState({ lastProject: path });
-  win?.setTitle(`catai - ${basename(path)}`);
+  saveState(isChat(path) ? { lastKind: "chat" } : { lastProject: path, lastKind: "project" });
+  win?.setTitle(isChat(path) ? "catai - Chat" : `catai - ${basename(path)}`);
   return { ok: true };
 });
 
@@ -462,13 +531,11 @@ function saveState(data) {
   } catch { /* The app works without it. */ }
 }
 
-// A folder on the command line opens at once. Without one, the app opens the last project.
-// If that folder is gone, the app shows the project screen.
-function startProject() {
+// A folder on the command line opens as a project. Without one, the app starts a chat (the default).
+async function startProject() {
   const arg = process.argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith("-") && a !== ".");
   if (arg && isFolder(arg)) return resolve(arg);
-  const last = readState().lastProject;
-  return last && isFolder(last) ? last : "";
+  return newChatFolder();
 }
 
 // For tests: CATATUI_DESKTOP_SNAPSHOT=out.png runs with a hidden window, sends CATATUI_DESKTOP_PROMPT,
@@ -479,11 +546,13 @@ const SNAPSHOT = process.env.CATATUI_DESKTOP_SNAPSHOT;
 // In development, Electron shows its own icon unless the app sets this one.
 const ICON = join(HERE, "build", "icon.png");
 app.setName("catai");
+// For tests: keep the app data (state.json) in a different folder, so tests do not change the real app data.
+if (process.env.CATATUI_DESKTOP_USER_DATA) app.setPath("userData", process.env.CATATUI_DESKTOP_USER_DATA);
 
 app.whenReady().then(async () => {
   if (process.platform === "darwin") app.dock?.setIcon(ICON);
-  project = startProject();
-  if (project) saveState({ lastProject: project });
+  project = await startProject();
+  if (project && !isChat(project)) saveState({ lastProject: project, lastKind: "project" });
 
   win = new BrowserWindow({
     show: !SNAPSHOT,
@@ -491,7 +560,7 @@ app.whenReady().then(async () => {
     height: 760,
     minWidth: 520,
     minHeight: 400,
-    title: project ? `catai - ${basename(project)}` : "catai",
+    title: isChat(project) ? "catai - Chat" : project ? `catai - ${basename(project)}` : "catai",
     backgroundColor: "#101317",
     icon: ICON,
     webPreferences: { preload: join(HERE, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true },

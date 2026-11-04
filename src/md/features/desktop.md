@@ -44,6 +44,12 @@ A desktop app (like Claude Desktop) for students who do not use the command line
 - A file with a zero byte in its first 8 KB is binary (Excel and Word files are zip files). The panel shows "Open the file" for it, with no diff. Files over 300 KB also have no diff.
 - "Open the file" opens only files in the project, with the normal app for the file type.
 - Limits: the panel does not show changes from bash commands. For an old chat that the student opens again, the list starts empty.
+- Chat and Project. The app starts in Chat. A chat is a project in a hidden folder, `Documents/catai/Chats/<date time>`, with the same tools (also code), but with no file tree and no path row. The header has a Chat and Project switch. In a project it says "Project: <folder>", and the path row has "Switch..." (the project screen) and "Close" (back to a new chat). "+ New chat" makes a new chat folder in Chat, and a new chat in the same folder in a project.
+- At launch the app reuses the newest chat folder if it is empty and has no chat, so launches do not leave empty folders.
+- If the app was last in a project, the empty chat shows "Resume project <name>". `state.json` has `lastProject` and `lastKind`.
+- Recent projects do not list chat folders. History marks chats as "Chat".
+- "Permissions" is the app name for the catatui modes (ask, plan, yolo). The CLI command is still `/mode`. The model and the permissions are one button, "<model> | <permission>", with one menu (Model, Permissions, Options).
+- `CATATUI_DESKTOP_USER_DATA` moves the app data (state.json) to a different folder, for tests. Without it, tests change the real app data, also with a different HOME.
 - Layout: the header has the app name, "+ New chat", History, and the account. The file tree is full height on the left. The chat and the message box are one column. The message box is flush with the column edges and has a sunken text field.
 - Undo is on only if there is an undo step. In RPC mode, `undo.ts` sends the number of steps in the status `catatui-undo`.
 - At launch, the app opens the folder on the command line, or else the last project (`state.json` in the Electron user data folder). If that folder is gone, it shows the project screen.

@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld("catatui", {
   listSessions: () => ipcRenderer.invoke("list-sessions"),
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
   openProject: (path) => ipcRenderer.invoke("open-project", path),
+  newChat: () => ipcRenderer.invoke("new-chat"),
   // changed files
   changedFiles: () => ipcRenderer.invoke("changed-files"),
   fileTree: () => ipcRenderer.invoke("file-tree"),
@@ -37,5 +38,7 @@ contextBridge.exposeInMainWorld("catatui", {
   pathForFile: (file) => webUtils.getPathForFile(file),
   projectPath: (full) => ipcRenderer.invoke("project-path", full),
   fileMenu: (path, opts) => ipcRenderer.invoke("file-menu", path, opts),
+  // After a roll back from the file menu, the tree and the file cards read the files again.
+  onFilesChanged: on("files-changed"),
   openPath: (path) => ipcRenderer.send("open-path", path),
 });

@@ -76,9 +76,21 @@ export function App() {
     refreshModel();
   }
 
+  // "+ New chat": in a chat, a new chat (a new chat folder). In a project, a new chat in the same project.
   async function newChat() {
+    if (info.chat) {
+      await api.newChat();
+      return boot();
+    }
     const r = await api.command({ type: "new_session" });
     if (r.success && !r.data?.cancelled) local((s) => ({ ...s, items: [], busy: false, dialogs: [] }));
+  }
+
+  // The Chat and Project switch in the header.
+  async function goChat() {
+    if (info.chat || state.busy) return;
+    await api.newChat();
+    await boot();
   }
 
   async function refreshModel() {
@@ -147,6 +159,7 @@ export function App() {
   // catatui sends the number of undo steps (undo.ts). Undo is on only if there is a step.
   const undoSteps = Number(state.status["catatui-undo"] ?? 0);
   // File cards read the file again when this changes: after each tool, after Undo, and after a refresh.
+  useEffect(() => api.onFilesChanged(() => setTreeTick((t) => t + 1)), []);
   const fileTick = `${state.items.filter((it) => it.kind === "tool" && !it.running).length}-${undoSteps}-${treeTick}-${state.busy}`;
 
   // A double click on a file: show the file in the chat, and the agent asks what to do with it.
@@ -190,6 +203,14 @@ export function App() {
         <div className="title">
           <strong className="app-name">catai</strong>
         </div>
+        <div className="kind-switch" role="tablist" aria-label="Chat or project">
+          <button role="tab" aria-selected={info.chat} className={info.chat ? "on" : ""} onClick={goChat} disabled={state.busy}
+            title="Ask questions and get help. catai keeps the files of a chat in a hidden folder.">Chat</button>
+          <button role="tab" aria-selected={!info.chat} className={!info.chat ? "on" : ""} onClick={() => info.chat && setPhase("projects")} disabled={state.busy}
+            title={info.chat ? "Work in a folder of files: code, papers, spreadsheets" : info.project}>
+            {info.chat ? "Project ▾" : `Project: ${info.project.split(/[\\/]/).pop()}`}
+          </button>
+        </div>
         <div className="actions">
           {Object.entries(state.status).filter(([k]) => !CONTROLLED.includes(k)).map(([k, v]) => <span key={k} className="chip">{plain(v)}</span>)}
           <button className="btn" onClick={newChat} disabled={state.busy} title="Start a new chat in this project">+ New chat</button>
@@ -198,11 +219,14 @@ export function App() {
         </div>
       </header>
 
-      <div className="pathbar">
+      {!info.chat && <div className="pathbar">
         <FolderIcon open />
         <button className="project" title={`${info.project}\nClick to open a recent project`} onClick={() => setPhase("projects")}><bdi>{info.project}</bdi></button>
-        <button className="btn small" onClick={async () => { const p = await api.pickFolder(); if (p) openProject(p); }} disabled={state.busy}>Open New Folder</button>
-      </div>
+        <span className="pathbar-actions">
+          <button className="btn small" onClick={() => setPhase("projects")} disabled={state.busy} title="Open a different project">Switch...</button>
+          <button className="btn small" onClick={goChat} disabled={state.busy} title="Close the project and go back to chat">Close</button>
+        </span>
+      </div>}
 
       {info.expiryDays !== undefined && (
         <div className="banner">
@@ -212,7 +236,7 @@ export function App() {
       )}
 
       <div className="body">
-        {showTree
+        {info.chat ? null : showTree
           ? <FileTree tree={tree} selected={selectedFile} onSelect={setSelectedFile} onOpen={askAboutFile} onDiff={setViewing} onRefresh={() => setTreeTick((t) => t + 1)} onCollapse={() => setShowTree(false)} />
           : <button className="tree-strip" onClick={() => setShowTree(true)} title="Show the files">»</button>}
         <div className={`main-col ${dropping ? "dropping" : ""}`}
@@ -220,14 +244,12 @@ export function App() {
           onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false); }}
           onDrop={onDrop}>
           {dropping && <div className="drop-hint">Drop the file to add it to the chat</div>}
-          <Chat items={state.items} busy={state.busy} onShowChanges={setViewing} changed={tree} scrollTick={scrollTick} fileTick={fileTick} />
+          <Chat items={state.items} busy={state.busy} onShowChanges={setViewing} changed={tree} scrollTick={scrollTick} fileTick={fileTick}
+            resume={info.chat ? info.resumeProject : undefined} onResume={openProject} />
           <Composer busy={state.busy} onSend={send} onStop={stop} editorText={state.editorText}
             clearEditorText={() => local((s) => ({ ...s, editorText: undefined }))}
             canUndo={undoSteps > 0} onUndo={() => send("/undo")}
-            below={<>
-              <ModelMenu model={model} busy={state.busy} onPick={pickModel} />
-              <ModeMenu state={parseState(state.status.catatui)} onCommand={send} />
-            </>} />
+            below={<AgentMenu model={model} busy={state.busy} onPick={pickModel} state={parseState(state.status.catatui)} onCommand={send} />} />
         </div>
         {viewing && <FileViewer path={viewing} tick={treeTick + state.items.length} onClose={() => setViewing(undefined)} onAsk={askAboutFile} />}
       </div>
@@ -278,7 +300,7 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
     if (!folder) onSelect(p);
     const m = mark(p);
     const isText = !/\.(xlsx?|docx?|pptx?|pdf|png|jpe?g|gif|webp|ico|zip|gz)$/i.test(p);
-    const picked = await api.fileMenu(p, { folder, canDiff: !folder && isText && (m === "M" || m === "R") });
+    const picked = await api.fileMenu(p, { folder, canDiff: !folder && isText && (m === "M" || m === "R"), canRollback: !folder && !!m });
     if (picked === "add") onOpen(p);
     if (picked === "diff") onDiff(p);
   };
@@ -511,7 +533,9 @@ function ChatsMenu({ busy, onOpen }) {
               title={s.exists ? s.cwd : `${s.cwd} does not exist now`}>
               <span className="chat-first">{(s.name ?? s.first ?? "(no text)").replace(/^\[file\] /, "File: ").split("\n")[0]}</span>
               <span className="history-meta">
-                <span className={`history-folder ${s.here ? "here" : ""}`}><FolderIcon open={false} /><bdi>{s.folder}</bdi></span>
+                {s.chat
+                  ? <span className="history-folder chat-tag">Chat</span>
+                  : <span className={`history-folder ${s.here ? "here" : ""}`}><FolderIcon open={false} /><bdi>{s.folder}</bdi></span>}
                 <span className="menu-note">{ago(s.modified)}</span>
               </span>
             </button>
@@ -572,6 +596,59 @@ function ModeMenu({ state, onCommand }) {
               <span><span className="menu-id">{OPTION_NAMES[f] ?? f}</span><span className="menu-note">{state.help[f]}</span></span>
             </label>
           ))}
+        </div>
+      )}
+    </span>
+  );
+}
+
+// One button for the model and the permissions: "Qwen3.8-27B · ask ▾". The menu opens upward.
+// "Permissions" is the app name for the catatui modes (ask, plan, yolo). The CLI command is still /mode.
+function AgentMenu({ model, busy, onPick, state, onCommand }) {
+  const [open, setOpen] = useState(false);
+  const [models, setModels] = useState([]);
+  async function toggle() {
+    if (!open) {
+      const r = await api.command({ type: "get_available_models" });
+      setModels(r.success ? r.data.models : []);
+    }
+    setOpen(!open);
+  }
+  const perm = state?.mode ?? "ask";
+  return (
+    <span className="menu-wrap agent-menu">
+      <button className={`btn mode-${perm} ${open ? "pressed" : ""}`} onClick={toggle} disabled={busy} title={busy ? "Wait until the agent is done" : "Model and permissions"}>
+        <span className="agent-model">{model?.id ?? "No model"}</span>
+        <span className="agent-perm">{perm}{state?.ta ? " + ta" : ""}</span> ▾
+      </button>
+      {open && (
+        <div className="menu wide up agent" onMouseLeave={() => setOpen(false)}>
+          <div className="menu-head">Model</div>
+          {models.map((m) => (
+            <label key={`${m.provider}/${m.id}`} className="menu-row">
+              <input type="radio" name="model" checked={m.id === model?.id} onChange={() => onPick(m)} />
+              <span><span className="menu-id">{m.id}</span>{m.name && m.name !== m.id && <span className="menu-note">{m.name}</span>}</span>
+            </label>
+          ))}
+          {models.length === 0 && <div className="menu-empty">No models. Check your sign-in.</div>}
+          {state && (
+            <>
+              <div className="menu-head">Permissions</div>
+              {state.modes.map((m) => (
+                <label key={m} className="menu-row">
+                  <input type="radio" name="perm" checked={state.mode === m} onChange={() => onCommand(`/mode ${m}`)} />
+                  <span><span className="menu-id">{m}</span><span className="menu-note">{state.help[m]}</span></span>
+                </label>
+              ))}
+              <div className="menu-head">Options</div>
+              {state.flags.map((f) => (
+                <label key={f} className="menu-row">
+                  <input type="checkbox" checked={!!state[f]} onChange={(e) => onCommand(`/mode ${f} ${e.target.checked ? "on" : "off"}`)} />
+                  <span><span className="menu-id">{OPTION_NAMES[f] ?? f}</span><span className="menu-note">{state.help[f]}</span></span>
+                </label>
+              ))}
+            </>
+          )}
         </div>
       )}
     </span>
@@ -726,7 +803,7 @@ function AccountMenu({ user, expiryDays, onSignOut }) {
   );
 }
 
-function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick }) {
+function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume }) {
   const end = useRef(null);
   const box = useRef(null);
   // Keep the newest text in view, unless the student scrolled up to read.
@@ -747,7 +824,12 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick }) {
       {items.length === 0 && (
         <div className="empty">
           <img src={logo} alt="" />
-          <p>Type what you want in plain words. Type <code>/help</code> to see what catatui can do.</p>
+          <p>Ask anything in plain words. Type <code>/help</code> to see what catai can do.</p>
+          {resume && (
+            <button className="btn resume" onClick={() => onResume(resume)} title={resume}>
+              <FolderIcon open={false} /> Resume project {resume.split(/[\\/]/).pop()}
+            </button>
+          )}
         </div>
       )}
       {items.map((it, i) => <Item key={i} it={it} onShowChanges={onShowChanges} changed={changed} fileTick={fileTick} />)}
@@ -859,7 +941,7 @@ function Composer({ busy, onSend, onStop, editorText, clearEditorText, canUndo, 
     <footer className="composer">
       <div className="composer-left">
         <textarea className="input-field" ref={ref} value={text} autoFocus rows={Math.min(8, Math.max(3, text.split("\n").length))}
-          placeholder={busy ? "The agent is working. Your message waits until it is done." : "Ask catatui. Enter sends, Shift+Enter is a new line."}
+          placeholder={busy ? "The agent is working. Your message waits until it is done." : "Ask catai. Enter sends, Shift+Enter is a new line."}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
