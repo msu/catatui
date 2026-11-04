@@ -1,5 +1,5 @@
 // The bridge between the renderer and main.js. The renderer has no Node access.
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 const on = (channel) => (fn) => {
   const listener = (_e, data) => fn(data);
@@ -30,5 +30,12 @@ contextBridge.exposeInMainWorld("catatui", {
   openProject: (path) => ipcRenderer.invoke("open-project", path),
   // changed files
   changedFiles: () => ipcRenderer.invoke("changed-files"),
+  fileTree: () => ipcRenderer.invoke("file-tree"),
+  fileView: (path) => ipcRenderer.invoke("file-view", path),
+  filePreview: (path) => ipcRenderer.invoke("file-preview", path),
+  // A file dragged from Finder or Explorer: its full path, then the path in the project (or an error).
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  projectPath: (full) => ipcRenderer.invoke("project-path", full),
+  fileMenu: (path, opts) => ipcRenderer.invoke("file-menu", path, opts),
   openPath: (path) => ipcRenderer.send("open-path", path),
 });

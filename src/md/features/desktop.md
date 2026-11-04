@@ -34,6 +34,7 @@ A desktop app (like Claude Desktop) for students who do not use the command line
 - The `/mode` panel uses `ctx.ui.custom()`, which does nothing in RPC mode. The app has its own mode menu. It reads the JSON status `catatui` and sends `/mode <word> on|off` (see modes.md).
 - The Undo button sends `/undo`. The undo confirm is a normal dialog.
 - Tool cards show paths in the project without the project folder.
+- The project screen has "Open a folder..." at the top and "Or open a recent project" under it. If a project is open, Cancel and Escape go back to it.
 - Without a folder on the command line, the app shows the project screen. The recent projects are the folders of the catatui sessions (`SessionManager.listAll` from pi), newest first. A folder that does not exist now is not shown. A folder with no chat yet is not in the list.
 - The main process loads pi only for the session lists, because pi is large.
 - A click on the project path in the header goes back to the project screen. A new project stops catatui and starts it in the new folder.
@@ -43,6 +44,31 @@ A desktop app (like Claude Desktop) for students who do not use the command line
 - A file with a zero byte in its first 8 KB is binary (Excel and Word files are zip files). The panel shows "Open the file" for it, with no diff. Files over 300 KB also have no diff.
 - "Open the file" opens only files in the project, with the normal app for the file type.
 - Limits: the panel does not show changes from bash commands. For an old chat that the student opens again, the list starts empty.
+- Layout: the header has the app name, "+ New chat", History, and the account. The file tree is full height on the left. The chat and the message box are one column. The message box is flush with the column edges and has a sunken text field.
+- Undo is on only if there is an undo step. In RPC mode, `undo.ts` sends the number of steps in the status `catatui-undo`.
+- At launch, the app opens the folder on the command line, or else the last project (`state.json` in the Electron user data folder). If that folder is gone, it shows the project screen.
+- The tree has Windows Explorer style icons (`icons.jsx`): a folder, or a page with a colored label for the file type.
+- Buttons have depth (a gradient, a border, and a shadow). They move down when pressed. Menus and the message box are raised cards.
+- The account shows the NetID: CatChat names keys `<NetID>_<name>`. For a pasted key, the app gets the alias from `/key/info`. CatChat has no real name: `/key/info` gives only `user_id` (the NetID), and `/user/info` answers "User not found". For a real name, RCI must add it, for example to the App Connect response.
+- After an SSO sign-in, the app comes to the front and shows a check mark animation, then starts catatui.
+- The file tree (left) lists the project files. In a git repository, `git ls-files` gives the list, so `.gitignore` applies. File names have IntelliJ colors for the git status: green (new or untracked), blue (modified or renamed), red with a line through (deleted). A folder with changes is blue. "Changed only" shows only changed files. A folder that is not a git repository has no colors and no "Changed only".
+- The tree header has a refresh icon and a « button that hides the tree. A thin strip with » shows it again.
+- The tree has a search field at the top. Each word must be in the path (any case). A search opens all matching folders. Escape clears it. Enter adds the file to the chat if only one file matches.
+- A right click on a file shows a native menu: Add to chat, Open, Diff (a modified text file), Show in Finder (Explorer), Copy path, and Copy relative path. A folder has Show in Finder and the copy items.
+- A click on a file in the tree selects it. A double click, or a drag into the chat, adds the file to the chat. A drag from Finder or Explorer works too, for files in the project folder (`webUtils.getPathForFile` gives the path). Files outside the project are refused with a notice, because the sandbox blocks them.
+- Adding a file sends `[file] <path>` lines and a request: do not read the file now, and reply only "What would you like me to do with this file?". The request says that the file is in the project folder (a model can think that it is an attachment), and to read it later with the tool for its type, not bash. The read tools do not ask for permission.
+- The chat shows the `[file]` lines as file cards: a page shape (a vertical rectangle) with a one-line header, the first lines of a text file in small type (like a thumbnail), or a large type icon for a binary file (Excel, Word, PDF). The footer has the size, "Open in Excel" (Word, PowerPoint, ...), which opens the file with the default app of the computer, and "Changes" for a changed file.
+- File cards read the file again after each tool, after Undo, and after a refresh, so the preview shows the file now. Image files show as a preview (a data URL, at most 15 MB). The button says "Open in Excel" (Word, PowerPoint) for Office files and "Open" for other files. "Diff" shows only for a text file that git shows as modified.
+- The desktop app is named "catai" (the window title and the header). The CLI is still catatui. The header has a larger bobcat. The project path is in a row under the header, with "Open New Folder".
+- The message box: the text field on the left. Undo, Send, the model, and the mode on the right, in this order. While the agent works, Send becomes a red Stop button with a spinner.
+- History lists the chats of all projects (`SessionManager.listAll`, newest 100), each with its folder. A chat in a different folder opens that project first.
+- The chat goes to the bottom after a send or a dropped file.
+- The agent text uses Atkinson Hyperlegible (SIL Open Font License, from `@fontsource/atkinson-hyperlegible`), at a larger size. The font is in the app, so it works with no network.
+- Chat items do not shrink (`flex-shrink: 0`). Before this, a card that scrolled off got smaller.
+- The app icon is `desktop/build/icon.png` (the bobcat on a rounded MSU blue square with a gold rim). In development, `main.js` sets it for the Dock and the window. Packaging makes `.icns` and `.ico` from it.
+- "Show changes" shows the file on the right: the diff since the last commit, or since the agent changed it.
+- A command question shows the command in an inset box at the top, with a warning that the command can change files on the computer. (A plain-language explanation of commands was tried and removed: it was too complex.) The dialog has the question in a title bar and the buttons in a row. The default button (the first option, Yes) is always on the right, and Enter picks it. "Yes, and do not ask again ..." is a checkbox.
+- `CATATUI_DESKTOP_JS` runs JavaScript in the page before the clicks (for tests).
 - Sign-out stops catatui and calls `clearSignIn` (the same as `/catchat logout`).
 - `CATATUI_DESKTOP_CLICK="a ;; b"` clicks each element before the screenshot. `CATATUI_DESKTOP_WAIT` sets the wait before the prompt (milliseconds).
 - `CATATUI_DESKTOP_SNAPSHOT=out.png` runs the app with a hidden window and saves a screenshot. `CATATUI_DESKTOP_PROMPT` sends a prompt first, and `CATATUI_DESKTOP_ANSWER=1` clicks the first option of each dialog. This is for tests.

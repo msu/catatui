@@ -52,12 +52,17 @@ export function registerUndo(pi: ExtensionAPI) {
     }
   });
 
-  pi.on("agent_end", async () => {
+  // In RPC mode (the desktop app), tell the app how many undo steps there are, so it can turn its Undo button on or off.
+  const publish = (ctx: ExtensionContext) => { if (ctx.mode === "rpc") ctx.ui.setStatus("catatui-undo", String(steps.length)); };
+  pi.on("session_start", async (_event, ctx) => publish(ctx));
+
+  pi.on("agent_end", async (_event, ctx) => {
     if (!current) return;
     for (const [path, copy] of current.files) copy.after = readOrNull(path);
     // Keep only the requests that changed files.
     if ([...current.files.values()].some((c) => !same(c.before, c.after))) steps.push(current);
     if (steps.length > MAX_STEPS) steps.shift();
+    publish(ctx);
     current = undefined;
   });
 
@@ -75,6 +80,7 @@ export function registerUndo(pi: ExtensionAPI) {
       }
       if (!(await confirm(ctx, step))) return;
       steps.pop();
+      publish(ctx);
       const done: string[] = [];
       for (const [path, copy] of step.files) {
         if (copy.before === null) rmSync(path, { force: true });
