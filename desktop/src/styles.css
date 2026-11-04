@@ -796,3 +796,17 @@ button.class-card:hover:not(:disabled) { border-color: var(--gold); background: 
 .link-list .col-path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .78rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .link-list .col-when { font-size: .78rem; color: var(--muted); white-space: nowrap; }
 .match-badge { font-size: .65rem; font-weight: 700; background: #f6ecd0; color: #5c4300; border-radius: 999px; padding: 0 .4rem; }
+
+/* "Remove from this conversation" on a message or a tool call. It shows when the pointer is on the item. */
+.removable { position: relative; }
+.removable .remove-btn[data-tip] { position: absolute; top: .2rem; right: -2rem; width: 1.7rem; height: 1.7rem; display: grid; place-items: center; opacity: 0; color: var(--muted); }
+.removable-user .remove-btn[data-tip] { right: auto; left: -2rem; top: .4rem; }
+.removable:hover .remove-btn, .remove-btn:focus-visible { opacity: 1; }
+.remove-btn:hover { color: #c62828; background: var(--user); }
+.remove-btn svg, .history-delete svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.removable-user { display: flex; justify-content: flex-end; }
+.removable-user .remove-btn[data-tip] { position: static; align-self: center; margin-right: .3rem; order: -1; }
+/* Delete in the History window. */
+.history-list .row-with-action .history-delete[data-tip] { position: absolute; right: .5rem; bottom: .7rem; width: 1.8rem; height: 1.8rem; display: grid; place-items: center; opacity: 0; color: var(--muted); z-index: 2; }
+.history-list .row-with-action:hover .history-delete { opacity: 1; }
+.history-delete:hover { color: #c62828; }

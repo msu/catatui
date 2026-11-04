@@ -7,7 +7,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell } from "electron";
 import { randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -655,6 +655,107 @@ async function sessionOf(c, path) {
   return (await SessionManager.list(c.project)).find((x) => x.path === path);
 }
 
+// ---- remove sensitive information from a conversation ----
+// pi has no API to edit a session, and its "context_edit" entry keeps the old text in the file. So the app
+// changes the session file itself: it replaces text and keeps each entry, its id, and its parent (the tree stays).
+// Then catatui loads the session again (switch_session), so the model does not see the old text.
+// The text already went to CatChat when the student sent it. This does not remove it there.
+const REMOVED = "[removed]";
+const KEEP_KEYS = new Set(["type", "id", "parentId", "role", "toolCallId", "targetId", "firstKeptEntryId", "fromId", "provider", "model", "modelId", "api", "stopReason", "timestamp", "name", "path"]);
+
+// Replace each copy of `needle` in the string values of a value (not in the keys above). Returns the count.
+function replaceDeep(v, needle) {
+  let count = 0;
+  const walk = (o) => {
+    if (Array.isArray(o)) { o.forEach((x, i) => { if (typeof x === "string") { const n = x.split(needle).length - 1; if (n) { o[i] = x.split(needle).join(REMOVED); count += n; } } else walk(x); }); return; }
+    if (!o || typeof o !== "object") return;
+    for (const [k, x] of Object.entries(o)) {
+      if (KEEP_KEYS.has(k)) continue;
+      if (typeof x === "string") { const n = x.split(needle).length - 1; if (n) { o[k] = x.split(needle).join(REMOVED); count += n; } } else walk(x);
+    }
+  };
+  walk(v);
+  return count;
+}
+
+// Remove one message: its text, thinking, and tool results become "[removed]". Tool call arguments other than
+// "path" become "[removed]" too (for example the content of a write).
+function removeMessage(entry, target) {
+  const m = entry.type === "message" ? entry.message : undefined;
+  if (!m) return 0;
+  const blank = (parts) => (Array.isArray(parts) ? parts : [{ type: "text", text: String(parts ?? "") }]).map((p) => {
+    if (p.type === "text") return { type: "text", text: REMOVED };
+    if (p.type === "thinking") { const { thinkingSignature: _s, ...rest } = p; return { ...rest, thinking: REMOVED }; }
+    if (p.type === "image") return { type: "text", text: REMOVED };
+    return p;
+  });
+  if (target.ts !== undefined && m.timestamp === target.ts && (m.role === "user" || m.role === "assistant")) {
+    m.content = blank(m.content);
+    return 1;
+  }
+  if (target.toolCallId) {
+    if (m.role === "toolResult" && m.toolCallId === target.toolCallId) { m.content = [{ type: "text", text: REMOVED }]; delete m.details; return 1; }
+    if (m.role === "assistant" && Array.isArray(m.content)) {
+      let n = 0;
+      for (const p of m.content) if (p.type === "toolCall" && p.id === target.toolCallId) {
+        for (const k of Object.keys(p.arguments ?? {})) if (k !== "path" && typeof p.arguments[k] === "string") { p.arguments[k] = REMOVED; n++; }
+      }
+      return n ? 1 : 0;
+    }
+  }
+  return 0;
+}
+
+// target: { ts } (a message), { toolCallId } (a tool call and its result), or { text } (each copy of the text).
+ipcMain.handle("redact-session", async (e, target) => {
+  const c = ctxOf(e);
+  const st = await command(c, { type: "get_state" });
+  const file = st.data?.sessionFile;
+  if (!file || !existsSync(file)) return { ok: false, error: "This conversation is not saved yet." };
+  if (st.data?.isStreaming) return { ok: false, error: "Wait until the agent is done." };
+  const what = target?.text ? `"${target.text.length > 40 ? `${target.text.slice(0, 40)}...` : target.text}"` : "this message";
+  if (target?.text !== undefined && target.text.length < 3) return { ok: false, error: "Select at least 3 characters." };
+  // For tests: CATATUI_DESKTOP_YES=<button index> answers the question.
+  const r = process.env.CATATUI_DESKTOP_YES ? { response: Number(process.env.CATATUI_DESKTOP_YES) } : await dialog.showMessageBox(c.win, {
+    type: "warning",
+    message: `Remove ${what} from this conversation?`,
+    detail: `catai replaces ${target?.text ? "each copy of the text" : "the message"} with "${REMOVED}" on this computer, and the agent does not see it again. ` +
+      "CatChat got the text when you sent it. This does not remove it from CatChat.",
+    buttons: ["Remove", "Cancel"], defaultId: 1, cancelId: 1,
+  });
+  if (r.response !== 0) return { ok: false, cancelled: true };
+  let count = 0;
+  const lines = readFileSync(file, "utf8").split("\n").map((line) => {
+    if (!line.trim()) return line;
+    let entry;
+    try { entry = JSON.parse(line); } catch { return line; }
+    if (entry.type === "session") return line;
+    const n = target?.text ? replaceDeep(entry, target.text) : removeMessage(entry, target ?? {});
+    count += n;
+    return n ? JSON.stringify(entry) : line;
+  });
+  if (!count) return { ok: false, error: "catai did not find the text in this conversation." };
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, lines.join("\n"));
+  renameSync(tmp, file);
+  // The title came from the old text. Make a new one.
+  if (readTitles()[file]) { delete titles[file]; try { writeFileSync(titlesPath(), JSON.stringify(titles, null, 1)); } catch { /* No file. */ } }
+  await command(c, { type: "switch_session", sessionPath: file });
+  toAll("titles-updated");
+  return { ok: true, count };
+});
+
+// The right-click menu of the chat when text is selected: Copy, and Remove from this conversation.
+ipcMain.handle("chat-menu", (e, text) => new Promise((done) => {
+  const c = ctxOf(e);
+  let picked;
+  Menu.buildFromTemplate([
+    { label: "Copy", click: () => clipboard.writeText(text) },
+    { type: "separator" },
+    { label: "Remove from This Conversation...", click: () => { picked = "remove"; } },
+  ]).popup({ window: c?.win, callback: () => done(picked) });
+}));
+
 // Rename: the app title (titles.json), which the menus show.
 ipcMain.handle("rename-session", async (e, path, title) => {
   const clean = String(title ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
@@ -664,21 +765,34 @@ ipcMain.handle("rename-session", async (e, path, title) => {
   return { ok: true };
 });
 
-// Delete: a question first, then the session file goes to the trash (the student can get it back).
+// Delete: a question first. "Move to Trash" (the student can get it back) or "Delete Permanently" (for a
+// conversation with sensitive information). Any session from the list, but not one that is open in another window.
 ipcMain.handle("delete-session", async (e, path) => {
   const c = ctxOf(e);
-  const s = await sessionOf(c, path);
+  const { SessionManager } = await pi();
+  const s = (await SessionManager.listAll()).find((x) => x.path === path);
   if (!s) return { ok: false };
-  const r = await dialog.showMessageBox(c.win, {
+  for (const o of windows.values()) {
+    if (o === c || !o.child) continue;
+    if ((await command(o, { type: "get_state" })).data?.sessionFile === path) {
+      focusWindow(o);
+      return { ok: false, error: "This conversation is open in another window. Close it there first." };
+    }
+  }
+  const r = process.env.CATATUI_DESKTOP_YES ? { response: Number(process.env.CATATUI_DESKTOP_YES) } : await dialog.showMessageBox(c.win, {
     type: "warning",
     message: `Delete the conversation "${readTitles()[path] ?? (s.name || s.firstMessage || "").slice(0, 60)}"?`,
-    detail: "The conversation goes to the trash. The files in the project do not change.",
-    buttons: ["Delete", "Cancel"], defaultId: 1, cancelId: 1,
+    detail: "Move to Trash: you can get it back from the trash. Delete Permanently: the conversation is gone from this computer. " +
+      "Project files do not change. CatChat got the messages when you sent them. This does not remove them from CatChat.",
+    buttons: ["Move to Trash", "Delete Permanently", "Cancel"], defaultId: 2, cancelId: 2,
   });
-  if (r.response !== 0) return { ok: false };
-  try { await shell.trashItem(path); } catch (err) { return { ok: false, error: err.message }; }
+  if (r.response === 2) return { ok: false };
+  try {
+    if (r.response === 1) rmSync(path, { force: true }); else await shell.trashItem(path);
+  } catch (err) { return { ok: false, error: err.message }; }
+  if (readTitles()[path]) { delete titles[path]; try { writeFileSync(titlesPath(), JSON.stringify(titles, null, 1)); } catch { /* No file. */ } }
   toAll("titles-updated");
-  return { ok: true };
+  return { ok: true, permanent: r.response === 1 };
 });
 
 // ---- chat titles ----

@@ -51,8 +51,9 @@ export function reduce(state, rec) {
 
     case "message_start": {
       const m = rec.message;
-      if (m.role === "user") return { ...state, items: [...state.items, { kind: "user", text: userText(m.content) }] };
-      if (m.role === "assistant") return { ...state, items: [...state.items, { kind: "assistant", blocks: [] }] };
+      // ts: the message timestamp. "Remove" uses it to find the message in the session file.
+      if (m.role === "user") return { ...state, items: [...state.items, { kind: "user", text: userText(m.content), ts: m.timestamp }] };
+      if (m.role === "assistant") return { ...state, items: [...state.items, { kind: "assistant", blocks: [], ts: m.timestamp }] };
       return state;
     }
 
@@ -84,7 +85,7 @@ export function reduce(state, rec) {
       const i = lastAssistant(state.items);
       if (i < 0) return state;
       const error = m.stopReason === "error" ? m.errorMessage ?? "The model returned an error." : m.stopReason === "aborted" ? "Stopped." : undefined;
-      return { ...state, items: replaceAt(state.items, i, { kind: "assistant", blocks: blocksOf(m), error }) };
+      return { ...state, items: replaceAt(state.items, i, { kind: "assistant", blocks: blocksOf(m), error, ts: m.timestamp }) };
     }
 
     case "tool_execution_start":
@@ -163,11 +164,11 @@ export function itemsFromMessages(messages) {
   const tools = new Map();
   for (const m of messages ?? []) {
     if (m.role === "user") {
-      items.push({ kind: "user", text: userText(m.content) });
+      items.push({ kind: "user", text: userText(m.content), ts: m.timestamp });
     } else if (m.role === "assistant") {
       const blocks = blocksOf(m);
       const error = m.stopReason === "error" ? m.errorMessage ?? "The model returned an error." : m.stopReason === "aborted" ? "Stopped." : undefined;
-      if (blocks.length || error) items.push({ kind: "assistant", blocks, error });
+      if (blocks.length || error) items.push({ kind: "assistant", blocks, error, ts: m.timestamp });
       for (const c of m.content ?? []) {
         if (c.type !== "toolCall") continue;
         const item = { kind: "tool", id: c.id, name: c.name, args: c.arguments ?? {}, running: false };

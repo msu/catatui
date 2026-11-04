@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld("catatui", {
   onOpenSession: on("open-session"),
   renameSession: (path, title) => ipcRenderer.invoke("rename-session", path, title),
   deleteSession: (path) => ipcRenderer.invoke("delete-session", path),
+  redactSession: (target) => ipcRenderer.invoke("redact-session", target),
+  chatMenu: (text) => ipcRenderer.invoke("chat-menu", text),
   newChat: () => ipcRenderer.invoke("new-chat"),
   advising: () => ipcRenderer.invoke("advising"),
   classes: (code) => ipcRenderer.invoke("classes", code),

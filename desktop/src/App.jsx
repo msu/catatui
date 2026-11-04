@@ -156,6 +156,24 @@ export function App() {
     await boot();
   }
 
+  // Remove sensitive information: one message ({ ts }), a tool call ({ toolCallId }), or each copy of a text ({ text }).
+  // main.js asks first, changes the session file, and loads it again. Then the chat shows the new messages.
+  async function removeFromChat(target) {
+    const r = await api.redactSession(target);
+    if (r.cancelled) return;
+    if (!r.ok) return local((st) => notice(st, "error", r.error ?? "catai could not remove it."));
+    const m = await api.command({ type: "get_messages" });
+    local((st) => notice({ ...st, items: itemsFromMessages(m.data?.messages) }, "info",
+      `Removed${target.text ? ` ${r.count} cop${r.count === 1 ? "y" : "ies"} of the text` : ""} from this conversation on this computer. CatChat got it when you sent it. This does not remove it there.`));
+  }
+
+  // A conversation was deleted (History window). If it was open here, start a new one.
+  async function afterDelete(path) {
+    const st = await api.command({ type: "get_state" });
+    if (st.data?.sessionFile !== path) return;
+    if (info.kind === "project") await newChat(); else await startChat();
+  }
+
   // Close the project and go back to chat.
   async function goChat() {
     if (info.chat || state.busy) return;
@@ -396,7 +414,7 @@ export function App() {
           <Chat items={state.items} busy={state.busy} onShowChanges={setViewing} changed={tree} scrollTick={scrollTick} fileTick={fileTick}
             widgets={state.widgets} onWidgetAnswer={(req, data) => { api.respond({ id: req.id, value: JSON.stringify(data) }); local((st) => closeDialog(st, req.id)); }}
             resume={info.kind === "chat" ? info.resumeProject : undefined} onResume={openProject} advising={info.kind === "advising"} onAsk={send}
-            kind={info.kind} project={info.project} onOpenSession={openAnySession} />
+            kind={info.kind} project={info.project} onOpenSession={openAnySession} onRemove={removeFromChat} />
           <Composer busy={state.busy} onSend={send} onStop={stop} editorText={state.editorText}
             clearEditorText={() => local((s) => ({ ...s, editorText: undefined }))}
             canUndo={undoSteps > 0} onUndo={() => send("/undo")}
@@ -404,7 +422,7 @@ export function App() {
         </div>
       </div>
 
-      {history && <HistoryWindow info={info} onClose={() => setHistory(false)} onOpen={(s) => { setHistory(false); openAnySession(s); }} />}
+      {history && <HistoryWindow info={info} onClose={() => setHistory(false)} onOpen={(s) => { setHistory(false); openAnySession(s); }} onDeleted={afterDelete} />}
       {linking && <LinkProject code={info.project?.split(/[\\/]/).pop()} onCancel={() => setLinking(false)}
         onPick={async (p) => { setLinking(false); await api.linkClassProject(p); setLinkTick((t) => t + 1); }} />}
       {picking && <FolderPicker onCancel={() => setPicking(false)} onPick={async (p) => { setPicking(false); const err = await openProject(p); if (err) local((st) => notice(st, "error", err)); }} />}
@@ -1150,7 +1168,7 @@ function SessionMenu({ info, name, busy, onNewChat, onNewProject, onNewChatHere,
             {item(<AdvisingIcon />, "Advising", "Cmd+Shift+A", onAdvising, `menu-strong ${kind === "advising" ? "current" : ""}`)}
             {item(<ClassIcon />, "Classes", "Cmd+Shift+C", onClasses, `menu-strong ${kind === "classes" || kind === "class" ? "current" : ""}`)}
             <div className="menu-sep" />
-            {item(<WindowIcon />, "New catai Window", "Cmd+Alt+N", () => api.openInWindow(), "menu-strong")}
+            {item(<WindowIcon />, "New Window", "Cmd+Alt+N", () => api.openInWindow(), "menu-strong")}
           </div>
           <div className="session-col recent">
             <div className="menu-head">Recent</div>
@@ -1190,8 +1208,9 @@ const sessionSub = (s) => `${s.kind === "project" ? `Project ${s.projectName}` :
 
 // "History": a window with all chats and projects. A search, and a filter for the type (all, chats, projects, advising).
 // Up and Down move, Enter opens, Escape closes.
-function HistoryWindow({ info, onClose, onOpen }) {
+function HistoryWindow({ info, onClose, onOpen, onDeleted }) {
   const [sessions, setSessions] = useState(undefined);
+  const [err, setErr] = useState("");
   const [query, setQuery] = useState("");
   const [type, setType] = useState("all");
   const [sel, setSel] = useState(0);
@@ -1231,8 +1250,15 @@ function HistoryWindow({ info, onClose, onOpen }) {
             const day = dayName(s.modified);
             const head = i === 0 || dayName(shown[i - 1].modified) !== day;
             return (
-              <div key={s.path}>
+              <div key={s.path} className="row-with-action">
                 {head && <div className="menu-head">{day}</div>}
+                <button className="icon-btn history-delete" data-tip="Delete" aria-label="Delete" onClick={async () => {
+                  const r = await api.deleteSession(s.path);
+                  setErr(r.error ?? "");
+                  if (r.ok) { setSessions(await api.listSessions()); onDeleted(s.path); }
+                }}>
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 6V4.5h4V6M6 6l.8 10h6.4L14 6" /></svg>
+                </button>
                 <button className={`history-row ${i === sel ? "selected" : ""} ${s.cwd === info.project ? "current" : ""}`} disabled={!s.exists}
                   title={s.exists ? s.cwd : `${s.cwd} does not exist now`} onMouseEnter={() => setSel(i)} onClick={() => onOpen(s)}>
                   <span className={`history-icon is-${s.kind}`}><KindIcon kind={s.kind} open={false} /></span>
@@ -1246,7 +1272,7 @@ function HistoryWindow({ info, onClose, onOpen }) {
           })}
         </div>
         <div className="window-buttons">
-          <span className="picker-target">{sessions ? `${shown.length} of ${sessions.length}` : ""}</span>
+          <span className="picker-target">{err ? <span className="error">{err}</span> : sessions ? `${shown.length} of ${sessions.length}` : ""}</span>
           <span className="spacer" />
           <button className="btn" onClick={onClose}>Close</button>
           <button className="btn" disabled={!shown[sel]?.exists} onClick={() => openNew(shown[sel])} title={`${MAC ? "\u2318" : "Ctrl+"}Enter`}>Open in New Window</button>
@@ -1661,7 +1687,7 @@ function AccountMenu({ user, expiryDays, onSignOut }) {
   );
 }
 
-function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession }) {
+function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove }) {
   const end = useRef(null);
   const box = useRef(null);
   // Keep the newest text in view, unless the student scrolled up to read.
@@ -1679,7 +1705,14 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
   }, [scrollTick]);
 
   return (
-    <main className="chat" ref={box} tabIndex={-1} onKeyDown={(e) => { if (e.key === "Escape") document.querySelector(".composer textarea")?.focus(); }}>
+    <main className="chat" ref={box} tabIndex={-1} onKeyDown={(e) => { if (e.key === "Escape") document.querySelector(".composer textarea")?.focus(); }}
+      onContextMenu={async (e) => {
+        // Selected text: Copy, or Remove from this conversation (each copy).
+        const text = window.getSelection()?.toString().trim();
+        if (!text || busy) return;
+        e.preventDefault();
+        if ((await api.chatMenu(text)) === "remove") onRemove({ text });
+      }}>
       {kind === "chat" && <RecentStrip hide={items.length > 0} current={project} onOpen={onOpenSession} onOpenNew={(s) => api.openInWindow(s.cwd, s.path)} />}
       {items.length === 0 && advising && <AdvisingIntro />}
       {items.length === 0 && (kind === "classes" || kind === "class") && <ClassesIntro kind={kind} code={project?.split(/[\\/]/).pop()} />}
@@ -1690,7 +1723,20 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
           <div className="brand-tag">{kind === "project" ? `Project ${project?.split(/[\\/]/).pop()}` : "Your AI Agent at Montana State University"}</div>
         </div>
       )}
-      {items.map((it, i) => <Item key={i} it={it} onShowChanges={onShowChanges} changed={changed} fileTick={fileTick} widgets={widgets} onWidgetAnswer={onWidgetAnswer} />)}
+      {items.map((it, i) => {
+        const item = <Item key={i} it={it} onShowChanges={onShowChanges} changed={changed} fileTick={fileTick} widgets={widgets} onWidgetAnswer={onWidgetAnswer} />;
+        // "Remove" on a message or a tool call, when the agent is not working.
+        const target = it.kind === "tool" ? (it.running ? undefined : { toolCallId: it.id }) : (it.kind === "user" || it.kind === "assistant") && it.ts !== undefined ? { ts: it.ts } : undefined;
+        if (!target || busy) return item;
+        return (
+          <div key={i} className={`removable removable-${it.kind}`}>
+            {item}
+            <button className="icon-btn remove-btn" data-tip="Remove from this conversation" aria-label="Remove from this conversation" onClick={() => onRemove(target)}>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 6V4.5h4V6M6 6l.8 10h6.4L14 6M8.5 9v4.5M11.5 9v4.5" /></svg>
+            </button>
+          </div>
+        );
+      })}
       {busy && <div className="working">Working...</div>}
       <div ref={end} />
     </main>
