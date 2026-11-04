@@ -26,6 +26,8 @@ const jiti = createJiti(import.meta.url);
 const auth = await jiti.import(join(ROOT, "src", "catatui", "auth.ts"));
 const store = await jiti.import(join(ROOT, "src", "catatui", "store.ts"));
 const { CHANGE_TOOLS, CATCHAT_API, DEFAULT_MODEL } = await jiti.import(join(ROOT, "src", "catatui", "config.ts"));
+// The mock class data (classes.ts), for the Classes panels.
+const classesData = await jiti.import(join(ROOT, "src", "catatui", "classes.ts"));
 
 // pi itself, for the session lists. Load it only when the app needs it, because it is large.
 let piModule;
@@ -41,9 +43,12 @@ const isPlainChat = (p) => inside(CHATS_ROOT, p);
 // Advising: one folder for all advising sessions. catatui starts there with the advisor prompt and tools (advising.ts).
 const ADVISING_ROOT = join(homedir(), "Documents", "catai", "Advising");
 const isAdvising = (p) => inside(ADVISING_ROOT, p);
-// A chat and an advising session have no file tree and no path row. Projects are all other folders.
-const isChat = (p) => isPlainChat(p) || isAdvising(p);
-const kindOf = (p) => (isAdvising(p) ? "advising" : isPlainChat(p) ? "chat" : "project");
+// Classes: the overview session is the Classes folder. Each class chat is a folder in it, for example "CSCI 305".
+const CLASSES_ROOT = join(homedir(), "Documents", "catai", "Classes");
+const isClasses = (p) => inside(CLASSES_ROOT, p);
+// A chat, an advising session, and a class session have no file tree and no path row. Projects are all other folders.
+const isChat = (p) => isPlainChat(p) || isAdvising(p) || isClasses(p);
+const kindOf = (p) => (isAdvising(p) ? "advising" : p === CLASSES_ROOT ? "classes" : isClasses(p) ? "class" : isPlainChat(p) ? "chat" : "project");
 
 // A folder for a new chat. If the newest chat folder is empty and has no chat yet, use it again,
 // so that each launch does not leave an empty folder. A folder that is open in a window is not used again.
@@ -74,7 +79,7 @@ const windows = new Map();
 const ctxOf = (e) => windows.get(e.sender.id);
 const windowFor = (folder) => [...windows.values()].find((c) => c.project === folder);
 const focusedCtx = () => windows.get(BrowserWindow.getFocusedWindow()?.webContents.id) ?? [...windows.values()].at(-1);
-const titleFor = (p) => (isAdvising(p) ? "catai - Advising" : isChat(p) ? "catai - Chat" : p ? `catai - ${basename(p)}` : "catai");
+const titleFor = (p) => (isAdvising(p) ? "catai - Advising" : p === CLASSES_ROOT ? "catai - Classes" : isClasses(p) ? `catai - ${basename(p)}` : isChat(p) ? "catai - Chat" : p ? `catai - ${basename(p)}` : "catai");
 let nextId = 1;
 /** @type {Map<string, (r: unknown) => void>} */
 const pending = new Map();
@@ -343,7 +348,11 @@ const pool = new Map();
 function spawnEntry(folder) {
   const proc = spawn(process.execPath, [CATATUI_BIN, "--mode", "rpc"], {
     cwd: folder,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...(isAdvising(folder) ? { CATATUI_ADVISING: "1" } : {}) },
+    env: {
+      ...process.env, ELECTRON_RUN_AS_NODE: "1",
+      ...(isAdvising(folder) ? { CATATUI_ADVISING: "1" } : {}),
+      ...(folder === CLASSES_ROOT ? { CATATUI_CLASSES: "1" } : isClasses(folder) ? { CATATUI_CLASS: basename(folder) } : {}),
+    },
     stdio: ["pipe", "pipe", "pipe"],
   });
   const entry = { folder, proc, changed: new Map(), status: new Map(), key: store.readCredential()?.access, used: Date.now(), stopping: false };
@@ -766,7 +775,7 @@ ipcMain.handle("list-folders", (_e, path) => {
   let folders = [];
   try {
     folders = readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && !e.name.startsWith(".") && !(dir === join(homedir(), "Documents", "catai") && ["Chats", "Advising"].includes(e.name)))
+      .filter((e) => e.isDirectory() && !e.name.startsWith(".") && !(dir === join(homedir(), "Documents", "catai") && ["Chats", "Advising", "Classes"].includes(e.name)))
       .map((e) => e.name)
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   } catch { /* The folder cannot be read. */ }
@@ -788,6 +797,34 @@ ipcMain.handle("make-folder", (_e, parent, name) => {
 ipcMain.handle("advising", (e) => {
   mkdirSync(ADVISING_ROOT, { recursive: true });
   return moveTo(ctxOf(e), ADVISING_ROOT);
+});
+
+// Classes: the overview folder, or the folder of one class (only the mock classes in classes.ts).
+ipcMain.handle("classes", (e, code) => {
+  const c = code ? classesData.CLASSES.find((x) => x.code === code) : undefined;
+  if (code && !c) return { ok: false, error: `There is no class ${code}.` };
+  const folder = c ? join(CLASSES_ROOT, c.code) : CLASSES_ROOT;
+  mkdirSync(folder, { recursive: true });
+  return moveTo(ctxOf(e), folder);
+});
+
+// The data for the Classes panels: the classes, the upcoming work, the term dates, and the linked project.
+ipcMain.handle("class-info", (e) => {
+  const folder = ctxOf(e)?.project;
+  const code = folder && isClasses(folder) && folder !== CLASSES_ROOT ? basename(folder) : undefined;
+  const link = code ? classesData.classLink(folder) : undefined;
+  return { term: classesData.TERM, classes: classesData.summaries(), upcoming: classesData.upcoming(14), code, link: link && isFolder(link) ? link : undefined };
+});
+
+// Link a project folder to the open class (project.json in the class folder). No path: remove the link.
+ipcMain.handle("link-class-project", (e, path) => {
+  const folder = ctxOf(e)?.project;
+  if (!folder || !isClasses(folder) || folder === CLASSES_ROOT) return { ok: false };
+  const file = join(folder, "project.json");
+  if (!path) { try { writeFileSync(file, "{}"); } catch { /* No link. */ } return { ok: true }; }
+  if (!isFolder(path)) return { ok: false, error: `The folder ${path} does not exist.` };
+  writeFileSync(file, JSON.stringify({ path }, null, 1));
+  return { ok: true };
 });
 
 // A new chat: a new chat folder. The renderer then calls "start".
@@ -930,6 +967,7 @@ async function buildMenu() {
         { label: "New Window", accelerator: "CmdOrCtrl+Alt+N", click: async () => createWindow(await newChatFolder(), { cascade: true }) },
         { label: "New Conversation", accelerator: mac ? "Cmd+Ctrl+N" : "Ctrl+Alt+Shift+N", enabled: !st.busy && !!inProject, click: act("new-chat-here") },
         { label: "Advising", accelerator: "CmdOrCtrl+Shift+A", enabled: !st.busy, click: act("advising") },
+        { label: "Classes", accelerator: "CmdOrCtrl+Shift+C", enabled: !st.busy, click: act("classes") },
         { type: "separator" },
         { label: "Open Project...", accelerator: "CmdOrCtrl+O", enabled: !st.busy, click: act("all-projects") },
         { label: "Show All History...", accelerator: "CmdOrCtrl+Y", enabled: !st.busy, click: act("history") },

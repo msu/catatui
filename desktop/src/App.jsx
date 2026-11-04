@@ -61,9 +61,9 @@ export function App() {
         if (last) await api.command({ type: "switch_session", sessionPath: last.path });
       }
     }
-    // Advising has one session. If catatui started a new one, open the old one.
-    if (i.kind === "advising") {
-      const session = ((await api.listSessions()) ?? []).find((x) => x.kind === "advising");
+    // Advising, Classes, and each class have one session. If catatui started a new one, open the old one.
+    if (["advising", "classes", "class"].includes(i.kind)) {
+      const session = ((await api.listSessions()) ?? []).find((x) => x.cwd === i.project);
       if (session && session.path !== r.data?.sessionFile) await api.command({ type: "switch_session", sessionPath: session.path });
     }
     // A parked catatui can have a chat open. Show its messages.
@@ -147,6 +147,15 @@ export function App() {
     await boot();
   }
 
+  // Classes: the overview (no code) or one class chat. Each has one session.
+  async function goClasses(code) {
+    if (state.busy) return;
+    const r = await api.classes(code);
+    if (r.moved) return;
+    if (!r.ok) return local((st) => notice(st, "error", r.error ?? "catai could not open the class."));
+    await boot();
+  }
+
   // Close the project and go back to chat.
   async function goChat() {
     if (info.chat || state.busy) return;
@@ -216,6 +225,9 @@ export function App() {
   const [picking, setPicking] = useState(false);
   // The "History" window: all chats and projects, with a search.
   const [history, setHistory] = useState(false);
+  // Link a project to a class: the folder picker, then project.json in the class folder.
+  const [linking, setLinking] = useState(false);
+  const [linkTick, setLinkTick] = useState(0);
   const [treeTick, setTreeTick] = useState(0);
   useEffect(() => {
     if (phase === "chat" && !state.busy) api.fileTree().then(setTree);
@@ -295,6 +307,7 @@ export function App() {
       case "new-project": return setPicking(true);
       case "new-chat-here": return newChat();
       case "advising": return goAdvising();
+      case "classes": return goClasses();
       case "history": return setHistory(true);
       case "all-projects": return setPhase("projects");
       case "open": return openProject(arg).then((err) => err && local((s) => notice(s, "error", err)));
@@ -344,7 +357,7 @@ export function App() {
           <strong className="app-name">catai</strong>
         </div>
         <SessionMenu info={info} name={names.chat} busy={state.busy} onNewChat={startChat} onNewProject={() => setPicking(true)}
-          onNewChatHere={newChat} onAdvising={goAdvising} onOpen={openAnySession} onAllProjects={() => setPhase("projects")} onHistory={() => setHistory(true)} />
+          onNewChatHere={newChat} onAdvising={goAdvising} onClasses={() => goClasses()} onOpen={openAnySession} onAllProjects={() => setPhase("projects")} onHistory={() => setHistory(true)} />
         <div className="actions">
           {Object.entries(state.status).filter(([k]) => !CONTROLLED.includes(k)).map(([k, v]) => <span key={k} className="chip">{plain(v)}</span>)}
           <AccountMenu user={info.user} expiryDays={info.expiryDays} onSignOut={signOut} />
@@ -367,6 +380,10 @@ export function App() {
 
       <div className="body">
         {info.kind === "advising" && <AdvisingTasks busy={state.busy} onAsk={send} />}
+        {(info.kind === "classes" || info.kind === "class") && (
+          <ClassesPanel kind={info.kind} busy={state.busy} onAsk={send} onClass={goClasses} onOpenProject={openProject}
+            onLink={() => setLinking(true)} tick={linkTick} />
+        )}
         {info.chat ? null : showTree
           ? <FileTree tree={tree} selected={selectedFile} onEscape={focusComposer} onSelect={selectFile} onOpen={askAboutFile} onDiff={setViewing} onRefresh={() => setTreeTick((t) => t + 1)} onCollapse={() => setShowTree(false)} />
           : <button className="tree-strip" onClick={() => setShowTree(true)} title="Show the files">»</button>}
@@ -388,6 +405,8 @@ export function App() {
       </div>
 
       {history && <HistoryWindow info={info} onClose={() => setHistory(false)} onOpen={(s) => { setHistory(false); openAnySession(s); }} />}
+      {linking && <LinkProject code={info.project?.split(/[\\/]/).pop()} onCancel={() => setLinking(false)}
+        onPick={async (p) => { setLinking(false); await api.linkClassProject(p); setLinkTick((t) => t + 1); }} />}
       {picking && <FolderPicker onCancel={() => setPicking(false)} onPick={async (p) => { setPicking(false); const err = await openProject(p); if (err) local((st) => notice(st, "error", err)); }} />}
 
       {state.dialogs[0] && (
@@ -873,12 +892,24 @@ function HistoryRow({ icon, title, sub, current, onClick, hint }) {
 
 // The session button (upper right): "Chat: <name>", "Project: <name>", or "Advising".
 // The menu: New Chat, New Project..., Advising, the five last chats and projects, and all of the history.
-const KIND_NAMES = { chat: "Chat", project: "Project", advising: "Advising" };
+const KIND_NAMES = { chat: "Chat", project: "Project", advising: "Advising", classes: "Classes", class: "Class" };
 
 function KindIcon({ kind, open }) {
   if (kind === "chat") return <ChatIcon />;
   if (kind === "advising") return <AdvisingIcon />;
+  if (kind === "classes" || kind === "class") return <ClassIcon />;
   return <FolderIcon open={open} />;
+}
+
+// A book: Classes and class chats.
+function ClassIcon() {
+  return (
+    <svg className="ficon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 5.5C5.5 4 8.5 4 12 6c3.5-2 6.5-2 9-.5V19c-2.5-1.5-5.5-1.5-9 .5-3.5-2-6.5-2-9-.5z" fill="#002f87" />
+      <path d="M12 6v13.5" stroke="#d4a017" strokeWidth="1.6" />
+      <path d="M5.5 8.5c1.6-.6 3.3-.5 4.8.2M5.5 11.5c1.6-.6 3.3-.5 4.8.2M13.7 8.7c1.5-.7 3.2-.8 4.8-.2" stroke="#fff" strokeWidth="1" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 function AdvisingIcon() {
@@ -895,6 +926,121 @@ function AdvisingIcon() {
 const MAC = navigator.userAgent.includes("Mac");
 const keyText = (k) => (MAC ? k.replace("Ctrl+", "\u2303").replace("Alt+", "\u2325").replace("Shift+", "\u21e7").replace("Cmd+", "\u2318") : k.replace("Cmd+", "Ctrl+"));
 const Shortcut = ({ k }) => <kbd className="shortcut">{keyText(k)}</kbd>;
+
+// ---- Classes (classes.ts): the overview session and the class chats ----
+
+const CLASSES_TASKS = [
+  ["This week", "What is due this week in all my classes? Make me a plan for the week."],
+  ["My grades", "Show my grade so far in each class. Which class needs the most attention?"],
+  ["Important dates", "What are the important dates this term, for example the last day to withdraw?"],
+  ["Late work", "Do I have late work? What should I do about it?"],
+];
+const CLASS_TASKS = [
+  ["What is due next?", "What is due next in this class, and what do I need to do for it?"],
+  ["My grade", "What is my grade so far in this class, by category?"],
+  ["This week's topic", "Explain this week's topic from the lecture notes. Start simple."],
+  ["Practice", "Give me three practice questions on this week's topic, one at a time."],
+];
+
+// "in 3 days", "today", "2 days late".
+const dueText = (d) => (d === 0 ? "today" : d === 1 ? "tomorrow" : d > 1 ? `in ${d} days` : d === -1 ? "1 day late" : `${-d} days late`);
+
+// The left panel. Overview: the classes (a click opens the class chat) and tasks. Class chat: the class,
+// its tasks, the linked project, and a link back to all classes.
+function ClassesPanel({ kind, busy, onAsk, onClass, onOpenProject, onLink, tick }) {
+  const [data, setData] = useState(undefined);
+  useEffect(() => { api.classInfo().then(setData); }, [kind, tick]);
+  if (!data) return <aside className="tree advising-tasks" />;
+  const me = data.classes.find((c) => c.code === data.code);
+  const tasks = kind === "class" ? CLASS_TASKS : CLASSES_TASKS;
+  return (
+    <aside className="tree advising-tasks classes-panel">
+      {kind === "class" && me ? (
+        <div className="class-card current">
+          <button className="link-btn" onClick={() => onClass()} disabled={busy}>&larr; All classes</button>
+          <div className="class-code">{me.code}</div>
+          <div className="class-title">{me.title}</div>
+          <div className="class-meta">{me.instructor}<br />{me.meets} {"\u00b7"} {me.room}</div>
+          <div className="class-grade">Grade so far: <strong>{me.grade}% ({me.letter})</strong></div>
+        </div>
+      ) : (
+        <>
+          <div className="tree-head"><span className="small muted">My classes {"\u00b7"} {data.term.name}</span></div>
+          <div className="class-list">
+            {data.classes.map((c) => (
+              <button key={c.code} className="class-card" disabled={busy} onClick={() => onClass(c.code)} title={`Open the ${c.code} chat`}>
+                <span className="class-row"><span className="class-code">{c.code}</span><span className="class-letter">{c.letter}</span></span>
+                <span className="class-title">{c.title}</span>
+                {c.next && <span className={`class-next ${c.next.in_days < 0 ? "late" : c.next.in_days <= 2 ? "soon" : ""}`}>{c.next.name} {"\u00b7"} {dueText(c.next.in_days)}</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      <div className="tree-head"><span className="small muted">Tasks</span></div>
+      <div className="tree-body">
+        {tasks.map(([title, q]) => (
+          <button key={title} className="advising-task" disabled={busy} onClick={() => onAsk(q)} title={busy ? "Wait until the agent is done" : q}>
+            <strong>{title}</strong>
+            <span>{q}</span>
+          </button>
+        ))}
+      </div>
+      {kind === "class" && (
+        <div className="class-project">
+          <div className="small muted">Project for this class</div>
+          {data.link ? (
+            <>
+              <button className="btn small class-project-open" onClick={() => onOpenProject(data.link)} title={data.link}>
+                <FolderIcon open={false} /> <span className="split-label">{data.link.split(/[\\/]/).pop()}</span>
+              </button>
+              <span className="class-project-actions">
+                <button className="link-btn" onClick={() => api.openInWindow(data.link)}>New window</button>
+                <button className="link-btn" onClick={onLink}>Change...</button>
+                <button className="link-btn" onClick={async () => { await api.linkClassProject(null); api.classInfo().then(setData); }}>Unlink</button>
+              </span>
+            </>
+          ) : (
+            <button className="btn small" onClick={onLink}><FolderIcon open={false} /> Link a project...</button>
+          )}
+        </div>
+      )}
+      <p className="demo-note pad"><span className="demo-badge">Demo</span> Mock class data.</p>
+    </aside>
+  );
+}
+
+// The start screen of Classes and of a class chat. Overview: the work due soon and the next term date.
+function ClassesIntro({ kind, code }) {
+  const [data, setData] = useState(undefined);
+  useEffect(() => { api.classInfo().then(setData); }, [kind, code]);
+  const me = data?.classes.find((c) => c.code === code);
+  return (
+    <div className="empty advising-intro">
+      <ClassIcon />
+      <h2>{kind === "class" ? `${code}${me ? `: ${me.title}` : ""}` : "My Classes"}</h2>
+      <p>{kind === "class"
+        ? "Ask about assignments, your grade, the syllabus, or the lecture notes. The helper explains and gives hints. It does not do graded work for you."
+        : "See what is due, your grades, and the important dates in all your classes. Pick a class on the left to open its chat."}</p>
+      {kind === "classes" && data && (
+        <div className="due-list">
+          <div className="due-head">Due in the next two weeks</div>
+          {data.upcoming.work.slice(0, 7).map((w) => (
+            <div key={`${w.course}-${w.name}`} className={`due-row ${w.in_days < 0 ? "late" : w.in_days <= 2 ? "soon" : ""}`}>
+              <span className="due-course">{w.course}</span>
+              <span className="due-name">{w.name}</span>
+              <span className="due-when">{dueText(w.in_days)}</span>
+            </div>
+          ))}
+          {data.upcoming.term_dates[0] && (
+            <div className="due-term"><strong>{data.upcoming.term_dates[0].what.replace(/ \(mock\)$/, "")}</strong> {"\u00b7"} {dueText(data.upcoming.term_dates[0].in_days)}</div>
+          )}
+        </div>
+      )}
+      <p className="demo-note"><span className="demo-badge">Demo</span> The classes, grades, and dates are mock data.</p>
+    </div>
+  );
+}
 
 // The start screen of the advising session: what the advisor can do, and example questions. A click sends one.
 const ADVISING_EXAMPLES = [
@@ -969,7 +1115,7 @@ function RecentStrip({ hide, current, onOpen, onOpenNew }) {
 }
 
 // The session menu: the new items (with their shortcuts) on the left, the five last chats and projects on the right.
-function SessionMenu({ info, name, busy, onNewChat, onNewProject, onNewChatHere, onAdvising, onOpen, onAllProjects, onHistory }) {
+function SessionMenu({ info, name, busy, onNewChat, onNewProject, onNewChatHere, onAdvising, onClasses, onOpen, onAllProjects, onHistory }) {
   const [open, setOpen] = useState(false);
   const [sessions, setSessions] = useState([]);
   // Qwen makes the titles in the background. Read the list again when new titles are there.
@@ -982,7 +1128,8 @@ function SessionMenu({ info, name, busy, onNewChat, onNewProject, onNewChatHere,
   const keys = useMenuKeys(open, setOpen);
   const kind = info.kind ?? (info.chat ? "chat" : "project");
   const projectName = info.project?.split(/[\\/]/).pop();
-  const label = kind === "advising" ? "Advising" : `${KIND_NAMES[kind]}: ${kind === "project" ? projectName : name ?? "New chat"}`;
+  const label = kind === "advising" ? "Advising" : kind === "classes" ? "Classes" : kind === "class" ? `Class: ${projectName}`
+    : `${KIND_NAMES[kind]}: ${kind === "project" ? projectName : name ?? "New chat"}`;
   const recent = recentItems(sessions, 5);
   const item = (icon, text, k, onClick, cls = "") => (
     <button className={`menu-icon-row ${cls}`} onClick={() => { close(); onClick(); }}>
@@ -1001,6 +1148,7 @@ function SessionMenu({ info, name, busy, onNewChat, onNewProject, onNewChatHere,
             {item(<ChatIcon />, "New Chat", "Cmd+N", onNewChat, "menu-strong")}
             {item(<FolderIcon open={false} />, "New Project...", "Cmd+Shift+N", onNewProject, "menu-strong")}
             {item(<AdvisingIcon />, "Advising", "Cmd+Shift+A", onAdvising, `menu-strong ${kind === "advising" ? "current" : ""}`)}
+            {item(<ClassIcon />, "Classes", "Cmd+Shift+C", onClasses, `menu-strong ${kind === "classes" || kind === "class" ? "current" : ""}`)}
             <div className="menu-sep" />
             {item(<WindowIcon />, "New catai Window", "Cmd+Alt+N", () => api.openInWindow(), "menu-strong")}
           </div>
@@ -1035,7 +1183,8 @@ function recentItems(sessions, max) {
   }
   return out;
 }
-const sessionTitle = (s) => (s.kind === "advising" ? "Academic advising" : s.title ?? shortText(s.name ?? s.first));
+const sessionTitle = (s) => (s.kind === "advising" ? "Academic advising" : s.kind === "classes" ? "My classes" : s.kind === "class" ? s.projectName
+  : s.title ?? shortText(s.name ?? s.first));
 const sessionTitle2 = (s) => (s.kind === "project" ? s.projectName : sessionTitle(s));
 const sessionSub = (s) => `${s.kind === "project" ? `Project ${s.projectName}` : KIND_NAMES[s.kind] ?? "Chat"} \u00b7 ${ago(s.modified)}`;
 
@@ -1050,7 +1199,7 @@ function HistoryWindow({ info, onClose, onOpen }) {
   useEffect(() => api.onTitlesUpdated(() => api.listSessions().then(setSessions)), []);
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = (sessions ?? [])
-    .filter((s) => type === "all" || s.kind === type)
+    .filter((s) => type === "all" || s.kind === type || (type === "class" && s.kind === "classes"))
     .filter((s) => words.every((w) => `${sessionTitle(s)} ${s.projectName ?? ""} ${s.first ?? ""}`.toLowerCase().includes(w)));
   useEffect(() => setSel(0), [query, type]);
   useEffect(() => { document.querySelector(".history-list .history-row.selected")?.scrollIntoView({ block: "nearest" }); }, [sel]);
@@ -1062,7 +1211,7 @@ function HistoryWindow({ info, onClose, onOpen }) {
     else if (e.key === "ArrowUp") { e.preventDefault(); setSel((i) => Math.max(0, i - 1)); }
     else if (e.key === "Enter" && shown[sel]?.exists) { e.preventDefault(); onOpen(shown[sel]); }
   };
-  const TYPES = [["all", "All"], ["chat", "Chats"], ["project", "Projects"], ["advising", "Advising"]];
+  const TYPES = [["all", "All"], ["chat", "Chats"], ["project", "Projects"], ["class", "Classes"], ["advising", "Advising"]];
   return (
     <div className="overlay" onKeyDown={onKey}>
       <div className="window history-window" role="dialog" aria-modal="true" aria-label="History">
@@ -1108,9 +1257,62 @@ function HistoryWindow({ info, onClose, onOpen }) {
   );
 }
 
+// "Link a project to <class>": a search over the existing projects, and "Browse..." for any folder.
+// Up and Down move, Enter links, Escape closes.
+function LinkProject({ code, onPick, onCancel }) {
+  const [projects, setProjects] = useState(undefined);
+  const [query, setQuery] = useState("");
+  const [sel, setSel] = useState(0);
+  const [browsing, setBrowsing] = useState(false);
+  useEffect(() => { api.listProjects().then((p) => setProjects(p ?? []), () => setProjects([])); }, []);
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  // A project with the course code in its name or path comes first.
+  const key = (code ?? "").replace(/\s+/g, "").toLowerCase();
+  const match = (p) => key && `${p.name}${p.path}`.replace(/[\s_-]+/g, "").toLowerCase().includes(key);
+  const shown = (projects ?? [])
+    .filter((p) => words.every((w) => `${p.name} ${p.display ?? p.path}`.toLowerCase().includes(w)))
+    .sort((a, b) => Number(!!match(b)) - Number(!!match(a)));
+  useEffect(() => setSel(0), [query]);
+  useEffect(() => { document.querySelector(".link-list .list-row.selected")?.scrollIntoView({ block: "nearest" }); }, [sel]);
+  if (browsing) return <FolderPicker title={`Select A Folder For ${code}`} action="Link Project" onCancel={() => setBrowsing(false)} onPick={onPick} />;
+  const onKey = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setSel((i) => Math.min(shown.length - 1, i + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setSel((i) => Math.max(0, i - 1)); }
+    else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); onPick(shown[sel].path); }
+  };
+  return (
+    <div className="overlay" onKeyDown={onKey}>
+      <div className="window history-window link-window" role="dialog" aria-modal="true" aria-label={`Link a project to ${code}`}>
+        <div className="window-title"><img src={logo} alt="" /><span>Link a Project to {code}</span></div>
+        <div className="history-tools">
+          <input className="input-field" type="search" autoFocus placeholder="Search your projects by name or location" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+        <div className="history-list link-list">
+          {projects === undefined && <div className="list-empty">Loading...</div>}
+          {projects && shown.length === 0 && <div className="list-empty">{projects.length ? "No project matches." : "No projects yet. Click \"Browse...\" to pick a folder."}</div>}
+          {shown.map((p, i) => (
+            <div key={p.path} className={`list-row ${i === sel ? "selected" : ""}`} title={p.path} onMouseEnter={() => setSel(i)} onClick={() => setSel(i)} onDoubleClick={() => onPick(p.path)}>
+              <span className="col-name"><FolderIcon open={false} /> {p.name}{match(p) && <span className="match-badge">{code}</span>}</span>
+              <span className="col-path"><bdi>{p.display ?? p.path}</bdi></span>
+              <span className="col-when">{ago(p.modified)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="window-buttons">
+          <button className="btn" onClick={() => setBrowsing(true)}>Browse...</button>
+          <span className="spacer" />
+          <button className="btn" onClick={onCancel}>Cancel</button>
+          <button className="btn primary default" disabled={!shown[sel]} onClick={() => onPick(shown[sel].path)}>Link Project</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // "Select a folder for your project": a folder picker in the app. Places on the left, folders on the right,
 // "New Folder" to make one. It starts in Documents/catai.
-function FolderPicker({ onPick, onCancel }) {
+function FolderPicker({ onPick, onCancel, title = "Select A Folder For Your Project", action = "Open Project" }) {
   const [dir, setDir] = useState(undefined);
   const [selected, setSelected] = useState(undefined);
   const [naming, setNaming] = useState(false);
@@ -1139,8 +1341,8 @@ function FolderPicker({ onPick, onCancel }) {
   }
   return (
     <div className="overlay">
-      <div className="window picker" role="dialog" aria-modal="true" aria-label="Select a folder for your project">
-        <div className="window-title"><img src={logo} alt="" /><span>Select A Folder For Your Project</span></div>
+      <div className="window picker" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="window-title"><img src={logo} alt="" /><span>{title}</span></div>
         <div className="picker-body">
           <nav className="picker-places">
             {dir.places.map((p) => (
@@ -1175,7 +1377,7 @@ function FolderPicker({ onPick, onCancel }) {
           <span className="picker-target" title={target}>{isPlace ? "Select a folder, or make a new one." : <>Project folder: <bdi>{target.split(/[\\/]/).pop()}</bdi></>}</span>
           <span className="spacer" />
           <button className="btn" onClick={onCancel}>Cancel</button>
-          <button className="btn primary default" onClick={() => onPick(target)} disabled={isPlace}>Open Project</button>
+          <button className="btn primary default" onClick={() => onPick(target)} disabled={isPlace}>{action}</button>
         </div>
       </div>
     </div>
@@ -1480,7 +1682,8 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
     <main className="chat" ref={box} tabIndex={-1} onKeyDown={(e) => { if (e.key === "Escape") document.querySelector(".composer textarea")?.focus(); }}>
       {kind === "chat" && <RecentStrip hide={items.length > 0} current={project} onOpen={onOpenSession} onOpenNew={(s) => api.openInWindow(s.cwd, s.path)} />}
       {items.length === 0 && advising && <AdvisingIntro />}
-      {items.length === 0 && !advising && (
+      {items.length === 0 && (kind === "classes" || kind === "class") && <ClassesIntro kind={kind} code={project?.split(/[\\/]/).pop()} />}
+      {items.length === 0 && !advising && kind !== "classes" && kind !== "class" && (
         <div className="empty brand">
           <img src={logo} alt="" />
           <div className="brand-name">catai</div>
