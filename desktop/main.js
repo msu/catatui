@@ -223,6 +223,8 @@ ipcMain.handle("file-menu", (e, path, opts) => new Promise((done) => {
   const template = [
     ...(opts?.folder ? [] : [
       { label: "Add to chat", click: () => { picked = "add"; } },
+      { label: "Open in Side Panel", click: () => { picked = "pin"; } },
+      ...(/\.html?$/i.test(rel) ? [{ label: "Preview in Side Panel", click: () => { picked = "preview"; } }] : []),
       { label: "Open", click: () => shell.openPath(full) },
       ...(opts?.canDiff ? [{ label: "Diff", click: () => { picked = "diff"; } }] : []),
       ...(opts?.canRollback ? [{ label: "Roll back to last commit...", click: async () => { if (await rollBack(c, rel)) toRenderer(c, "files-changed"); } }] : []),
@@ -265,6 +267,33 @@ async function rollBack(c, rel) {
     return false;
   }
 }
+
+// A whole file for the side panel: the text (up to 2 MB), or an image as a data URL, or "binary".
+const MAX_SIDE_BYTES = 2_000_000;
+ipcMain.handle("file-read", (e, path) => {
+  const project = ctxOf(e)?.project;
+  if (!project) return { error: "No project is open." };
+  const full = resolve(project, path);
+  const rel = relative(project, full);
+  if (rel.startsWith("..") || isAbsolute(rel)) return { error: "The file is not in the project." };
+  const data = readOrNull(full);
+  if (data === null) return { error: "The file does not exist now." };
+  const mime = IMAGE_TYPES[full.split(".").pop().toLowerCase()];
+  if (mime && data.length <= MAX_IMAGE_BYTES) return { size: data.length, image: `data:${mime};base64,${data.toString("base64")}` };
+  if (isBinary(data)) return { size: data.length, binary: true, full };
+  if (data.length > MAX_SIDE_BYTES) return { size: data.length, big: true, full };
+  return { size: data.length, text: data.toString("utf8"), full };
+});
+
+// A project file as a URL for the web preview (file://). Only files in the project.
+ipcMain.handle("file-url", (e, path) => {
+  const project = ctxOf(e)?.project;
+  if (!project) return undefined;
+  const full = resolve(project, path);
+  const rel = relative(project, full);
+  if (rel.startsWith("..") || isAbsolute(rel) || !existsSync(full)) return undefined;
+  return pathToFileURL(full).href;
+});
 
 // A dropped file: its path in the project. Files outside the project are refused, because the sandbox blocks them.
 ipcMain.handle("project-path", (e, full) => {
@@ -644,6 +673,42 @@ ipcMain.handle("list-sessions", async (e) => {
       const { _s, ...rest } = x;
       return rest;
     });
+});
+
+// ---- suggestions in the message box ----
+// While the student types, a fast model (gemma4, about 0.5 s) completes the message. The renderer shows the rest
+// in gray, and Tab accepts it. Qwen and gpt-oss think first, so they are too slow for this.
+const SUGGEST_MODEL = "gemma4-31B-it";
+const suggestAbort = new Map();
+ipcMain.handle("suggest", async (e, text, context) => {
+  const id = e.sender.id;
+  suggestAbort.get(id)?.abort();
+  const ac = new AbortController();
+  suggestAbort.set(id, ac);
+  const key = store.readCredential()?.access;
+  if (!key || typeof text !== "string" || text.trim().length < 3) return "";
+  try {
+    const res = await fetch(`${CATCHAT_API}/v1/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: SUGGEST_MODEL, max_tokens: 40, temperature: 0.2,
+        messages: [
+          { role: "system", content: "A student types a message to an AI coding and study assistant at Montana State University. " +
+            "Complete the message with the most likely next words (at most 10). Reply with the full message: the student's text exactly as given, then the new words. " +
+            "No quotes and no explanation. If the message looks complete, reply with the student's text only." },
+          { role: "user", content: `${context ? `The assistant said before: ${String(context).slice(-600)}\n\n` : ""}The student's text: ${text}` },
+        ],
+      }),
+      signal: AbortSignal.any([ac.signal, AbortSignal.timeout(4000)]),
+    });
+    if (!res.ok) return "";
+    const full = (await res.json())?.choices?.[0]?.message?.content?.replace(/^["']|["']$/g, "") ?? "";
+    // Only a continuation of the exact text. One line.
+    return full.startsWith(text) ? full.slice(text.length).split("\n")[0].replace(/\s+$/, "") : "";
+  } catch {
+    return "";
+  }
 });
 
 // ---- conversations (the sessions of a project) ----
@@ -1102,6 +1167,7 @@ async function buildMenu() {
       label: "View",
       submenu: [
         { label: "Show Files", type: "checkbox", checked: st.tree !== false, accelerator: "CmdOrCtrl+B", enabled: !!inProject, click: act("toggle-tree") },
+        { label: "Web Preview", accelerator: "CmdOrCtrl+Shift+P", click: act("preview") },
         { type: "separator" },
         { label: "Next Area", accelerator: "F6", click: act("next-area") },
         { label: "Previous Area", accelerator: "Shift+F6", click: act("prev-area") },
@@ -1189,7 +1255,8 @@ function createWindow(project, { bounds, openSession, cascade } = {}) {
     title: titleFor(project),
     backgroundColor: "#101317",
     icon: ICON,
-    webPreferences: { preload: join(HERE, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    // webviewTag: the web preview in the side panel. "will-attach-webview" below makes each webview safe.
+    webPreferences: { preload: join(HERE, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true },
   });
   const c = { win, project, child: undefined, changed: new Map(), modeRestored: false, menuState: undefined, openSession };
   const id = win.webContents.id;
@@ -1253,6 +1320,24 @@ ipcMain.handle("widget-frame", (_e, html) => {
 });
 // For tests: keep the app data (state.json) in a different folder, so tests do not change the real app data.
 if (process.env.CATATUI_DESKTOP_USER_DATA) app.setPath("userData", process.env.CATATUI_DESKTOP_USER_DATA);
+
+// The web preview (<webview> in the side panel): no preload, no Node, sandboxed, and only http, https, and file
+// pages. Links that open a new window go to the normal browser.
+app.on("web-contents-created", (_e, contents) => {
+  contents.on("will-attach-webview", (ev, prefs, params) => {
+    delete prefs.preload;
+    prefs.nodeIntegration = false;
+    prefs.contextIsolation = true;
+    prefs.sandbox = true;
+    if (!/^(https?|file):/i.test(params.src ?? "")) ev.preventDefault();
+  });
+  if (contents.getType() === "webview") {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:/.test(url)) shell.openExternal(url);
+      return { action: "deny" };
+    });
+  }
+});
 
 app.whenReady().then(async () => {
   protocol.handle("catai-widget", (req) => {

@@ -34,6 +34,10 @@ contextBridge.exposeInMainWorld("catatui", {
   renameSession: (path, title) => ipcRenderer.invoke("rename-session", path, title),
   deleteSession: (path) => ipcRenderer.invoke("delete-session", path),
   redactSession: (target) => ipcRenderer.invoke("redact-session", target),
+  // The side panel: a whole file, and a project file as a file:// URL for the web preview.
+  fileRead: (path) => ipcRenderer.invoke("file-read", path),
+  suggest: (text, context) => ipcRenderer.invoke("suggest", text, context),
+  fileUrl: (path) => ipcRenderer.invoke("file-url", path),
   chatMenu: (text) => ipcRenderer.invoke("chat-menu", text),
   newChat: () => ipcRenderer.invoke("new-chat"),
   advising: () => ipcRenderer.invoke("advising"),

@@ -21,7 +21,8 @@ const APP_PROMPT = `The student uses the catai desktop app. The chat shows Markd
 - show_widget type html shows your own page (HTML, CSS, and JavaScript) inside the chat. It can be a game, a simulation, an animation, or a visual explanation. Keyboard and mouse input work in it.
 - For a page that does not send an answer (for example a game), set wait to false. Then the tool returns at once and the page stays in the chat.
 - If the student asks for something interactive "here" or "in the chat", use show_widget. Use show_page only if the student wants a browser tab.
-- Do not say that the chat can show only text.`;
+- Do not say that the chat can show only text.
+- The student changes the permissions (ask, plan, yolo) and the options (Teaching assistant, Sandbox, Simple English) with the model button at the bottom right of the app. Tell the student to use that button. Do not tell the student to type /mode.`;
 
 const FIELD = Type.Object({
   name: Type.String({ description: "Key in the answer" }),

@@ -14,6 +14,7 @@ import { registerHelp } from "./help.ts";
 import { registerMsu } from "./msu.ts";
 import { registerNewProject } from "./project.ts";
 import { registerWidget } from "./widget.ts";
+import { registerPreview } from "./preview.ts";
 import { registerAdvising } from "./advising.ts";
 import { registerClasses } from "./classes.ts";
 import { CATCHAT_API, DEFAULT_MODEL, PREFERRED_MODELS, PROVIDER_ID } from "./config.ts";
@@ -65,6 +66,7 @@ export default async function (pi: ExtensionAPI) {
   registerMsu(pi);
   registerNewProject(pi);
   registerWidget(pi);
+  registerPreview(pi);
   // The desktop app starts catatui with this in the advising folder.
   if (process.env.CATATUI_ADVISING === "1") registerAdvising(pi);
   // Classes (the overview) and a class chat. The desktop app sets these in the classes folders.

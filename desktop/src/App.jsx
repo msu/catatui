@@ -241,6 +241,30 @@ export function App() {
   const [selectedFile, setSelectedFile] = useState(undefined);
   // The "Select a folder for your project" window.
   const [picking, setPicking] = useState(false);
+  // The side panel (right): tabs with pinned files and the web preview. width is in pixels, kept in localStorage.
+  const [side, setSide] = useState({ tabs: [], active: undefined });
+  const [sideWidth, setSideWidth] = useState(() => { try { return Number(localStorage.getItem("sideWidth")) || 480; } catch { return 480; } });
+  const tabId = (t) => (t.type === "web" ? "web" : `file:${t.path}`);
+  function openSide(tab) {
+    setSide((st) => {
+      const id = tabId(tab);
+      const tabs = st.tabs.some((t) => tabId(t) === id) ? st.tabs.map((t) => (tabId(t) === id ? { ...t, ...tab } : t)) : [...st.tabs, tab];
+      return { tabs, active: id };
+    });
+  }
+  function closeSide(id) {
+    setSide((st) => {
+      const tabs = st.tabs.filter((t) => tabId(t) !== id);
+      return { tabs, active: st.active === id ? (tabs.at(-1) ? tabId(tabs.at(-1)) : undefined) : st.active };
+    });
+  }
+  // A project HTML file in the web preview.
+  async function previewFile(path) {
+    const url = await api.fileUrl(path);
+    if (url) openSide({ type: "web", url, at: Date.now() });
+  }
+  // The web preview reloads when the agent is done (it can have changed the files) and after a file change.
+  const [reloadTick, setReloadTick] = useState(0);
   // The "History" window: all chats and projects, with a search.
   const [history, setHistory] = useState(false);
   // Link a project to a class: the folder picker, then project.json in the class folder.
@@ -271,6 +295,16 @@ export function App() {
       "When I answer, use the path above directly. Read a file with the tool for its type (read, excel_read, pdf_read, or docx_read) and change it with edit or write, not with bash.");
   };
   const askAboutFile = (path) => addFiles([path]);
+
+  // show_preview (preview.ts) opens the web preview.
+  useEffect(() => { if (state.preview) openSide({ type: "web", url: state.preview.url, at: state.preview.at }); }, [state.preview?.at]);
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (wasBusy.current && !state.busy) setReloadTick((t) => t + 1);
+    wasBusy.current = state.busy;
+  }, [state.busy]);
+  // A new folder (another project, a chat, or a closed project): close the side panel of the old folder.
+  useEffect(() => { setSide({ tabs: [], active: undefined }); }, [info.project]);
 
   // The keyboard. The areas, in order: the file tree, the diff, the chat, and the message box.
   // F6 and Shift+F6 (View menu) move between them. Ctrl+D (or Cmd+D) shows the diff of the selected file.
@@ -327,6 +361,7 @@ export function App() {
       case "advising": return goAdvising();
       case "classes": return goClasses();
       case "history": return setHistory(true);
+      case "preview": return openSide({ type: "web" });
       case "all-projects": return setPhase("projects");
       case "open": return openProject(arg).then((err) => err && local((s) => notice(s, "error", err)));
       case "close-project": return goChat();
@@ -386,6 +421,7 @@ export function App() {
         <span className="pathbar-label">Project Directory:</span>
         <FolderIcon open />
         <button className="project" title={`${info.project}\nClick to open a different project`} onClick={() => setPhase("projects")}><bdi>{info.project}</bdi></button>
+        <button className="btn small preview-btn" onClick={() => openSide({ type: "web" })} title="Show a web site or an HTML file next to the chat"><GlobeIcon /> Preview</button>
         <ConversationMenu project={info.project} busy={state.busy} tick={state.items.length} onNew={newChat} onOpen={openSession} />
       </div>}
 
@@ -403,7 +439,8 @@ export function App() {
             onLink={() => setLinking(true)} tick={linkTick} />
         )}
         {info.chat ? null : showTree
-          ? <FileTree tree={tree} selected={selectedFile} onEscape={focusComposer} onSelect={selectFile} onOpen={askAboutFile} onDiff={setViewing} onRefresh={() => setTreeTick((t) => t + 1)} onCollapse={() => setShowTree(false)} />
+          ? <FileTree tree={tree} selected={selectedFile} onEscape={focusComposer} onSelect={selectFile} onOpen={askAboutFile} onDiff={setViewing} onRefresh={() => setTreeTick((t) => t + 1)} onCollapse={() => setShowTree(false)}
+            onPin={(p) => openSide({ type: "file", path: p })} onPreview={previewFile} />
           : <button className="tree-strip" onClick={() => setShowTree(true)} title="Show the files">»</button>}
         {viewing && <FileViewer path={viewing} tick={treeTick + state.items.length} onClose={closeViewer} />}
         <div className={`main-col ${dropping ? "dropping" : ""}`}
@@ -414,12 +451,18 @@ export function App() {
           <Chat items={state.items} busy={state.busy} onShowChanges={setViewing} changed={tree} scrollTick={scrollTick} fileTick={fileTick}
             widgets={state.widgets} onWidgetAnswer={(req, data) => { api.respond({ id: req.id, value: JSON.stringify(data) }); local((st) => closeDialog(st, req.id)); }}
             resume={info.kind === "chat" ? info.resumeProject : undefined} onResume={openProject} advising={info.kind === "advising"} onAsk={send}
-            kind={info.kind} project={info.project} onOpenSession={openAnySession} onRemove={removeFromChat} />
-          <Composer busy={state.busy} onSend={send} onStop={stop} editorText={state.editorText}
+            kind={info.kind} project={info.project} onOpenSession={openAnySession} onRemove={removeFromChat}
+            onPin={(p) => openSide({ type: "file", path: p })} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })} />
+          <Composer context={lastAssistantText(state.items)} busy={state.busy} onSend={send} onStop={stop} editorText={state.editorText}
             clearEditorText={() => local((s) => ({ ...s, editorText: undefined }))}
             canUndo={undoSteps > 0} onUndo={() => send("/undo")}
             below={<AgentMenu model={model} busy={state.busy} onPick={pickModel} state={parseState(state.status.catatui)} onCommand={send} />} />
         </div>
+        {side.tabs.length > 0 && (
+          <SidePanel side={side} width={sideWidth} setWidth={setSideWidth} onActivate={(id) => setSide((st) => ({ ...st, active: id }))}
+            onClose={closeSide} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })} fileTick={fileTick} reloadTick={reloadTick}
+            files={tree.files} onAsk={askAboutFile} />
+        )}
       </div>
 
       {history && <HistoryWindow info={info} onClose={() => setHistory(false)} onOpen={(s) => { setHistory(false); openAnySession(s); }} onDeleted={afterDelete} />}
@@ -457,7 +500,7 @@ function buildTree(paths) {
 }
 
 // The files of the project, with the git status. A click shows the file, a double click asks the agent about it.
-function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onCollapse, onEscape }) {
+function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onCollapse, onEscape, onPin, onPreview }) {
   const [changedOnly, setChangedOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(() => new Set());
@@ -478,6 +521,8 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
     const picked = await api.fileMenu(p, { folder, canDiff: !folder && isText && (m === "M" || m === "R"), canRollback: !folder && !!m });
     if (picked === "add") onOpen(p);
     if (picked === "diff") onDiff(p);
+    if (picked === "pin") onPin(p);
+    if (picked === "preview") onPreview(p);
   };
   const root = buildTree(paths);
   const hasChange = (prefix) => paths.some((p) => p.startsWith(prefix) && mark(p));
@@ -872,6 +917,162 @@ function ConversationMenu({ project, busy, tick, onNew, onOpen }) {
         </div>
       )}
     </span>
+  );
+}
+
+// ---- side panel (right): pinned files and the web preview ----
+
+function GlobeIcon() {
+  return (
+    <svg className="ficon" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="10" cy="10" r="7.5" /><path d="M2.5 10h15M10 2.5c2.2 2.3 3.2 4.8 3.2 7.5s-1 5.2-3.2 7.5c-2.2-2.3-3.2-4.8-3.2-7.5s1-5.2 3.2-7.5z" />
+    </svg>
+  );
+}
+
+function MaximizeIcon() {
+  return (
+    <svg className="ficon" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11.5 3.5h5v5M16.5 3.5 11 9M8.5 16.5h-5v-5M3.5 16.5 9 11" />
+    </svg>
+  );
+}
+
+function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, fileTick, reloadTick, files, onAsk }) {
+  // Drag the left edge to change the width (240 px to 75% of the window).
+  const drag = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = width;
+    let w = startW;
+    const move = (ev) => { w = Math.max(240, Math.min(window.innerWidth * 0.75, startW + startX - ev.clientX)); setWidth(w); };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.classList.remove("resizing");
+      try { localStorage.setItem("sideWidth", String(Math.round(w))); } catch { /* No storage. */ }
+    };
+    document.body.classList.add("resizing");
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+  const id = (t) => (t.type === "web" ? "web" : `file:${t.path}`);
+  const active = side.tabs.find((t) => id(t) === side.active) ?? side.tabs[0];
+  return (
+    <aside className="side-panel" style={{ width }}>
+      <div className="side-resize" onMouseDown={drag} title="Drag to change the width" />
+      <div className="side-tabs" role="tablist">
+        {side.tabs.map((t) => (
+          <span key={id(t)} className={`side-tab ${t === active ? "on" : ""}`}>
+            <button role="tab" aria-selected={t === active} onClick={() => onActivate(id(t))} title={t.type === "web" ? t.url ?? "Web preview" : t.path}>
+              {t.type === "web" ? <GlobeIcon /> : <FileIcon name={t.path} />}
+              <span className="side-tab-name">{t.type === "web" ? "Preview" : t.path.split("/").pop()}</span>
+            </button>
+            <button className="side-tab-close" onClick={() => onClose(id(t))} aria-label="Close" title="Close">&times;</button>
+          </span>
+        ))}
+      </div>
+      <div className="side-body">
+        {active?.type === "file" && <FilePane key={active.path} path={active.path} tick={fileTick} onAsk={onAsk} onPreview={onOpenWeb} />}
+        {/* The web preview stays mounted (hidden) when another tab is on, so the page keeps its state. */}
+        {side.tabs.some((t) => t.type === "web") && (
+          <WebPane hidden={active?.type !== "web"} tab={side.tabs.find((t) => t.type === "web")} reloadTick={reloadTick} files={files} onOpen={onOpenWeb} />
+        )}
+      </div>
+    </aside>
+  );
+}
+
+// A pinned file: the whole text with line numbers, or the image. It reads the file again after each change.
+function FilePane({ path, tick, onAsk, onPreview }) {
+  const [f, setF] = useState(undefined);
+  useEffect(() => { api.fileRead(path).then(setF); }, [path, tick]);
+  const ext = path.split(".").pop().toLowerCase();
+  return (
+    <div className="file-pane">
+      <div className="pane-bar">
+        <span className="pane-path" title={path}><bdi>{path}</bdi></span>
+        <button className="btn small" onClick={() => onAsk(path)}>Add to chat</button>
+        {/^html?$/.test(ext) && <button className="btn small" onClick={async () => { const u = await api.fileUrl(path); if (u) onPreview(u); }}>Preview</button>}
+        <button className="btn small" onClick={() => api.openPath(path)}>{OPEN_IN[ext] ? `Open in ${OPEN_IN[ext]}` : "Open"}</button>
+      </div>
+      {f?.error && <p className="error pad">{f.error}</p>}
+      {f?.image && <div className="pane-image"><img src={f.image} alt={path} /></div>}
+      {(f?.binary || f?.big) && <p className="muted pad">{f.big ? "This file is too large to show." : "This file is not text."} Click {OPEN_IN[ext] ? `"Open in ${OPEN_IN[ext]}"` : "\"Open\""}.</p>}
+      {f?.text !== undefined && (
+        <div className="diff-view pane-text" tabIndex={0}>
+          {f.text.split("\n").map((line, i) => <div key={i} className="dl ctx"><span className="ln">{i + 1}</span><span className="dt">{line}</span></div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// "3000" -> http://localhost:3000, "localhost:5173/x" -> http://localhost:5173/x. A file path stays (the caller makes a file URL).
+function previewUrl(input) {
+  const t = input.trim();
+  if (/^\d{2,5}$/.test(t)) return `http://localhost:${t}`;
+  if (/^(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(t)) return `http://${t}`;
+  return t;
+}
+
+// The web preview: an embedded browser for a local server or a project HTML file. It reloads after each agent turn.
+function WebPane({ hidden, tab, reloadTick, files, onOpen }) {
+  const view = useRef(null);
+  const [address, setAddress] = useState(tab?.url ?? "");
+  const [failed, setFailed] = useState(undefined);
+  const url = tab?.url;
+  useEffect(() => { setAddress(url ?? ""); setFailed(undefined); }, [url, tab?.at]);
+  useEffect(() => { if (url && reloadTick) { setFailed(undefined); view.current?.reload?.(); } }, [reloadTick]);
+  useEffect(() => {
+    const v = view.current;
+    if (!v) return;
+    const nav = (e) => { setAddress(e.url); setFailed(undefined); };
+    const fail = (e) => { if (e.errorCode !== -3 && e.isMainFrame !== false) setFailed(e.errorDescription || "The page did not load."); };
+    v.addEventListener("did-navigate", nav);
+    v.addEventListener("did-navigate-in-page", nav);
+    v.addEventListener("did-fail-load", fail);
+    return () => { v.removeEventListener("did-navigate", nav); v.removeEventListener("did-navigate-in-page", nav); v.removeEventListener("did-fail-load", fail); };
+  }, [url]);
+  async function go(input) {
+    let u = previewUrl(input);
+    if (!/^(https?|file):/i.test(u)) u = await api.fileUrl(u);
+    if (u) onOpen(u); else setFailed(`There is no file ${input} in the project.`);
+  }
+  const html = (files ?? []).filter((f) => /\.html?$/i.test(f) && !f.includes("node_modules/")).slice(0, 4);
+  return (
+    <div className="web-pane" hidden={hidden}>
+      <div className="pane-bar">
+        <button className="icon-btn" onClick={() => view.current?.goBack?.()} aria-label="Back" title="Back">&larr;</button>
+        <button className="icon-btn" onClick={() => view.current?.goForward?.()} aria-label="Forward" title="Forward">&rarr;</button>
+        <button className="icon-btn" onClick={() => { setFailed(undefined); view.current?.reload?.(); }} aria-label="Reload" title="Reload">&#x21bb;</button>
+        <input className="input-field pane-address" value={address} placeholder="localhost:3000 or index.html" spellCheck={false}
+          onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") go(address); }} />
+        {url && <button className="btn small" onClick={() => view.current?.openDevTools?.()} title="Developer tools for the page">Tools</button>}
+        {url && /^https?:/.test(url) && <button className="btn small" onClick={() => api.openExternal(address || url)} title="Open in the browser">Browser</button>}
+      </div>
+      {url ? (
+        <div className="web-frame">
+          <webview ref={view} src={url} partition="persist:catai-preview" />
+          {failed && (
+            <div className="web-failed">
+              <strong>The page did not load.</strong>
+              <span>{failed}</span>
+              <span>If it is a local server, start it first (or ask the agent to start it), then click Reload.</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="web-start">
+          <p>Show a web site that you work on, next to the chat. Type a local address or a project file above, or pick one:</p>
+          <div className="web-picks">
+            {html.map((f) => <button key={f} className="btn small" onClick={() => go(f)}><FileIcon name={f} /> {f}</button>)}
+            {["3000", "5173", "8000", "8080"].map((p) => <button key={p} className="btn small" onClick={() => go(p)}><GlobeIcon /> localhost:{p}</button>)}
+          </div>
+          <p className="muted small">The preview reloads each time the agent is done. The agent can open it with the show_preview tool.</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1687,7 +1888,7 @@ function AccountMenu({ user, expiryDays, onSignOut }) {
   );
 }
 
-function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove }) {
+function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove, onPin, onOpenWeb }) {
   const end = useRef(null);
   const box = useRef(null);
   // Keep the newest text in view, unless the student scrolled up to read.
@@ -1724,7 +1925,10 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
         </div>
       )}
       {items.map((it, i) => {
-        const item = <Item key={i} it={it} onShowChanges={onShowChanges} changed={changed} fileTick={fileTick} widgets={widgets} onWidgetAnswer={onWidgetAnswer} />;
+        const item = <Item key={i} it={it} onShowChanges={onShowChanges} changed={changed} fileTick={fileTick} widgets={widgets} onWidgetAnswer={onWidgetAnswer}
+          onPin={onPin} onRemove={busy ? undefined : onRemove} onOpenWeb={onOpenWeb} />;
+        // File cards have their own buttons. A removed message has nothing to remove.
+        if (it.kind === "user" && (it.text.startsWith(FILE_PREFIX) || it.text === "[removed]")) return item;
         // "Remove" on a message or a tool call, when the agent is not working.
         const target = it.kind === "tool" ? (it.running ? undefined : { toolCallId: it.id }) : (it.kind === "user" || it.kind === "assistant") && it.ts !== undefined ? { ts: it.ts } : undefined;
         if (!target || busy) return item;
@@ -1743,7 +1947,7 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
   );
 }
 
-function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer }) {
+function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, onPin, onRemove, onOpenWeb }) {
   // advising_submit_plan: the plan card. It is live while its request waits. After that, the result has the plan and the status.
   if (it.kind === "tool" && it.name === "advising_submit_plan") {
     const req = it.running ? widgets.find((w) => w.title.startsWith(`${WIDGET_PREFIX}{"type":"plan"`)) : undefined;
@@ -1761,6 +1965,19 @@ function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer })
     }
     if (spec) return <PlanCard spec={spec} result={result} running={it.running} onSubmit={req ? (data) => onWidgetAnswer(req, data) : undefined} />;
   }
+  // show_preview: a card with the page and a button that opens it in the side panel (again).
+  if (it.kind === "tool" && it.name === "show_preview" && !it.running && !it.isError) {
+    const url = /The preview of (\S+) is open/.exec(resultText(it.result) ?? "")?.[1];
+    if (url) {
+      return (
+        <div className="preview-card">
+          <GlobeIcon />
+          <span className="preview-card-url" title={url}><bdi>{url.replace(/^file:\/\/.*\//, "")}</bdi></span>
+          <button className="btn small" onClick={() => onOpenWeb?.(url)}>Show preview</button>
+        </div>
+      );
+    }
+  }
   // show_widget: draw the widget. It is live while its request waits (the same JSON, or the only waiting widget).
   if (it.kind === "tool" && it.name === "show_widget" && it.args?.type) {
     const req = it.running ? (widgets.find((w) => w.title === `${WIDGET_PREFIX}${JSON.stringify(it.args)}`) ?? (widgets.length === 1 ? widgets[0] : undefined)) : undefined;
@@ -1772,9 +1989,13 @@ function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer })
     const isModified = (p) => changed?.git && ["M", "R"].includes(changed.status?.[p]);
     return (
       <div className="file-cards">
-        {paths.map((p) => <FileCard key={p} path={p} tick={fileTick} onShowChanges={isModified(p) ? () => onShowChanges(p) : undefined} />)}
+        {paths.map((p) => <FileCard key={p} path={p} tick={fileTick} onShowChanges={isModified(p) ? () => onShowChanges(p) : undefined}
+          onPin={() => onPin(p)} onRemove={it.ts !== undefined && onRemove ? () => onRemove({ ts: it.ts }) : undefined} />)}
       </div>
     );
+  }
+  if ((it.kind === "user" && it.text === "[removed]") || (it.kind === "assistant" && it.blocks.length && it.blocks.every((b) => b.text === "[removed]"))) {
+    return <div className={`msg removed ${it.kind}`}>Removed</div>;
   }
   if (it.kind === "user") return <div className="msg user">{it.text}</div>;
   if (it.kind === "notice") return <pre className={`notice ${it.level}`}>{plain(it.text)}</pre>;
@@ -1800,7 +2021,7 @@ const sizeText = (n) => (n < 1024 ? `${n} bytes` : n < 1048576 ? `${(n / 1024).t
 
 // A file that the student selected: the type icon, the name, a preview of a text file, and buttons.
 // Binary files (Excel, Word, PDF) are not shown here. "Open in ..." opens them in their own app.
-function FileCard({ path, tick, onShowChanges }) {
+function FileCard({ path, tick, onShowChanges, onPin, onRemove }) {
   const [p, setP] = useState(undefined);
   useEffect(() => { api.filePreview(path).then(setP); }, [path, tick]);
   const name = path.split("/").pop();
@@ -1813,6 +2034,10 @@ function FileCard({ path, tick, onShowChanges }) {
       <div className="file-card-head">
         <FileIcon name={name} />
         <span className="file-card-name">{name}</span>
+        <span className="file-card-tools">
+          {onPin && <button className="icon-btn" data-tip="Open in the side panel" aria-label="Open in the side panel" onClick={onPin}><MaximizeIcon /></button>}
+          {onRemove && <button className="icon-btn" data-tip="Remove from the chat" aria-label="Remove from the chat" onClick={onRemove}>&times;</button>}
+        </span>
       </div>
       <div className="file-card-page">
         {p?.error && <div className="file-card-msg">{p.error}</div>}
@@ -1847,9 +2072,23 @@ function Tool({ it }) {
 }
 
 // The message box, with a toolbar under it: the model, the mode, and Undo (children), and Send or Stop.
-function Composer({ busy, onSend, onStop, editorText, clearEditorText, canUndo, onUndo, below }) {
+function Composer({ busy, onSend, onStop, editorText, clearEditorText, canUndo, onUndo, below, context }) {
   const [text, setText] = useState("");
   const ref = useRef(null);
+  // The suggestion: the rest of the message in gray after the text. Tab accepts it, Escape hides it.
+  // It shows only when the cursor is at the end, after a pause of 450 ms in typing. Not for /commands.
+  const [hint, setHint] = useState("");
+  const ghost = useRef(null);
+  useEffect(() => {
+    setHint("");
+    const el = ref.current;
+    if (text.trim().length < 3 || text.startsWith("/") || !el || el.selectionStart !== text.length) return;
+    const t = setTimeout(async () => {
+      const h = await api.suggest(text, context);
+      if (ref.current?.value === text && ref.current.selectionStart === text.length) setHint(h);
+    }, 450);
+    return () => clearTimeout(t);
+  }, [text]);
   useEffect(() => {
     if (editorText === undefined) return;
     setText(editorText);
@@ -1862,14 +2101,24 @@ function Composer({ busy, onSend, onStop, editorText, clearEditorText, canUndo, 
     if (!t) return;
     onSend(t);
     setText("");
+    setHint("");
   };
   return (
     <footer className="composer">
-      <div className="composer-left">
-        <textarea className="input-field" ref={ref} value={text} autoFocus rows={Math.min(8, Math.max(3, text.split("\n").length))}
+      <div className="composer-left composer-field">
+        {/* The gray suggestion: a copy of the text (invisible) and the suggestion, under the text field. */}
+        <div className="input-field composer-ghost" ref={ghost} aria-hidden="true">
+          <span className="ghost-text">{text}</span><span className="ghost-hint">{hint}</span>
+          {hint && <span className="ghost-key">Tab</span>}
+        </div>
+        <textarea className="input-field" ref={ref} value={text} autoFocus rows={Math.min(8, Math.max(3, (text + hint).split("\n").length))}
           placeholder={busy ? "The agent is working. Your message waits until it is done." : "Ask catai. Enter sends, Shift+Enter is a new line."}
           onChange={(e) => setText(e.target.value)}
+          onScroll={(e) => { if (ghost.current) ghost.current.scrollTop = e.target.scrollTop; }}
+          onSelect={(e) => { if (hint && e.target.selectionStart !== text.length) setHint(""); }}
           onKeyDown={(e) => {
+            if (e.key === "Tab" && hint && !e.shiftKey) { e.preventDefault(); setText(text + hint); setHint(""); return; }
+            if (e.key === "Escape" && hint) { e.preventDefault(); setHint(""); return; }
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
             if (e.key === "Escape" && busy) onStop();
           }} />
@@ -1884,6 +2133,14 @@ function Composer({ busy, onSend, onStop, editorText, clearEditorText, canUndo, 
       </div>
     </footer>
   );
+}
+
+// The text of the last answer, for the suggestions (the student often answers it).
+function lastAssistantText(items) {
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i].kind === "assistant") return items[i].blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n").slice(-600);
+  }
+  return "";
 }
 
 // A question from catatui: allow a change, pick an option, or type a value.

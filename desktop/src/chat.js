@@ -104,6 +104,8 @@ export function reduce(state, rec) {
       // A widget: the chat draws it inline from the show_widget tool item, not as a dialog or a notice.
       if (rec.method === "input" && String(rec.title ?? "").startsWith(WIDGET_PREFIX)) return { ...state, widgets: [...state.widgets, rec] };
       if (rec.method === "notify" && String(rec.message ?? "").startsWith(WIDGET_PREFIX)) return state;
+      // show_preview (preview.ts): the side panel opens the page. No notice in the chat.
+      if (rec.method === "notify" && String(rec.message ?? "").startsWith(PREVIEW_PREFIX)) return { ...state, preview: { url: String(rec.message).slice(PREVIEW_PREFIX.length), at: Date.now() } };
       if (DIALOGS.includes(rec.method)) return { ...state, dialogs: [...state.dialogs, rec] };
       if (rec.method === "notify") return notice(state, rec.notifyType ?? "info", rec.message ?? "");
       if (rec.method === "setStatus") {
@@ -127,6 +129,8 @@ export const closeDialog = (state, id) => ({ ...state, dialogs: state.dialogs.fi
 
 // The same prefix as WIDGET_PREFIX in src/catatui/widget.ts.
 export const WIDGET_PREFIX = "[widget] ";
+// The same prefix as PREVIEW_PREFIX in src/catatui/preview.ts.
+export const PREVIEW_PREFIX = "[preview] ";
 
 // The answer in a show_widget tool result: "The student answered: <JSON>".
 export function widgetAnswer(result) {

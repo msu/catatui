@@ -810,3 +810,79 @@ button.class-card:hover:not(:disabled) { border-color: var(--gold); background: 
 .history-list .row-with-action .history-delete[data-tip] { position: absolute; right: .5rem; bottom: .7rem; width: 1.8rem; height: 1.8rem; display: grid; place-items: center; opacity: 0; color: var(--muted); z-index: 2; }
 .history-list .row-with-action:hover .history-delete { opacity: 1; }
 .history-delete:hover { color: #c62828; }
+
+/* ---- side panel (right): pinned files and the web preview ---- */
+.side-panel { position: relative; flex-shrink: 0; min-width: 240px; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--btn-border); background: var(--panel); }
+.side-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; }
+.side-resize:hover, body.resizing .side-resize { background: var(--gold); opacity: .5; }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing webview { pointer-events: none; }
+.side-tabs { display: flex; gap: 2px; padding: .3rem .3rem 0; border-bottom: 1px solid var(--line); background: var(--bg); overflow-x: auto; flex-shrink: 0; }
+.side-tab { display: inline-flex; align-items: center; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; max-width: 12rem; }
+.side-tab.on { background: var(--panel); border-color: var(--line); }
+.side-tab > button:first-child { display: inline-flex; align-items: center; gap: .35rem; background: none; border: 0; color: var(--fg); font-size: .8rem; padding: .35rem .2rem .35rem .5rem; min-width: 0; }
+.side-tab .ficon { width: .95rem; height: .95rem; flex-shrink: 0; }
+.side-tab-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-tab-close { background: none; border: 0; color: var(--muted); font-size: 1rem; padding: 0 .4rem; }
+.side-tab-close:hover { color: #c62828; }
+.side-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.file-pane, .web-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.web-pane[hidden] { display: none; }
+.pane-bar { display: flex; align-items: center; gap: .35rem; padding: .35rem .5rem; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.pane-path { flex: 1; min-width: 0; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.pane-address { flex: 1; min-width: 0; padding: .3rem .5rem; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .8rem; }
+.pane-bar .icon-btn { width: 1.7rem; height: 1.7rem; display: grid; place-items: center; font-size: 1rem; }
+.pane-text { flex: 1; min-height: 0; overflow: auto; }
+.pane-image { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 1rem; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 16px 16px; }
+.pane-image img { max-width: 100%; }
+.web-frame { position: relative; flex: 1; min-height: 0; display: flex; }
+.web-frame webview { flex: 1; border: 0; background: #fff; }
+.web-failed { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .4rem; text-align: center; padding: 1.5rem; background: var(--panel); color: var(--muted); font-size: .85rem; }
+.web-failed strong { color: var(--fg); font-size: 1rem; }
+.web-start { padding: 1.2rem; color: var(--fg); font-size: .9rem; }
+.web-picks { display: flex; flex-wrap: wrap; gap: .4rem; margin: .7rem 0; }
+.web-picks .btn { display: inline-flex; align-items: center; gap: .35rem; }
+.web-picks .ficon { width: 1rem; height: 1rem; }
+.preview-btn { display: inline-flex; align-items: center; gap: .3rem; margin-left: auto; flex-shrink: 0; }
+.preview-btn .ficon { width: .95rem; height: .95rem; }
+.preview-btn + .conversation-menu { margin-left: .4rem; }
+/* File card tools: open in the side panel, remove. */
+.file-card-tools { margin-left: auto; display: inline-flex; gap: .1rem; opacity: 0; }
+.file-card:hover .file-card-tools, .file-card-tools:focus-within { opacity: 1; }
+.file-card-tools .icon-btn[data-tip] { width: 1.6rem; height: 1.6rem; display: grid; place-items: center; font-size: 1.1rem; color: var(--muted); }
+.file-card-tools .icon-btn:hover { color: var(--blue); background: var(--user); }
+.file-card-tools .ficon { width: .95rem; height: .95rem; }
+.msg.removed { color: var(--muted); font-style: italic; font-size: .85rem; background: none; border: 1px dashed var(--line); padding: .25rem .7rem; }
+.msg.removed.user { align-self: flex-end; }
+/* With the side panel open, the three columns fit in the window: the side panel gets smaller first. */
+.side-panel { max-width: calc(100vw - 34rem); }
+.body:has(.side-panel) .main-col { min-width: 18rem; }
+.body:has(.side-panel) .tree { width: 14rem; }
+
+/* The suggestion: the ghost is under the text field with the same font, size, and padding. The text field is
+   transparent, so the gray suggestion shows after the text. */
+.composer-field { position: relative; }
+.composer-field textarea { position: relative; z-index: 1; background: transparent !important; flex: 1; }
+.composer-field .composer-ghost {
+  position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word;
+  font: inherit; font-family: inherit; line-height: normal;
+}
+.composer-field textarea, .composer-field .composer-ghost { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .95rem; line-height: 1.45; letter-spacing: 0; }
+.ghost-text { color: transparent; }
+.ghost-hint { color: var(--muted); opacity: .75; }
+.ghost-key { display: inline-block; margin-left: .4rem; font-family: -apple-system, system-ui, sans-serif; font-size: .65rem; font-weight: 700; color: var(--muted); border: 1px solid var(--btn-border); border-radius: 4px; padding: 0 .3rem; vertical-align: 1px; }
+.preview-card { display: flex; align-items: center; gap: .5rem; max-width: 34rem; padding: .45rem .7rem; border: 1px solid var(--btn-border); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); }
+.preview-card .ficon { width: 1.05rem; height: 1.05rem; color: var(--blue); flex-shrink: 0; }
+.preview-card-url { flex: 1; min-width: 0; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The chat column keeps at least 24rem next to the side panel. In a narrow chat column, the buttons go under the
+   message box. */
+.side-panel { max-width: calc(100vw - 38rem); }
+.body:has(.side-panel) .main-col { min-width: 24rem; }
+.main-col { container-type: inline-size; }
+@container (max-width: 34rem) {
+  .composer { flex-direction: column; align-items: stretch; }
+  .composer-right { flex-direction: row; flex-wrap: wrap; min-width: 0 !important; }
+  .composer-right > .btn { flex: 1; }
+  .composer-right .below-send { flex-basis: 100%; }
+}

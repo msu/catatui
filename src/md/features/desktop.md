@@ -114,3 +114,10 @@ A desktop app (like Claude Desktop) for students who do not use the command line
   - pi has no API for this. pi's "context_edit" entry keeps the old text in the file, so the app does not use it. If pi changes the session format, check this code.
   - The text already went to CatChat when the student sent it. The app says that this does not remove it there.
 - Delete a conversation (Conversation menu and History window): "Move to Trash" or "Delete Permanently". A conversation that is open in another window cannot be deleted. Test hook: CATATUI_DESKTOP_YES=<button index> answers these questions.
+- Side panel (right): tabs with pinned files and the web preview. Drag its left edge to change the width (kept in localStorage).
+  - Pin a file: the maximize button on a file card, or "Open in Side Panel" in the tree's right-click menu. The pane shows the whole file with line numbers (or the image), and reads it again after each change. Buttons: Add to chat, Preview (HTML), Open.
+  - Remove a file card: the x button on the card. It removes the message from the conversation (the same as "Remove"). A removed message shows as "Removed".
+  - The side panel closes when the window moves to another folder (another project, a chat, or a closed project).
+  - A show_preview tool card has "Show preview", which opens the page again.
+  - Web preview: "Preview" in the project bar, View > Web Preview (Cmd+Shift+P), "Preview in Side Panel" for an HTML file in the tree, or the agent's show_preview tool (preview.ts). It is an Electron webview with no preload, no Node, a sandbox, and only http, https, and file pages (main.js "will-attach-webview"). The address bar takes "3000", "localhost:5173", or a project file such as index.html. It reloads each time the agent is done. Tools opens the page's developer tools.
+- Suggestions in the message box: after a pause of 450 ms, a fast model (gemma4-31B-it, about 0.5 s) completes the message. The rest shows in gray with a "Tab" label. Tab accepts it, Escape hides it. Only when the cursor is at the end, and not for /commands. The context is the last answer. Qwen and gpt-oss think first, so they are too slow for this.
