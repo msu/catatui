@@ -22,6 +22,9 @@ export const NEW_KINDS: (NewKind | null)[] = [
   { kind: "xlsx", label: "Excel workbook", ext: ".xlsx" },
   { kind: "csv", label: "CSV (spreadsheet text)", ext: ".csv" },
   { kind: "docx", label: "Word document", ext: ".docx" },
+  null,
+  // A fixed name: the app does not ask for one. pi reads AGENTS.md in the project folder at the start of a chat.
+  { kind: "agents", label: "Instructions for catai (AGENTS.md)", ext: ".md" },
 ];
 
 export const newKind = (kind: string) => NEW_KINDS.find((k) => k?.kind === kind) ?? undefined;
@@ -47,6 +50,10 @@ export async function newFileContent(kind: string, file: string): Promise<string
   const title = titleOf(file);
   switch (kind) {
     case "md": return `# ${title}\n`;
+    case "agents":
+      return "# Instructions for catai\n\ncatai reads this file at the start of each chat in this project.\n" +
+        "Write what catai must know and the rules it must follow. Short lists work best.\n\n" +
+        "## About this project\n\n- What the project is for:\n\n## Rules\n\n- \n";
     case "txt": return "";
     case "html":
       return `<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n` +

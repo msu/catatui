@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld("catatui", {
   // A file dragged from Finder or Explorer: its full path, then the path in the project (or an error).
   pathForFile: (file) => webUtils.getPathForFile(file),
   projectPath: (full) => ipcRenderer.invoke("project-path", full),
+  importFile: (full, toDir) => ipcRenderer.invoke("file-import", full, toDir),
+  fileWrite: (path, text, expected) => ipcRenderer.invoke("file-write", path, text, expected),
+  trashItem: (path) => ipcRenderer.invoke("file-trash", path),
   fileMenu: (path, opts) => ipcRenderer.invoke("file-menu", path, opts),
   // After a roll back from the file menu, the tree and the file cards read the files again.
   onFilesChanged: on("files-changed"),

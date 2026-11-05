@@ -7,7 +7,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell } from "electron";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -263,22 +263,27 @@ ipcMain.handle("file-menu", (e, path, opts) => new Promise((done) => {
   const reveal = process.platform === "darwin" ? "Show in Finder" : process.platform === "win32" ? "Show in Explorer" : "Show in folder";
   // "New" and "Open in Terminal" use the folder, or the folder of the file.
   const dir = opts?.folder ? full : dirname(full);
+  const newItems = newfile.NEW_KINDS.map((k) => (k ? { label: k.label, click: () => { picked = `new:${k.kind}`; } } : { type: "separator" }));
+  // The "New File" button of an empty project: only the kinds.
+  if (opts?.onlyNew) return Menu.buildFromTemplate(newItems).popup({ window: c.win, callback: () => done(picked) });
   const template = [
     { label: "New", submenu: newfile.NEW_KINDS.map((k) => (k ? { label: k.label, click: () => { picked = `new:${k.kind}`; } } : { type: "separator" })) },
     { type: "separator" },
     // A folder, or a PDF, Word, or HTML file: the agent checks the documents and offers to fix them.
     ...(opts?.canAudit ? [{ label: "Audit accessibility", click: () => { picked = "audit"; } }, { type: "separator" }] : []),
     ...(opts?.folder ? [] : [
-      { label: "Add to chat", click: () => { picked = "add"; } },
-      { type: "separator" },
-      // The same actions as the file buttons in the app (FileButtons): Launch, Open, View, Diff.
+      // The same actions as the file buttons in the app (FileButtons). "Open" opens the file in catai (the editor,
+      // or a read-only view). "Open in Excel" (Word, PowerPoint) or "Open in Default App" opens it outside catai.
+      { label: "Open", click: () => { picked = "view"; } },
+      { label: openInLabel(full), click: () => shell.openPath(full) },
       ...(opts?.canLaunch ? [{ label: "Launch", click: () => { picked = "launch"; } }] : []),
-      { label: "Open", click: () => shell.openPath(full) },
-      { label: "Preview", click: () => { picked = "view"; } },
+      // Drag is the main way to add a file to the chat. This item is for the keyboard and screen readers.
+      { label: "Add to Chat", click: () => { picked = "add"; } },
       ...(opts?.canDiff ? [{ label: "Diff", click: () => { picked = "diff"; } }] : []),
       ...(opts?.canRollback ? [{ label: "Roll back to last commit...", click: async () => { if (await rollBack(c, rel)) toRenderer(c, "files-changed"); } }] : []),
       { type: "separator" },
     ]),
+    ...(rel ? [{ label: `Move to ${process.platform === "win32" ? "Recycle Bin" : "Trash"}...`, click: () => { picked = "trash"; } }, { type: "separator" }] : []),
     { label: reveal, click: () => (rel ? shell.showItemInFolder(full) : shell.openPath(full)) },
     { label: "Open in Terminal", click: () => openTerminal(dir) },
     { label: "Copy path", click: () => clipboard.writeText(full) },
@@ -286,6 +291,32 @@ ipcMain.handle("file-menu", (e, path, opts) => new Promise((done) => {
   ];
   Menu.buildFromTemplate(template).popup({ window: c.win, callback: () => done(picked) });
 }));
+
+// Delete a file or a folder of the project: a warning first, then it goes to the Trash (Recycle Bin on Windows),
+// so the student can get it back. From the tree: the Delete or Backspace key, or "Move to Trash..." in the menu.
+async function trashItem(c, rel) {
+  const full = resolve(c.project, rel);
+  const r = relative(c.project, full);
+  if (!r || r.startsWith("..") || isAbsolute(r) || !existsSync(full)) return { error: "catai can delete only items in the project." };
+  const folder = statSync(full).isDirectory();
+  const bin = process.platform === "win32" ? "Recycle Bin" : "Trash";
+  const { response } = await dialog.showMessageBox(c.win, {
+    type: "warning",
+    message: `Move ${folder ? "the folder " : ""}${basename(full)} to the ${bin}?`,
+    detail: `${folder ? "The folder and all files in it go" : "The file goes"} to the ${bin}. You can get ${folder ? "them" : "it"} back from there.`,
+    buttons: ["Cancel", `Move to ${bin}`],
+    defaultId: 0,
+    cancelId: 0,
+  });
+  if (response !== 1) return { cancelled: true };
+  try { await shell.trashItem(full); } catch (err) { return { error: `catai could not delete ${basename(full)}: ${err.message}` }; }
+  return { path: r.split(sep).join("/") };
+}
+ipcMain.handle("file-trash", (e, path) => { const c = ctxOf(e); return c?.project ? trashItem(c, path) : { error: "No project is open." }; });
+
+// The name of "open outside catai": the app for Office files, else the default app of the computer.
+const OPEN_IN = { xlsx: "Excel", xls: "Excel", csv: "Excel", docx: "Word", doc: "Word", pptx: "PowerPoint", ppt: "PowerPoint" };
+const openInLabel = (full) => `Open in ${OPEN_IN[full.split(".").pop().toLowerCase()] ?? "Default App"}`;
 
 // A terminal window in a folder. macOS: Terminal. Windows: PowerShell. Linux: the default terminal.
 function openTerminal(dir) {
@@ -388,6 +419,22 @@ ipcMain.handle("file-read", async (e, path) => {
   return { size: data.length, text: data.toString("utf8"), full };
 });
 
+// The text editor in the side panel saves a file. expected: the text that the editor loaded or saved last.
+// If the file on disk is different now (the agent or another app changed it), nothing is written: conflict.
+ipcMain.handle("file-write", (e, path, text, expected) => {
+  const project = ctxOf(e)?.project;
+  if (!project) return { error: "No project is open." };
+  const full = resolve(project, path);
+  const rel = relative(project, full);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return { error: "The file is not in the project." };
+  if (typeof text !== "string") return { error: "catai can save only text." };
+  const disk = readOrNull(full);
+  if (disk && isBinary(disk)) return { error: "catai cannot save this file as text." };
+  if ((disk?.toString("utf8") ?? "") !== expected) return { conflict: true, text: disk?.toString("utf8") };
+  try { writeFileSync(full, text); } catch (err) { return { error: `catai could not save ${basename(full)}: ${err.message}` }; }
+  return { ok: true };
+});
+
 // A project file as a URL for the web preview (file://). Only files in the project.
 ipcMain.handle("file-url", (e, path) => {
   const project = ctxOf(e)?.project;
@@ -406,6 +453,29 @@ ipcMain.handle("project-path", (e, full) => {
   if (!full || rel.startsWith("..") || isAbsolute(rel)) return { error: `${basename(full)} is not in the project folder. Copy it into ${basename(project)} first.` };
   if (!readOrNull(full)) return { error: `${basename(full)} is a folder or cannot be read. Drop a file.` };
   return { path: rel.split("\\").join("/") };
+});
+
+// A file or a folder from Finder or Explorer. In the project: its project path (no copy). Outside the project:
+// a copy in the folder toDir ("" is the project folder). A name that is there already gets " copy" (" copy 2"...).
+ipcMain.handle("file-import", (e, full, toDir) => {
+  const project = ctxOf(e)?.project;
+  if (!project || typeof full !== "string" || !full) return { error: "No project is open." };
+  const rel = (p) => relative(project, p).split(sep).join("/");
+  const r = relative(project, full);
+  if (r && !r.startsWith("..") && !isAbsolute(r)) return { path: rel(full), inside: true };
+  const up = relative(full, project);
+  if (r === "" || (!up.startsWith("..") && !isAbsolute(up))) return { error: `catai cannot copy ${basename(full)}: the project is in it.` };
+  const dir = resolve(project, toDir ?? "");
+  const d = relative(project, dir);
+  if (d.startsWith("..") || isAbsolute(d)) return { error: "The folder is not in the project." };
+  if (!existsSync(full)) return { error: `${basename(full)} cannot be read.` };
+  const ext = statSync(full).isDirectory() ? "" : (basename(full).match(/\.[^.]+$/)?.[0] ?? "");
+  const stem = basename(full).slice(0, basename(full).length - ext.length);
+  let dest = join(dir, basename(full));
+  for (let i = 1; existsSync(dest); i++) dest = join(dir, `${stem} copy${i > 1 ? ` ${i}` : ""}${ext}`);
+  try { cpSync(full, dest, { recursive: true, errorOnExist: true, force: false }); }
+  catch (err) { return { error: `catai could not copy ${basename(full)}: ${err.message}` }; }
+  return { path: rel(dest), copied: true, folder: statSync(dest).isDirectory() };
 });
 
 const IMAGE_TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp", ico: "image/x-icon" };

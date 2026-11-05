@@ -18,6 +18,8 @@ import { registerNewProject } from "./project.ts";
 import { registerWidget } from "./widget.ts";
 import { registerPreview } from "./preview.ts";
 import { registerMoved } from "./moved.ts";
+import { registerEditor } from "./editor.ts";
+import { registerAgentsFile } from "./agentsfile.ts";
 import { registerViews } from "./views.ts";
 import { registerAdvising } from "./advising.ts";
 import { registerClasses } from "./classes.ts";
@@ -83,6 +85,7 @@ export default async function (pi: ExtensionAPI) {
   registerContext(pi);
   registerHelp(pi);
   registerMsu(pi);
+  registerAgentsFile(pi);
   // The desktop app (catai) sets CATAI=1. These tools need the app (inline widgets, the side panel, the app areas,
   // a new project window). The CLI is for experts in a terminal or an editor, so it does not load them.
   if (process.env.CATAI === "1") {
@@ -90,6 +93,7 @@ export default async function (pi: ExtensionAPI) {
     registerWidget(pi);
     registerPreview(pi);
     registerMoved(pi);
+    registerEditor(pi);
     // Advising and Classes are mock data for a demo: only with catai --demo-mode.
     if (process.env.CATAI_DEMO === "1") registerViews(pi);
   }

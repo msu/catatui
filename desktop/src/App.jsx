@@ -5,7 +5,8 @@ import logo from "./bobcat.png";
 import { FileIcon, FolderIcon } from "./icons.jsx";
 import { PlanCard, Widget } from "./widgets.jsx";
 import { isLocalUrl } from "../webapp.js";
-import { closeDialog, initialState, itemsFromMessages, notice, plain, reduce, resultText, toolSummary, WIDGET_PREFIX, widgetAnswer } from "./chat.js";
+import { closeDialog, EDITOR_PREFIX, initialState, itemsFromMessages, notice, plain, reduce, resultText, toolSummary, WIDGET_PREFIX, widgetAnswer } from "./chat.js";
+import { editors, isEditable, TextEditor } from "./editor.jsx";
 
 const api = window.catatui;
 // The project folder, for short paths in tool cards. It does not change while the app runs.
@@ -312,9 +313,55 @@ export function App() {
       `Audit the accessibility of the ${folder ? "documents in the folder" : "document"} ${PROJECT.replace(/[\\/]$/, "")}/${p}. ` +
       "Follow the audit steps in the accessible-documents skill."),
   };
+  // editor_edit requests: the open editor of the file applies the change. Then answer the extension.
+  useEffect(() => {
+    const reqs = state.editorReqs ?? [];
+    if (!reqs.length) return;
+    local((s) => ({ ...s, editorReqs: [] }));
+    for (const req of reqs) {
+      (async () => {
+        let spec;
+        try { spec = JSON.parse(req.title.slice(EDITOR_PREFIX.length)); } catch { /* not JSON */ }
+        const ed = spec && editors.get(spec.path);
+        const r = ed ? await ed.apply(spec) : { error: "The file is not open in the editor now. Use edit or write." };
+        api.respond({ id: req.id, value: JSON.stringify(r) });
+      })();
+    }
+  }, [state.editorReqs]);
+  // The file and the selection in the editor go to the extension (editor.ts), for the agent's context.
+  const lastFocus = useRef("");
+  const editorFocus = (info) => {
+    const j = info ? JSON.stringify(info) : "null";
+    if (j === lastFocus.current) return;
+    lastFocus.current = j;
+    api.command({ type: "prompt", message: `/catai-editor ${j}` });
+  };
+  // A student edit: the agent gets one note for each file until its next turn (moved.ts).
+  const editedSince = useRef(new Set());
+  useEffect(() => { if (state.busy) editedSince.current.clear(); }, [state.busy]);
+  const onEdited = (p) => {
+    if (editedSince.current.has(p)) return;
+    editedSince.current.add(p);
+    api.command({ type: "prompt", message: `/catai-edited ${JSON.stringify([p])}` });
+  };
   // "Show In Project" in the side panel: show the tree, open the folders of the file, select it, and flash it.
   const [reveal, setReveal] = useState(undefined);
   const revealFile = (p) => { setShowTree(true); selectFile(p); setReveal({ path: p, at: Date.now() }); };
+  // Delete or Backspace in the tree, or "Move to Trash...": main.js asks first. Then the agent gets a note.
+  async function trashItem(p) {
+    if (!p) return;
+    const r = await api.trashItem(p);
+    if (r.cancelled) return;
+    if (r.error) return local((s) => notice(s, "error", r.error));
+    setTreeTick((t) => t + 1);
+    setSide((st) => {
+      const gone = (t) => t.type === "file" && (t.path === r.path || t.path.startsWith(`${r.path}/`));
+      const tabs = st.tabs.filter((t) => !gone(t));
+      return tabs.length === st.tabs.length ? st : { ...st, tabs, active: tabs.some((t) => (t.type === "web" ? "web" : `file:${t.path}`) === st.active) ? st.active : (tabs[0] ? (tabs[0].type === "web" ? "web" : `file:${tabs[0].path}`) : undefined) };
+    });
+    local((s) => notice(s, "info", `Moved ${r.path} to the Trash. catai tells the agent with your next message.`));
+    await api.command({ type: "prompt", message: `/catai-deleted ${JSON.stringify([r.path])}` });
+  }
   // Drag and drop in the tree: move the item, show a notice, and tell the agent with the next message (moved.ts).
   async function moveItem(from, toDir) {
     const r = await api.moveFile(from, toDir);
@@ -354,7 +401,7 @@ export function App() {
   }, []);
   const fileTick = `${state.items.filter((it) => it.kind === "tool" && !it.running).length}-${undoSteps}-${treeTick}-${state.busy}`;
 
-  // A double click on a file: show the file in the chat, and the agent asks what to do with it.
+  // "Add to Chat" (the tree menu) or a drag into the chat: show the file in the chat, and the agent asks what to do with it.
   // Add files to the chat (double click in the tree, or drag and drop). The agent does not read them yet:
   // it asks what to do. The file cards are the lines that start with FILE_PREFIX.
   const addFiles = (paths) => {
@@ -459,7 +506,8 @@ export function App() {
   openSessionRef.current = openSession;
   useEffect(() => api.onOpenSession((path) => openSessionRef.current(path)), []);
 
-  // Drag and drop: files from the tree, or from Finder or Explorer (only files in the project).
+  // Drag and drop on the chat: files from the tree, or from Finder or Explorer. A file from outside the project
+  // gets a copy in the project folder first. Then the files go into the chat as file cards.
   const [dropping, setDropping] = useState(false);
   async function onDrop(e) {
     e.preventDefault();
@@ -467,12 +515,42 @@ export function App() {
     const fromTree = e.dataTransfer.getData("text/x-catatui-path");
     if (fromTree) return addFiles([fromTree]);
     const paths = [];
+    const copied = [];
     for (const f of e.dataTransfer.files) {
-      const r = await api.projectPath(api.pathForFile(f));
+      const r = await api.importFile(api.pathForFile(f), "");
       if (r.error) local((st) => notice(st, "warning", r.error));
-      else paths.push(r.path);
+      else if (r.folder) { copied.push(r.path); local((st) => notice(st, "info", `Copied the folder ${r.path} into the project. Drop files, not folders, to add them to the chat.`)); }
+      else { paths.push(r.path); if (r.copied) copied.push(r.path); }
     }
+    if (copied.length) setTreeTick((t) => t + 1);
+    if (copied.some((p) => paths.includes(p))) local((st) => notice(st, "info", `Copied ${copied.filter((p) => paths.includes(p)).join(", ")} into the project folder. The original stays where it was.`));
     addFiles(paths);
+  }
+  // A file dropped anywhere else in the window (the header, the side panel): the same as a drop on the chat.
+  // Without this, Chromium opens the dropped file in the window.
+  const onDropRef = useRef(onDrop);
+  onDropRef.current = onDrop;
+  useEffect(() => {
+    const over = (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); };
+    const drop = (e) => { if (!e.defaultPrevented && e.dataTransfer?.files.length && phase === "chat") onDropRef.current(e); else e.preventDefault(); };
+    window.addEventListener("dragover", over);
+    window.addEventListener("drop", drop);
+    return () => { window.removeEventListener("dragover", over); window.removeEventListener("drop", drop); };
+  }, [phase]);
+  // Drag and drop from Finder or Explorer on the tree: a copy in the folder under the mouse. A file that is in the
+  // project already moves there. The agent learns about the copies with the next message (moved.ts).
+  async function importItems(fullPaths, toDir) {
+    const copied = [];
+    for (const full of fullPaths) {
+      const r = await api.importFile(full, toDir);
+      if (r.error) local((st) => notice(st, "warning", r.error));
+      else if (r.inside) await moveItem(r.path, toDir);
+      else copied.push(r.path);
+    }
+    if (!copied.length) return;
+    setTreeTick((t) => t + 1);
+    local((st) => notice(st, "info", `Copied ${copied.join(", ")} into the project. The original stays where it was. catai tells the agent with your next message.`));
+    await api.command({ type: "prompt", message: `/catai-added ${JSON.stringify(copied)}` });
   }
 
   if (phase === "signin") return <SignIn info={info} onDone={boot} />;
@@ -517,15 +595,15 @@ export function App() {
             onLink={() => setLinking(true)} tick={linkTick} />
         )}
         {info.chat ? null : showTree
-          ? <FileTree tree={tree} selected={selectedFile} onEscape={focusComposer} onSelect={selectFile} onOpen={askAboutFile} onDiff={setViewing} onRefresh={() => setTreeTick((t) => t + 1)} onCollapse={() => setShowTree(false)}
-            onPin={(p) => openSide({ type: "file", path: p })} onPreview={previewFile} onMove={moveItem} reveal={reveal} />
+          ? <FileTree tree={tree} selected={selectedFile} onEscape={focusComposer} onSelect={selectFile} onOpen={(p) => openSide({ type: "file", path: p })} onAdd={askAboutFile} onTrash={trashItem} onDiff={setViewing} onRefresh={() => setTreeTick((t) => t + 1)} onCollapse={() => setShowTree(false)}
+            onPin={(p) => openSide({ type: "file", path: p })} onPreview={previewFile} onMove={moveItem} onImport={importItems} reveal={reveal} />
           : <button className="tree-strip" onClick={() => setShowTree(true)} title="Show the files">»</button>}
         {viewing && <FileViewer path={viewing} tick={treeTick + state.items.length} onClose={closeViewer} />}
         <div className={`main-col ${dropping ? "dropping" : ""}`}
           onDragOver={(e) => { e.preventDefault(); if (!dropping) setDropping(true); }}
           onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false); }}
           onDrop={onDrop}>
-          {dropping && <div className="drop-hint">Drop the file to add it to the chat</div>}
+          {dropping && <div className="drop-hint">Drop the file to add it to the chat. A file from outside the project gets a copy in the project.</div>}
           <Chat items={state.items} busy={state.busy} onShowChanges={setViewing} changed={tree} scrollTick={scrollTick} fileTick={fileTick}
             widgets={state.widgets} onWidgetAnswer={(req, data) => { api.respond({ id: req.id, value: JSON.stringify(data) }); local((st) => closeDialog(st, req.id)); }}
             resume={info.kind === "chat" ? info.resumeProject : undefined} onResume={openProject} advising={info.kind === "advising"} onAsk={send}
@@ -543,7 +621,7 @@ export function App() {
         {side.tabs.length > 0 && (
           <SidePanel side={side} width={sideWidth} setWidth={setSideWidth} onActivate={(id) => setSide((st) => ({ ...st, active: id }))}
             onClose={closeSide} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })} fileTick={fileTick} reloadTick={reloadTick}
-            files={tree.files} webApp={tree.webApp} onReveal={revealFile}
+            files={tree.files} webApp={tree.webApp} onReveal={revealFile} busy={state.busy} onEdited={onEdited} onEditorFocus={editorFocus}
             onStartServer={(sv) => send(`Start the web app of this project with the server tool: ${sv.command}. When it runs, show http://localhost:${sv.port} with show_preview.`)} />
         )}
       </div>
@@ -592,7 +670,7 @@ function buildTree(paths, emptyDirs = []) {
 }
 
 // The files of the project, with the git status. A click shows the file, a double click asks the agent about it.
-function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onCollapse, onEscape, onPin, onPreview, onMove, reveal }) {
+function FileTree({ tree, selected, onSelect, onOpen, onAdd, onTrash, onDiff, onRefresh, onCollapse, onEscape, onPin, onPreview, onMove, onImport, reveal }) {
   const [changedOnly, setChangedOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(() => new Set());
@@ -613,17 +691,55 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
     const isText = !/\.(xlsx?|docx?|pptx?|pdf|png|jpe?g|gif|webp|ico|zip|gz)$/i.test(p);
     const canAudit = folder || /\.(pdf|docx|html?)$/i.test(p);
     const picked = await api.fileMenu(p, { folder, canAudit: canAudit && p !== "", canDiff: !folder && isText && (m === "M" || m === "R"), canRollback: !folder && !!m, canLaunch: !folder && !!actions?.canLaunch(p) });
-    if (picked === "add") onOpen(p);
+    if (picked === "add") onAdd(p);
+    if (picked === "trash") onTrash(p);
     if (picked === "diff") onDiff(p);
     if (picked === "view") onPin(p);
     if (picked === "launch") actions?.launch(p);
     if (picked === "audit") actions?.audit(p, folder);
-    if (picked?.startsWith("new:")) setCreating({ kind: picked.slice(4), dir: folder ? p : p.split("/").slice(0, -1).join("/") });
+    if (picked?.startsWith("new:")) startNew(picked.slice(4), folder ? p : p.split("/").slice(0, -1).join("/"));
   };
   // A search or "Changed only" shows files only, so no empty folders then.
   const root = buildTree(paths, words.length || changedOnly ? [] : (tree.emptyDirs ?? []));
   // "New" in the menu: the name dialog for the kind, in the folder (project path, "" is the project folder).
   const [creating, setCreating] = useState(undefined);
+  // The width of the tree: drag the right edge, or use the arrow keys on it (160 px to 50% of the window).
+  // undefined: the width from the CSS.
+  const [width, setWidth] = useState(() => { try { return Number(localStorage.getItem("treeWidth")) || undefined; } catch { return undefined; } });
+  const treeRef = useRef(null);
+  const clampW = (w) => Math.round(Math.max(160, Math.min(window.innerWidth * 0.5, w)));
+  const keepW = (w) => { try { localStorage.setItem("treeWidth", String(w)); } catch { /* No storage. */ } };
+  const dragWidth = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = treeRef.current?.offsetWidth ?? 240;
+    let w = startW;
+    const move = (ev) => { w = clampW(startW + ev.clientX - startX); setWidth(w); };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.classList.remove("resizing");
+      keepW(w);
+    };
+    document.body.classList.add("resizing");
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+  const keyWidth = (e) => {
+    const step = e.key === "ArrowRight" ? 16 : e.key === "ArrowLeft" ? -16 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const w = clampW((treeRef.current?.offsetWidth ?? 240) + step);
+    setWidth(w);
+    keepW(w);
+  };
+  // AGENTS.md has a fixed name, in the project folder: no name dialog. If it is there already, show it.
+  const startNew = async (kind, dir) => {
+    if (kind !== "agents") return setCreating({ kind, dir });
+    const r = await api.newFile("", "AGENTS", "agents");
+    if (r.error && tree.files.includes("AGENTS.md")) { onSelect("AGENTS.md"); onPin("AGENTS.md"); }
+    else if (!r.error) created(r);
+  };
   // "Show In Project": open the parent folders, clear the search, then scroll to the row and flash it.
   const body = useRef(null);
   const [flash, setFlash] = useState(undefined);
@@ -648,20 +764,22 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
   const dragProps = (path) => ({ draggable: true, onDragStart: (e) => { e.dataTransfer.setData(MOVE, path); e.dataTransfer.effectAllowed = "copyMove"; } });
   const dropProps = (dir) => ({
     onDragOver: (e) => {
-      if (!e.dataTransfer.types.includes(MOVE)) return;
+      const outside = !e.dataTransfer.types.includes(MOVE) && e.dataTransfer.types.includes("Files");
+      if (!e.dataTransfer.types.includes(MOVE) && !outside) return;
       e.preventDefault();
       e.stopPropagation();
-      e.dataTransfer.dropEffect = "move";
+      e.dataTransfer.dropEffect = outside ? "copy" : "move";
       if (dropDir !== dir) setDropDir(dir);
     },
     onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropDir(undefined); },
     onDrop: (e) => {
       const from = e.dataTransfer.getData(MOVE);
       setDropDir(undefined);
-      if (!from) return;
       e.preventDefault();
       e.stopPropagation();
-      onMove(from, dir);
+      if (from) return onMove(from, dir);
+      const files = [...e.dataTransfer.files].map((f) => api.pathForFile(f)).filter(Boolean);
+      if (files.length) onImport(files, dir);
     },
   });
   const created = (r) => {
@@ -676,7 +794,7 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
   const hasChange = (prefix) => paths.some((p) => p.startsWith(prefix) && mark(p));
   const toggle = (dir) => setOpen((o) => { const n = new Set(o); n.has(dir) ? n.delete(dir) : n.add(dir); return n; });
   // The keyboard in the tree: Up and Down move, Right opens a folder, Left closes it or goes to the parent folder,
-  // Enter adds a file to the chat, Escape goes to the message box. Ctrl+D (in App) shows the diff.
+  // Enter opens a file in catai (the side panel), Escape goes to the message box. Ctrl+D (in App) shows the diff.
   const onTreeKeys = (e) => {
     const rows = [...e.currentTarget.querySelectorAll(".tree-row")];
     const i = rows.indexOf(document.activeElement);
@@ -701,6 +819,7 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
     else if (e.key === "ArrowLeft") { if (isOpen && !expandAll) toggle(dir); else if (parentRow() >= 0) go(parentRow()); }
     else if (e.key === "Enter" && path) onOpen(path);
     else if (e.key === "Escape") onEscape();
+    else if (e.key === "Delete" || e.key === "Backspace") onTrash((dir ?? path).replace(/\/$/, ""));
     else return;
     e.preventDefault();
   };
@@ -726,7 +845,7 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
         const m = mark(p);
         return (
           <button key={p} data-path={p} className={`tree-row ${p === selected ? "current" : ""} ${p === flash ? "flash" : ""}`} style={{ paddingLeft: `${1.4 + depth * 1.1}rem` }}
-            title={`${p}\nDouble-click or drag into the chat to add the file. catatui asks what you want to do with it.`}
+            title={`${p}\nDouble-click to open the file in catai. Drag it into the chat to add it to the chat.`}
             draggable onDragStart={(e) => { e.dataTransfer.setData("text/x-catatui-path", p); e.dataTransfer.setData(MOVE, p); e.dataTransfer.effectAllowed = "copyMove"; }}
             {...dropProps(prefix.replace(/\/$/, ""))}
             onClick={() => onSelect(p)} onDoubleClick={() => onOpen(p)} onContextMenu={(e) => menu(e, p, false)}>
@@ -739,7 +858,10 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
   );
 
   return (
-    <aside className="tree">
+    <aside className="tree" ref={treeRef} style={width ? { width } : undefined}>
+      <div className="tree-resize" role="separator" aria-orientation="vertical" aria-label="Width of the files" tabIndex={0}
+        onMouseDown={dragWidth} onKeyDown={keyWidth} onDoubleClick={() => { setWidth(undefined); try { localStorage.removeItem("treeWidth"); } catch { /* No storage. */ } }}
+        title="Drag to change the width. Double-click for the default width." />
       <div className="tree-head">
         {tree.git
           ? <label className="small"><input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} /> Changed only</label>
@@ -762,7 +884,19 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
       </div>
       {/* A right click on the empty part of the tree: the menu of the project folder. */}
       <div ref={body} className={`tree-body ${dropDir === "" ? "drop" : ""}`} onKeyDown={onTreeKeys} onContextMenu={(e) => { if (!e.defaultPrevented) menu(e, "", true); }} {...dropProps("")}>
-        {paths.length === 0 && <p className="muted small pad">{words.length ? "No files match the search." : changedOnly ? "No changed files." : "No files."}</p>}
+        {paths.length === 0 && (words.length || changedOnly || tree.emptyDirs?.length
+          ? <p className="muted small pad">{words.length ? "No files match the search." : changedOnly ? "No changed files." : "No files."}</p>
+          : (
+            // A new, empty project: a button to make the first file, not an empty tree.
+            <div className="tree-empty">
+              <p>This project has no files yet.</p>
+              <button className="btn primary" onClick={async () => {
+                const picked = await api.fileMenu("", { folder: true, onlyNew: true });
+                if (picked?.startsWith("new:")) startNew(picked.slice(4), "");
+              }}>New File</button>
+              <p className="small muted">Or ask catai to make something.</p>
+            </div>
+          ))}
         {renderNode(root, "", 0)}
       </div>
       {creating && <NewFileDialog {...creating} onDone={created} onCancel={() => setCreating(undefined)} />}
@@ -1128,7 +1262,7 @@ function MaximizeIcon() {
   );
 }
 
-function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, fileTick, reloadTick, files, webApp, onReveal, onStartServer }) {
+function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, fileTick, reloadTick, files, webApp, onReveal, onStartServer, busy, onEdited, onEditorFocus }) {
   // Drag the left edge to change the width (240 px to 75% of the window).
   const drag = (e) => {
     e.preventDefault();
@@ -1163,7 +1297,7 @@ function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, file
         ))}
       </div>
       <div className="side-body">
-        {active?.type === "file" && <FilePane key={active.path} path={active.path} tick={fileTick} onReveal={onReveal} onPreview={onOpenWeb} />}
+        {active?.type === "file" && <FilePane key={active.path} path={active.path} tick={fileTick} onReveal={onReveal} onPreview={onOpenWeb} busy={busy} onEdited={onEdited} onEditorFocus={onEditorFocus} />}
         {/* The web preview stays mounted (hidden) when another tab is on, so the page keeps its state. */}
         {side.tabs.some((t) => t.type === "web") && (
           <WebPane hidden={active?.type !== "web"} tab={side.tabs.find((t) => t.type === "web")} reloadTick={reloadTick} webApp={webApp} onOpen={onOpenWeb} onStartServer={onStartServer} />
@@ -1174,18 +1308,23 @@ function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, file
 }
 
 // A pinned file: the whole text with line numbers, or the image. It reads the file again after each change.
-function FilePane({ path, tick, onReveal, onPreview }) {
+function FilePane({ path, tick, onReveal, onPreview, busy, onEdited, onEditorFocus }) {
   const [f, setF] = useState(undefined);
   useEffect(() => { api.fileRead(path).then(setF); }, [path, tick]);
+  // A text file that the editor knows: edit it here. The agent learns that no file is open when the pane closes.
+  const editable = isEditable(path) && f?.text !== undefined;
+  useEffect(() => () => onEditorFocus?.(null), []);
+  // A read-only view: the agent learns which file the student looks at (no editor_edit).
+  useEffect(() => { if (f && !editable) onEditorFocus?.({ path, readOnly: true }); }, [path, !!f, editable]);
   const ext = path.split(".").pop().toLowerCase();
   return (
     <div className="file-pane">
       <div className="pane-bar">
         <span className="pane-path" title={path}><bdi>{path}</bdi></span>
-        <span className="ro-badge" title="This is a preview. You cannot change the file here.">
+        {!editable && f && <span className="ro-badge" title="This is a preview. You cannot change the file here.">
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></svg>
           Read-only
-        </span>
+        </span>}
         <button className="btn small" onClick={() => onReveal(path)}>Show In Project</button>
         <FileButtons path={path} except={["view"]} primaryOpen />
       </div>
@@ -1193,7 +1332,8 @@ function FilePane({ path, tick, onReveal, onPreview }) {
       {f?.image && <div className="pane-image"><img src={f.image} alt={path} /></div>}
       {f?.sheets && <ExcelGrid sheets={f.sheets} />}
       {(f?.binary || f?.big) && <p className="muted pad">{f.big ? "This file is too large to show." : "This file is not text."} Click {OPEN_IN[ext] ? `"Open in ${OPEN_IN[ext]}"` : "\"Open\""}.</p>}
-      {f?.text !== undefined && (
+      {editable && <TextEditor path={path} text={f.text} busy={busy} onSaved={onEdited} onFocusInfo={onEditorFocus} />}
+      {!editable && f?.text !== undefined && (
         <div className="diff-view pane-text" tabIndex={0}>
           {f.text.split("\n").map((line, i) => <div key={i} className="dl ctx"><span className="ln">{i + 1}</span><span className="dt">{line}</span></div>)}
         </div>
@@ -2643,8 +2783,8 @@ function FileButtons({ path, except = [], primaryOpen = false }) {
   const show = (k) => !except.includes(k);
   return <>
     {show("launch") && a.canLaunch(path) && <button className="btn small" onClick={() => a.launch(path)} title="Run the page or app in the preview, next to the chat">Launch</button>}
-    {show("open") && <button className={`btn small ${primaryOpen && OPEN_IN[ext] ? "primary" : ""}`} onClick={() => a.open(path)} title="Open the file in its app on this computer">{OPEN_IN[ext] ? `Open in ${OPEN_IN[ext]}` : "Open"}</button>}
-    {show("view") && <button className="btn small" onClick={() => a.view(path)} title="Show a read-only preview of the file in the side panel">Preview</button>}
+    {show("view") && <button className="btn small" onClick={() => a.view(path)} title="Open the file in catai, in the side panel">Open</button>}
+    {show("open") && <button className={`btn small ${primaryOpen && OPEN_IN[ext] ? "primary" : ""}`} onClick={() => a.open(path)} title="Open the file in an app outside catai">Open in {OPEN_IN[ext] ?? "Default App"}</button>}
     {show("diff") && a.canDiff(path) && <button className="btn small" onClick={() => a.diff(path)} title="Show the changes since the last commit">Diff</button>}
   </>;
 }

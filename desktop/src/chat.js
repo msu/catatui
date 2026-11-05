@@ -110,6 +110,8 @@ export function reduce(state, rec) {
     case "extension_ui_request": {
       // A widget: the chat draws it inline from the show_widget tool item, not as a dialog or a notice.
       if (rec.method === "input" && String(rec.title ?? "").startsWith(WIDGET_PREFIX)) return { ...state, widgets: [...state.widgets, rec] };
+      // editor_edit (src/catatui/editor.ts): App gives it to the open editor and answers.
+      if (rec.method === "input" && String(rec.title ?? "").startsWith(EDITOR_PREFIX)) return { ...state, editorReqs: [...(state.editorReqs ?? []), rec] };
       if (rec.method === "notify" && String(rec.message ?? "").startsWith(WIDGET_PREFIX)) return state;
       // show_preview (preview.ts): the side panel opens the page. No notice in the chat.
       if (rec.method === "notify" && String(rec.message ?? "").startsWith(PREVIEW_PREFIX)) return { ...state, preview: { url: String(rec.message).slice(PREVIEW_PREFIX.length), at: Date.now() } };
@@ -136,6 +138,8 @@ export const closeDialog = (state, id) => ({ ...state, dialogs: state.dialogs.fi
 
 // The same prefix as WIDGET_PREFIX in src/catatui/widget.ts.
 export const WIDGET_PREFIX = "[widget] ";
+// The same prefix as EDITOR_PREFIX in src/catatui/editor.ts.
+export const EDITOR_PREFIX = "[editor] ";
 // The same prefix as PREVIEW_PREFIX in src/catatui/preview.ts.
 export const PREVIEW_PREFIX = "[preview] ";
 
