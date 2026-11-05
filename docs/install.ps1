@@ -19,7 +19,8 @@
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
   $NodeLine = "latest-v24.x" # Node.js LTS line
-  $Package = "https://codeload.github.com/msu/catatui/tar.gz/refs/heads/master"
+  # CATATUI_PACKAGE can set a different package tarball. The catai installer uses it to pin a commit.
+  $Package = if ($env:CATATUI_PACKAGE) { $env:CATATUI_PACKAGE } else { "https://codeload.github.com/msu/catatui/tar.gz/refs/heads/master" }
   $App = if ($env:CATATUI_APP) { $env:CATATUI_APP } else { Join-Path $HOME ".catatui\app" }
 
   function Fail($message) {

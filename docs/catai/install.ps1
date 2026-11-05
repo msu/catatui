@@ -18,7 +18,9 @@
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
   $Site = if ($env:CATATUI_SITE) { $env:CATATUI_SITE } else { "https://catatui.cs.montana.edu" }
-  $Repo = "https://codeload.github.com/msu/catatui/tar.gz/refs/heads/master"
+  # The commit to install. catatui and catai come from the same commit. To release a new version, change it.
+  $Commit = "9fd5b2a6cc26b60f0671531b08e70daa6d9eb469"
+  $Repo = "https://codeload.github.com/msu/catatui/tar.gz/$Commit"
   $App = if ($env:CATATUI_APP) { $env:CATATUI_APP } else { Join-Path $HOME ".catatui\app" }
   $Catai = Join-Path $App "catai"
 
@@ -33,7 +35,9 @@
   catch { Fail "cannot get the catatui installer from $Site. Check your network connection." }
   # GitHub Pages sends .ps1 files as application/octet-stream, so PowerShell gives bytes, not text.
   $script = if ($content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($content) } else { $content }
-  Invoke-Expression $script
+  # The catatui installer reads CATATUI_PACKAGE. Remove it after, because it stays in this PowerShell window.
+  $env:CATATUI_PACKAGE = $Repo
+  try { Invoke-Expression $script } finally { Remove-Item Env:CATATUI_PACKAGE -ErrorAction SilentlyContinue }
   $node = Join-Path $App "node"
   $npm = Join-Path $node "npm.cmd"
   $pkg = Join-Path $App "npm\node_modules\catatui"

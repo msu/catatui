@@ -16,7 +16,7 @@ import { detectWebApp, isLocalUrl } from "./webapp.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // The catatui package: bin/catatui.js, src/catatui, and node_modules (pi, jiti, dugite).
-// In development it is the repository. The catai installer (docs/catai/install.ps1) writes root.json with the
+// In development it is the repository. The catai installers (docs/catai/install.ps1, install.sh) write root.json with the
 // installed catatui package, so the app and the catatui command use the same files.
 const ROOT = (() => { try { return JSON.parse(readFileSync(join(HERE, "root.json"), "utf8")).root; } catch { return join(HERE, ".."); } })();
 // The catatui CLI.
