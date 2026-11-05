@@ -235,9 +235,56 @@ test("auto: changes in the project, commits, and GET requests do not ask", async
   assert.equal(await s.call("move", { from: "a.txt", to: "b/a.txt" }), undefined);
   assert.equal(await s.call("git_commit", { message: "x" }), undefined);
   assert.equal(await s.call("git_init", {}), undefined);
-  assert.equal(await s.call("http", { method: "GET", url: "https://example.com/" }), undefined);
+  assert.equal(await s.call("http", { method: "GET", url: "http://localhost:3000/api" }), undefined);
   assert.equal(s.asked.length, 0);
   assert.equal(s.judged.length, 0);
+});
+
+const userMessage = (s: { fire: Function; ctx: unknown }, prompt: string) =>
+  s.fire("before_agent_start", { messageType: "user", prompt, systemPromptOptions: {} }, s.ctx);
+
+test("auto: a GET to a host that the student named, with a short query, does not ask; others go to the judge", async () => {
+  const s = autoSetup(["No", "No"]);
+  await userMessage(s, "read the docs at docs.python.org and numpy.org");
+  assert.equal(await s.call("http", { method: "GET", url: "https://docs.python.org/3/library/csv.html" }), undefined);
+  assert.equal(await s.call("http", { method: "GET", url: "https://www.numpy.org/doc" }), undefined);
+  assert.equal(s.judged.length, 0);
+  // Not named: the judge. A long query: the judge, also for a named host.
+  assert.equal((await s.call("http", { method: "GET", url: "https://evil.example/x" })).block, true);
+  assert.equal((await s.call("http", { method: "GET", url: `https://numpy.org/?d=${"A".repeat(120)}` })).block, true);
+  assert.equal(s.judged.length, 2);
+});
+
+test("auto: after outside content, commands ask until the next student message", async () => {
+  const s = autoSetup(["No", "No"], ["npm test", "ls"]);
+  await userMessage(s, "run the tests");
+  assert.equal(await s.call("bash", { command: "npm test" }), undefined);
+  await s.fire("tool_result", { toolName: "http", input: { method: "GET", url: "https://x.example/" }, content: [], isError: false }, s.ctx);
+  assert.equal((await s.call("bash", { command: "npm test" })).block, true);
+  assert.match(s.asked[0].title, /outside content in this turn \(an http request\)/);
+  await userMessage(s, "go on");
+  assert.equal(await s.call("bash", { command: "npm test" }), undefined);
+  // A network program in a command is outside content too.
+  await s.fire("tool_result", { toolName: "bash", input: { command: "curl -s https://x.example/install.txt" }, content: [], isError: false }, s.ctx);
+  assert.equal((await s.call("bash", { command: "ls" })).block, true);
+  assert.match(s.asked[1].title, /a network command/);
+});
+
+test("ask: after outside content, the dialog has a warning", async () => {
+  const s = setup(["No"]);
+  await s.fire("tool_result", { toolName: "git_clone", input: {}, content: [], isError: false }, s.ctx);
+  assert.equal((await s.call("bash", { command: "make" })).block, true);
+  assert.match(s.asked[0].title, /^Note: the agent read outside content in this turn \(git_clone\)/);
+});
+
+test("ask: network programs and long GET queries never offer 'do not ask again'", async () => {
+  const s = setup(["No", "Yes, and do not ask again for GET requests to example.com this session", "No"]);
+  await s.call("bash", { command: "curl -s https://example.com/" });
+  assert.deepEqual(s.asked[0].options, ["Yes", "No"]);
+  assert.equal(await s.call("http", { method: "GET", url: "https://example.com/a" }), undefined);
+  assert.equal(await s.call("http", { method: "GET", url: "https://example.com/b" }), undefined);
+  assert.equal((await s.call("http", { method: "GET", url: `https://example.com/?d=${"A".repeat(120)}` })).block, true);
+  assert.deepEqual(s.asked[2].options, ["Yes", "No"]);
 });
 
 test("auto: delete, restore, outside paths, and remote git always ask", async () => {
@@ -290,4 +337,13 @@ test("ask mode: powershell asks like bash", async () => {
   const s = setup(["No"]);
   assert.equal((await s.call("powershell", { command: "Remove-Item -Recurse x" })).block, true);
   assert.equal(s.asked.length, 1);
+});
+
+test("auto: a multi-line command always asks and does not go to the judge; in ask mode it is a chain", async () => {
+  const s = autoSetup(["No"], ["ls"]);
+  assert.equal((await s.call("bash", { command: "ls\nrm -rf ~" })).block, true);
+  assert.equal(s.judged.length, 0);
+  const t = setup(["No"]);
+  await t.call("bash", { command: "ls\necho x" });
+  assert.deepEqual(t.asked[0].options, ["Yes", "No"]);
 });

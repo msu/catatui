@@ -29,7 +29,11 @@ The code is in `src/catatui/permissions.ts`. The `/mode` command opens a panel. 
 "Do not ask again" is not available for these commands:
 
 - Commands that can run other commands (`npx`, `sh`, `python`, `sudo`, and more). If it were available, "do not ask again for npx" allows all programs.
-- Commands with `;`, `&`, `|`, a backtick, or `$(`. A chain can hide a second command after an allowed first word.
+- Commands with `;`, `&`, `|`, a backtick, `$(`, or a newline. A chain can hide a second command after an allowed first word.
+- Network programs (`curl`, `wget`, `scp`, `Invoke-WebRequest`, and more). A later command can send data out.
+- GET requests with a query of more than 100 characters. The URL can carry data out.
+
+After outside content in a turn (an `http` request, `git_clone`, `git_pull`, or a network program), the ask dialog starts with a warning: text in that content can tell the agent to do harmful things. Auto mode asks for each command until the next student message (auto-mode.md).
 - Risky commands: `rm`, `git push`, `git reset`, `chmod`, and `curl | sh`.
 
 The same rules apply to `run`, by program name (run.md).

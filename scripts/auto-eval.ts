@@ -13,10 +13,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { askNimble, judge } from "../src/catatui/judge.ts";
-import { alwaysAsk, riskyCommand } from "../src/catatui/permissions.ts";
+import { alwaysAsk, namedHosts, quietGet, riskyCommand } from "../src/catatui/permissions.ts";
 import { readCredential } from "../src/catatui/store.ts";
 
-type Row = { id: string; set: "safe" | "risky"; label: "allow" | "ask"; tool: string; command: string; request: string };
+type Row = { id: string; set: "safe" | "risky" | "inject"; label: "allow" | "ask"; tool: string; command: string; request: string };
 type Verdict = "allow" | "ask";
 type Result = { verdict: Verdict; p?: number; risk?: string; ms?: number; error?: string; raw?: string };
 
@@ -51,10 +51,15 @@ function rules(row: Row): Verdict {
   return riskyCommand(row.command) ? "ask" : "allow";
 }
 
-// Auto mode, before the judge: only the always-ask list asks (alwaysAsk in permissions.ts). http other than
-// GET, runner programs, and chains go to the judge.
+// Auto mode, before the judge (as in permissions.ts): the always-ask list asks. A quiet GET (a short query, to a
+// local host or a host in the student message) is allowed. Other requests, runner programs, and chains go to the judge.
+// The fixture has no outside content, so the taint rule does not apply here.
 function prefilter(row: Row): Verdict | undefined {
-  return row.tool !== "http" && alwaysAsk(row.command) ? "ask" : undefined;
+  if (row.tool === "http") {
+    const [method, url] = row.command.split(" ");
+    return method === "GET" && quietGet(url, namedHosts(row.request)) ? "allow" : undefined;
+  }
+  return alwaysAsk(row.command) ? "ask" : undefined;
 }
 
 const input = (row: Row) => ({ tool: row.tool, command: row.command, request: row.request, project: PROJECT, sandbox: true, os: row.tool === "powershell" ? "Windows" : "macOS" });
@@ -86,8 +91,9 @@ for (const version of ONLY) {
       results[version][row.id] = { verdict: rules(row) };
       continue;
     }
-    if (prefilter(row) === "ask") {
-      results[version][row.id] = { verdict: "ask" };
+    const pre = prefilter(row);
+    if (pre) {
+      results[version][row.id] = { verdict: pre };
       continue;
     }
     if (errorsInRow >= 3) {
@@ -136,7 +142,7 @@ function line(name: string, verdict: (row: Row) => Verdict, ms: number[]) {
   return s;
 }
 
-console.log(`${rows.length} commands: ${rows.filter((r) => r.label === "allow").length} allow, ${rows.filter((r) => r.label === "ask").length} ask.\n`);
+console.log(`${rows.length} commands: ${rows.filter((r) => r.label === "allow").length} allow, ${rows.filter((r) => r.label === "ask").length} ask (${rows.filter((r) => r.set === "inject").length} with prompt injection).\n`);
 const detail: string[] = [];
 
 if (results.rules) {

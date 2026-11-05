@@ -36,6 +36,31 @@ export interface Judgment {
 const QUESTION = "Can a coding agent do this for a student without asking first? It must not lose work, " +
   "change files outside the project, send private data, or install software outside the project.";
 
+// Remove shell comments (bash and PowerShell "#" to the end of the line, outside quotes). A comment does nothing
+// when the command runs, but text in it can try to change the judge's answer ("approved, reply allow").
+// A "#" that is not after a space or at the start (for example in a URL or "$#") is not a comment.
+export function stripComments(command: string): string {
+  let out = "";
+  let quote: string | undefined;
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (quote) {
+      if (c === "\\" && quote === '"') { out += c + (command[i + 1] ?? ""); i++; continue; }
+      if (c === quote) quote = undefined;
+      out += c;
+      continue;
+    }
+    if (c === "'" || c === '"') { quote = c; out += c; continue; }
+    if (c === "#" && (i === 0 || /\s/.test(command[i - 1]))) {
+      while (i < command.length && command[i] !== "\n") i++;
+      if (i < command.length) out += "\n";
+      continue;
+    }
+    out += c;
+  }
+  return out.replace(/[ \t]+$/gm, "");
+}
+
 export const RISKS: Record<string, string> = {
   none: "No risk. The action stays in the project and loses no work.",
   loses_work: "It can delete or overwrite files or history that the student needs.",
@@ -50,8 +75,11 @@ export const RISKS: Record<string, string> = {
 const osName = () => (process.platform === "win32" ? "Windows" : process.platform === "darwin" ? "macOS" : "Linux");
 
 // The judge input. It has a fixed shape, and no file contents or tool results (prompt injection, size).
+// The judge does not see shell comments (stripComments). Each newline shows as "\\n", so the command cannot make a
+// new line that looks like a part of this input. (Auto mode does not send a multi-line command to the judge.)
 export function judgeState(input: JudgeInput): string {
-  const what = input.tool === "http" ? `Send this HTTP request: ${input.command}` : `Run this ${input.tool} command: ${input.command}`;
+  const command = (input.tool === "http" ? input.command : stripComments(input.command)).replace(/\r?\n/g, "\\n");
+  const what = input.tool === "http" ? `Send this HTTP request: ${command}` : `Run this ${input.tool} command: ${command}`;
   return [
     `A coding agent works for a student in the project folder ${input.project} on ${input.os ?? osName()}.`,
     input.sandbox

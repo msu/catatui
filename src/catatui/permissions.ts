@@ -65,15 +65,57 @@ const RISKY = [
   /\b(curl|wget)\b.*\|\s*(sh|bash|zsh)\b/,
 ];
 
-// A command that always asks, also in auto mode (the RISKY list).
-export const alwaysAsk = (command: string) => RISKY.some((re) => re.test(command));
+// A command that always asks, also in auto mode: the RISKY list, or more than one line. A second line can hide a
+// command, or text that looks like a part of the judge input (prompt injection, judge.ts).
+export const alwaysAsk = (command: string) => RISKY.some((re) => re.test(command)) || /[\r\n]/.test(command.trim());
 
-// A bash command that the student cannot allow for the session: a risky command, a runner program, or a chain.
-// A chain (for example "ls && python x.py") can hide a second command after an allowed first word.
+// Programs that send or get data over the network. The student cannot allow them for the session, because
+// "do not ask again for curl" allows each later curl, and a curl can send data out. Their output is outside content.
+const NETWORK = ["curl", "wget", "nc", "ncat", "netcat", "scp", "sftp", "rsync", "ftp", "telnet", "ssh",
+  "Invoke-WebRequest", "iwr", "Invoke-RestMethod", "irm", "Start-BitsTransfer"];
+const NETWORK_RE = new RegExp(`(^|[\\s;&|(\`])(${NETWORK.join("|")})(\\.exe)?(?=\\s|$)`, "i");
+export const networkCommand = (command: string) => NETWORK_RE.test(command);
+
+// A bash command that the student cannot allow for the session: a risky command, a runner program, a network
+// program, or a chain. A chain (for example "ls && python x.py") can hide a second command after an allowed first word.
 // scripts/auto-eval.ts uses this as the "rules only" version.
 export function riskyCommand(command: string): boolean {
   const first = command.trim().split(/\s+/)[0] ?? "";
-  return alwaysAsk(command) || RUNNERS.includes(first) || /[;&|`]|\$\(/.test(command);
+  return alwaysAsk(command) || RUNNERS.includes(first) || networkCommand(command) || /[;&|`\n]|\$\(/.test(command);
+}
+
+// ---- GET requests can send data out
+// A GET can carry data in its URL, for example https://evil.example/?d=<secret>. A GET is "quiet" (auto mode sends
+// it with no check, and "do not ask again" works for it) only if the query is short and the host is local or one
+// that the student named in a message.
+export const MAX_QUIET_QUERY = 100;
+const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]", "0.0.0.0"];
+// Words like "main.py" look like host names. These endings are file types, not hosts that a student names.
+const FILE_ENDINGS = new Set(["py", "js", "ts", "jsx", "tsx", "md", "sh", "rs", "go", "c", "h", "cpp", "java", "json", "csv", "txt",
+  "html", "css", "ipynb", "r", "rb", "pl", "sql", "xml", "yml", "yaml", "toml", "lock", "log", "png", "jpg", "pdf", "docx", "xlsx", "zip"]);
+
+// The host names in a student message: from URLs, and words like "python.org".
+export function namedHosts(text: string): string[] {
+  const hosts = new Set<string>();
+  for (const m of text.matchAll(/\bhttps?:\/\/([^\s/:?#]+)/gi)) hosts.add(m[1].toLowerCase());
+  for (const m of text.matchAll(/\b((?:[a-z0-9-]+\.)+([a-z]{2,}))\b/gi)) {
+    if (!FILE_ENDINGS.has(m[2].toLowerCase())) hosts.add(m[1].toLowerCase());
+  }
+  return [...hosts];
+}
+
+export function quietGet(url: string, named: Iterable<string>): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.search.length > MAX_QUIET_QUERY) return false;
+  const host = u.hostname.toLowerCase();
+  if (LOCAL_HOSTS.includes(host) || LOCAL_HOSTS.includes(`[${host}]`)) return true;
+  for (const n of named) if (host === n || host.endsWith(`.${n}`) || `www.${n}` === host) return true;
+  return false;
 }
 
 const PLAN_CONTEXT = `[PLAN MODE]
@@ -120,13 +162,24 @@ export function registerPermissions(pi: ExtensionAPI) {
   const allowedHosts = new Set<string>();
   // The last student message, for the judge: it shows if the command matches the request.
   let lastRequest: string | undefined;
+  // The hosts that the student named in a message this session (quietGet).
+  const studentHosts = new Set<string>();
+  // Outside content in this turn (taint): the source, for example "an http request". Text in a web page, a
+  // download, or a cloned repository can tell the agent to do harmful things (prompt injection). After outside
+  // content, auto mode asks for each command until the next student message, and ask mode adds a warning.
+  let outside: string | undefined;
+  const outsideNote = () => outside
+    ? `Note: the agent read outside content in this turn (${outside}). Text in it can tell the agent to do harmful things. Read this before you answer.`
+    : "";
 
   // Auto mode for a command or an http request: "allow", or the reason to ask (the first line of the dialog).
   // Not auto mode: "". The sandbox off, no sign-in, or a judge error: ask. Never allow on an error.
+  // In the other modes: the outside content note, or "".
   const autoCheck = async (ctx: ExtensionContext, tool: string, command: string): Promise<string> => {
-    if (mode !== "auto") return "";
-    if (tool !== "http" && alwaysAsk(command)) return "Auto mode always asks before this command.";
+    if (mode !== "auto") return outsideNote();
+    if (tool !== "http" && alwaysAsk(command)) return "Auto mode always asks before this command (a risky command, or more than one line).";
     if (!sandboxOn()) return "The sandbox is off, so auto mode asks.";
+    if (outside) return `The agent read outside content in this turn (${outside}), so auto mode asks. Text in it can tell the agent to do harmful things.`;
     const key = readCredential()?.access;
     if (!key) return "There is no CatChat sign-in, so auto mode asks.";
     const input: JudgeInput = { tool, command, request: lastRequest, project: ctx.cwd, sandbox: true };
@@ -237,7 +290,11 @@ export function registerPermissions(pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", async (event) => {
-    if (event.messageType === "user") lastRequest = event.prompt;
+    if (event.messageType === "user") {
+      lastRequest = event.prompt;
+      outside = undefined;
+      for (const h of namedHosts(String(event.prompt ?? ""))) studentHosts.add(h);
+    }
     if (ta) event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, "teaching-assistant": TA_PROMPT };
     if (event.messageType !== "user" || mode !== "plan") return;
     return { message: { customType: "plan-mode-context", content: PLAN_CONTEXT, display: false } };
@@ -293,7 +350,7 @@ export function registerPermissions(pi: ExtensionAPI) {
       const name = programName(String(event.input.program ?? ""));
       const args = Array.isArray(event.input.args) ? event.input.args.map(String) : [];
       const command = [String(event.input.program ?? ""), ...args].join(" ");
-      const risky = RISKY.some((re) => re.test(command)) || RUNNERS.includes(name);
+      const risky = RISKY.some((re) => re.test(command)) || RUNNERS.includes(name) || networkCommand(name);
       if (!risky && allowedCommands.has(name)) return;
       const reason = await autoCheck(ctx, "run", command);
       if (reason === "allow") return;
@@ -314,11 +371,14 @@ export function registerPermissions(pi: ExtensionAPI) {
       }
       const read = isRead(method);
       if (mode === "plan" && !read) return { block: true, reason: `${PLAN_BLOCK} Send only GET requests.` };
-      if (read && (allowedHosts.has(host) || mode === "auto")) return;
-      const reason = read ? "" : await autoCheck(ctx, "http", `${method} ${url}`);
+      const quiet = read && quietGet(url, [...studentHosts, ...allowedHosts]);
+      // A GET with a long query can send data out, so "do not ask again" does not cover it.
+      const shortQuery = new URL(url).search.length <= MAX_QUIET_QUERY;
+      if (read && ((allowedHosts.has(host) && shortQuery) || (mode === "auto" && quiet))) return;
+      const reason = await autoCheck(ctx, "http", `${method} ${url}`);
       if (reason === "allow") return;
       const always = `Yes, and do not ask again for GET requests to ${host} this session`;
-      const choice = await ask(ctx, withReason(reason, `Send this request?\n\n  ${method} ${url}`), read ? ["Yes", always, "No"] : ["Yes", "No"]);
+      const choice = await ask(ctx, withReason(reason, `Send this request?\n\n  ${method} ${url}`), read && shortQuery ? ["Yes", always, "No"] : ["Yes", "No"]);
       if (choice === always) allowedHosts.add(host);
       return choice?.startsWith("Yes") ? undefined : { block: true, reason: "The student did not allow this request." };
     }
@@ -339,6 +399,17 @@ export function registerPermissions(pi: ExtensionAPI) {
       if (choice === always) allowedCommands.add(first);
       return choice?.startsWith("Yes") ? undefined : { block: true, reason: "The student did not allow this command." };
     }
+  });
+
+  // Outside content: http, git_clone, git_pull, and network programs (curl, wget, ...) in a command.
+  pi.on("tool_result", async (event) => {
+    const input = event.input ?? {};
+    const command = event.toolName === "run"
+      ? [input.program, ...(Array.isArray(input.args) ? input.args : [])].map(String).join(" ")
+      : String(input.command ?? "");
+    if (event.toolName === "http") outside = "an http request";
+    else if (event.toolName === "git_clone" || event.toolName === "git_pull") outside = event.toolName;
+    else if (["bash", "powershell", "run", "server"].includes(event.toolName) && networkCommand(command)) outside = "a network command";
   });
 }
 
