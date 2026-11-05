@@ -72,6 +72,47 @@ function sheetText(ws: ExcelJS.Worksheet): string {
   return lines.join("\n");
 }
 
+// The desktop app shows a workbook as a grid in the side panel (FilePane). One cell: the text to show,
+// the formula (if any), and if it is a number (right aligned) or bold.
+export interface GridCell { v: string; f?: string; n?: boolean; b?: boolean }
+export interface GridSheet { name: string; rows: number; cols: number; cells: (GridCell | null)[][]; cut: boolean }
+const GRID_ROWS = 500;
+const GRID_COLS = 52;
+
+function gridCell(c: ExcelJS.Cell): GridCell | null {
+  const v = c.value;
+  if (v === null || v === undefined) return null;
+  const out: GridCell = { v: "" };
+  let shown: ExcelJS.CellValue = v;
+  if (typeof v === "object" && !(v instanceof Date) && ("formula" in v || "sharedFormula" in v)) {
+    out.f = `=${"formula" in v ? v.formula : v.sharedFormula}`;
+    shown = (v.result as ExcelJS.CellValue) ?? null;
+  }
+  // A formula with no saved result (for example from excel_write) shows as an empty value. The app shows the formula.
+  out.v = shown === null || shown === undefined ? "" : show(shown);
+  if (typeof shown === "number") out.n = true;
+  if (c.font?.bold) out.b = true;
+  return out;
+}
+
+// All sheets of a workbook, at most GRID_ROWS rows and GRID_COLS columns each.
+export async function excelGrid(path: string): Promise<GridSheet[]> {
+  const wb = new (await import("exceljs")).default.Workbook();
+  await wb.xlsx.readFile(path);
+  return wb.worksheets.map((ws) => {
+    const rows = Math.min(ws.rowCount, GRID_ROWS);
+    const cols = Math.min(ws.columnCount, GRID_COLS);
+    const cells: (GridCell | null)[][] = [];
+    for (let r = 1; r <= rows; r++) {
+      const row = ws.getRow(r);
+      const line: (GridCell | null)[] = [];
+      for (let c = 1; c <= cols; c++) line.push(gridCell(row.getCell(c)));
+      cells.push(line);
+    }
+    return { name: ws.name, rows: ws.rowCount, cols: ws.columnCount, cells, cut: ws.rowCount > GRID_ROWS || ws.columnCount > GRID_COLS };
+  });
+}
+
 export function registerExcelTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "excel_read",

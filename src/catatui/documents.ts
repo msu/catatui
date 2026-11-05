@@ -17,7 +17,7 @@ type Docx = typeof import("docx");
 
 // docx reads globalThis.localStorage when it loads. Node 25 then prints a warning about --localstorage-file
 // on stderr, which breaks the screen. Hide only this warning while docx loads.
-async function loadDocx(): Promise<Docx> {
+export async function loadDocx(): Promise<Docx> {
   const emit = process.emitWarning;
   process.emitWarning = ((w: string | Error, ...rest: unknown[]) => {
     if (String(w).includes("--localstorage-file")) return;

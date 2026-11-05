@@ -19,3 +19,11 @@ The `excel_read` and `excel_write` tools read and write `.xlsx` files. The code 
 - `excel_write` replaces the file. Formatting, charts, and pivot tables in the old file are lost. The tool description tells the model this.
 - After `excel_write`, `excel_read` shows formulas with no result, because no program calculated them yet.
 - exceljs 4.4.0 brings 9 moderate `npm audit` findings (uuid, minimatch, from archiver). catatui does not give student input to the affected functions.
+
+## Grid view in the desktop app
+
+- "View" on an `.xlsx` file opens a grid in the side panel (`ExcelGrid` in `desktop/src/App.jsx`). It has sheet tabs, column letters, and row numbers, and the headers stay in place when the grid scrolls.
+- main.js reads the workbook with `excelGrid` (`excel.ts`): the shown value, the formula, number (right aligned), and bold for each cell. At most 500 rows and 52 columns for each sheet.
+- Like Excel, the grid shows empty cells after the data: at least 12 columns and 40 rows. So an empty sheet shows empty cells.
+- The grid reads the file again after each tool, so it shows the changes of `excel_write`.
+- exceljs does not calculate formulas. A formula with no saved result (for example from `excel_write`) shows the formula in gray, with a note. Excel calculates it when the student opens the file.

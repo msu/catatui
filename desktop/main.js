@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { REMOVED, redactSession } from "./redact.js";
 import { detectWebApp, isLocalUrl } from "./webapp.js";
@@ -65,6 +65,10 @@ const profileData = await jiti.import(join(ROOT, "src", "catatui", "profile.ts")
 const settings = await jiti.import(join(ROOT, "src", "catatui", "settings.ts"));
 const suggestion = await jiti.import(join(ROOT, "src", "catatui", "suggest.ts"));
 const idleCompact = await jiti.import(join(ROOT, "src", "catatui", "idle-compact.ts"));
+// The grid of an .xlsx file in the side panel (excelGrid). exceljs loads only when the student opens a workbook.
+const excel = await jiti.import(join(ROOT, "src", "catatui", "excel.ts"));
+// The "New" submenu of the tree: the kinds of files and their start content (newfile.ts).
+const newfile = await jiti.import(join(ROOT, "src", "catatui", "newfile.ts"));
 const kindOf = (p) => (isAdvising(p) ? "advising" : p === CLASSES_ROOT ? "classes" : isClasses(p) ? "class" : isPlainChat(p) ? "chat" : "project");
 
 // A folder for a new chat. If the newest chat folder is empty and has no chat yet, use it again,
@@ -147,6 +151,20 @@ function git(c, args) {
 }
 
 // All files in the project. In a git repository, git gives the list, so .gitignore applies.
+// Empty folders, so a new folder ("New > Folder") shows in the tree. Not in hidden or skipped folders. At most 200.
+function listEmptyDirs(project) {
+  const out = [];
+  const walk = (dir) => {
+    let entries;
+    try { entries = readdirSync(join(project, dir), { withFileTypes: true }); } catch { return; }
+    const visible = entries.filter((e) => !e.name.startsWith(".") && !SKIP.has(e.name));
+    if (dir && visible.length === 0) out.push(dir);
+    for (const e of visible) if (e.isDirectory() && out.length < 200) walk(dir ? `${dir}/${e.name}` : e.name);
+  };
+  walk("");
+  return out;
+}
+
 function listFiles(c) {
   const project = c.project;
   const fromGit = git(c, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
@@ -193,7 +211,7 @@ ipcMain.handle("file-tree", (e) => {
   for (const [p, s] of Object.entries(status ?? {})) if (s === "D") files.add(p);
   // The web app in the project, for the Preview button (webapp.js). undefined: no Preview button.
   const webApp = detectWebApp((rel) => readOrNull(join(project, rel))?.toString("utf8"), [...files]);
-  return { files: [...files].sort(), git: status !== undefined, status: status ?? {}, agent, webApp };
+  return { files: [...files].sort(), emptyDirs: listEmptyDirs(project), git: status !== undefined, status: status ?? {}, agent, webApp };
 });
 
 // One file for the viewer: the text before and after. "Before" is the last git commit (HEAD) for a file in git,
@@ -243,7 +261,11 @@ ipcMain.handle("file-menu", (e, path, opts) => new Promise((done) => {
   if (!project || rel.startsWith("..") || isAbsolute(rel)) return done(undefined);
   let picked;
   const reveal = process.platform === "darwin" ? "Show in Finder" : process.platform === "win32" ? "Show in Explorer" : "Show in folder";
+  // "New" and "Open in Terminal" use the folder, or the folder of the file.
+  const dir = opts?.folder ? full : dirname(full);
   const template = [
+    { label: "New", submenu: newfile.NEW_KINDS.map((k) => (k ? { label: k.label, click: () => { picked = `new:${k.kind}`; } } : { type: "separator" })) },
+    { type: "separator" },
     // A folder, or a PDF, Word, or HTML file: the agent checks the documents and offers to fix them.
     ...(opts?.canAudit ? [{ label: "Audit accessibility", click: () => { picked = "audit"; } }, { type: "separator" }] : []),
     ...(opts?.folder ? [] : [
@@ -252,17 +274,67 @@ ipcMain.handle("file-menu", (e, path, opts) => new Promise((done) => {
       // The same actions as the file buttons in the app (FileButtons): Launch, Open, View, Diff.
       ...(opts?.canLaunch ? [{ label: "Launch", click: () => { picked = "launch"; } }] : []),
       { label: "Open", click: () => shell.openPath(full) },
-      { label: "View", click: () => { picked = "view"; } },
+      { label: "Preview", click: () => { picked = "view"; } },
       ...(opts?.canDiff ? [{ label: "Diff", click: () => { picked = "diff"; } }] : []),
       ...(opts?.canRollback ? [{ label: "Roll back to last commit...", click: async () => { if (await rollBack(c, rel)) toRenderer(c, "files-changed"); } }] : []),
       { type: "separator" },
     ]),
-    { label: reveal, click: () => shell.showItemInFolder(full) },
+    { label: reveal, click: () => (rel ? shell.showItemInFolder(full) : shell.openPath(full)) },
+    { label: "Open in Terminal", click: () => openTerminal(dir) },
     { label: "Copy path", click: () => clipboard.writeText(full) },
     { label: "Copy relative path", click: () => clipboard.writeText(rel) },
   ];
   Menu.buildFromTemplate(template).popup({ window: c.win, callback: () => done(picked) });
 }));
+
+// A terminal window in a folder. macOS: Terminal. Windows: PowerShell. Linux: the default terminal.
+function openTerminal(dir) {
+  const opts = { cwd: dir, detached: true, stdio: "ignore" };
+  let child;
+  if (process.platform === "darwin") child = spawn("open", ["-a", "Terminal", dir], opts);
+  else if (process.platform === "win32") child = spawn("cmd.exe", ["/c", "start", "", "powershell.exe", "-NoExit"], opts);
+  else child = spawn("x-terminal-emulator", [], opts);
+  child.on("error", (e) => dialog.showErrorBox("catai", `catai could not open a terminal: ${e.message}`));
+  child.unref();
+}
+
+// "New" in the tree menu: make a file or a folder in a project folder. It does not replace a file.
+ipcMain.handle("file-new", async (e, dirPath, name, kind) => {
+  const project = ctxOf(e)?.project;
+  if (!project) return { error: "No project is open." };
+  const dir = resolve(project, dirPath ?? "");
+  const relDir = relative(project, dir);
+  if (relDir.startsWith("..") || isAbsolute(relDir)) return { error: "The folder is not in the project." };
+  const k = newfile.newKind(kind);
+  if (!k) return { error: `catai cannot make a file of the kind "${kind}".` };
+  const file = newfile.newFileName(name, k);
+  if (!file) return { error: "Type a name." };
+  const full = join(dir, file);
+  if (existsSync(full)) return { error: `${file} is there already. Type a different name.` };
+  try {
+    if (k.kind === "folder") mkdirSync(full, { recursive: true });
+    else { mkdirSync(dir, { recursive: true }); writeFileSync(full, await newfile.newFileContent(k.kind, file), { flag: "wx" }); }
+  } catch (err) { return { error: `catai could not make ${file}: ${err.message}` }; }
+  return { path: relative(project, full).split("\\").join("/"), folder: k.kind === "folder" };
+});
+
+// Drag and drop in the tree: move a file or a folder into a folder of the project ("" is the project folder).
+// It does not replace an item, and it does not move a folder into itself.
+ipcMain.handle("file-move", (e, from, toDir) => {
+  const project = ctxOf(e)?.project;
+  if (!project) return { error: "No project is open." };
+  const src = resolve(project, from ?? "");
+  const dir = resolve(project, toDir ?? "");
+  const inProject = (p) => { const r = relative(project, p); return r && !r.startsWith("..") && !isAbsolute(r); };
+  if (!inProject(src) || (dir !== project && !inProject(dir))) return { error: "Only items in the project can move." };
+  const dest = join(dir, basename(src));
+  if (dest === src) return { same: true };
+  if (dir === src || dir.startsWith(src + sep)) return { error: "A folder cannot move into itself." };
+  if (existsSync(dest)) return { error: `${basename(src)} is in that folder already.` };
+  try { renameSync(src, dest); } catch (err) { return { error: `catai could not move ${basename(src)}: ${err.message}` }; }
+  const rel = (p) => relative(project, p).split(sep).join("/");
+  return { from: rel(src), to: rel(dest) };
+});
 
 // Roll back one changed file. A file in the last commit: git puts back that version (also for a deleted file).
 // A new file (not in the last commit): it goes to the trash, so the student can get it back.
@@ -297,7 +369,7 @@ async function rollBack(c, rel) {
 
 // A whole file for the side panel: the text (up to 2 MB), or an image as a data URL, or "binary".
 const MAX_SIDE_BYTES = 2_000_000;
-ipcMain.handle("file-read", (e, path) => {
+ipcMain.handle("file-read", async (e, path) => {
   const project = ctxOf(e)?.project;
   if (!project) return { error: "No project is open." };
   const full = resolve(project, path);
@@ -307,6 +379,10 @@ ipcMain.handle("file-read", (e, path) => {
   if (data === null) return { error: "The file does not exist now." };
   const mime = IMAGE_TYPES[full.split(".").pop().toLowerCase()];
   if (mime && data.length <= MAX_IMAGE_BYTES) return { size: data.length, image: `data:${mime};base64,${data.toString("base64")}` };
+  if (/\.xlsx$/i.test(full)) {
+    try { return { size: data.length, sheets: await excel.excelGrid(full), full }; }
+    catch (err) { return { size: data.length, binary: true, full, error: `catai cannot read this workbook: ${err.message}` }; }
+  }
   if (isBinary(data)) return { size: data.length, binary: true, full };
   if (data.length > MAX_SIDE_BYTES) return { size: data.length, big: true, full };
   return { size: data.length, text: data.toString("utf8"), full };
@@ -945,7 +1021,7 @@ ipcMain.handle("list-folders", (_e, path) => {
 
 // A new folder in the picker. Letters, digits, spaces, dots, - and _ only.
 ipcMain.handle("make-folder", (_e, parent, name) => {
-  const clean = String(name ?? "").replace(/[^A-Za-z0-9 ._-]+/g, " ").replace(/\s+/g, " ").trim().replace(/^\.+/, "");
+  const clean = String(name ?? "").replace(/[^A-Za-z0-9 ._-]+/g, " ").replace(/\s+/g, " ").replace(/^[.\s]+/, "").trim();
   if (!clean) return { error: "Type a name for the folder." };
   const path = join(parent, clean);
   if (existsSync(path)) return { error: `A folder named ${clean} is there already.` };

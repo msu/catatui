@@ -312,6 +312,19 @@ export function App() {
       `Audit the accessibility of the ${folder ? "documents in the folder" : "document"} ${PROJECT.replace(/[\\/]$/, "")}/${p}. ` +
       "Follow the audit steps in the accessible-documents skill."),
   };
+  // "Show In Project" in the side panel: show the tree, open the folders of the file, select it, and flash it.
+  const [reveal, setReveal] = useState(undefined);
+  const revealFile = (p) => { setShowTree(true); selectFile(p); setReveal({ path: p, at: Date.now() }); };
+  // Drag and drop in the tree: move the item, show a notice, and tell the agent with the next message (moved.ts).
+  async function moveItem(from, toDir) {
+    const r = await api.moveFile(from, toDir);
+    if (r.same) return;
+    if (r.error) return local((s) => notice(s, "error", r.error));
+    setTreeTick((t) => t + 1);
+    if (selectedFile === r.from) selectFile(r.to);
+    local((s) => notice(s, "info", `Moved ${r.from} to ${r.to}. catai tells the agent with your next message.`));
+    await api.command({ type: "prompt", message: `/catai-moved ${JSON.stringify([{ from: r.from, to: r.to }])}` });
+  }
   // The "Fix" buttons of the audit card (A11yCard).
   const fixA11y = (paths) => send(
     `Fix the accessibility problems in ${paths.length === 1 ? "this document" : `these ${paths.length} documents`}: ${paths.join(", ")}. ` +
@@ -332,6 +345,13 @@ export function App() {
   const undoSteps = Number(state.status["catatui-undo"] ?? 0);
   // File cards read the file again when this changes: after each tool, after Undo, and after a refresh.
   useEffect(() => api.onFilesChanged(() => setTreeTick((t) => t + 1)), []);
+  // When the window gets the focus, read the tree and the previewed files again: the student can have changed
+  // them in another app (for example Excel or an editor).
+  useEffect(() => {
+    const onFocus = () => setTreeTick((t) => t + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
   const fileTick = `${state.items.filter((it) => it.kind === "tool" && !it.running).length}-${undoSteps}-${treeTick}-${state.busy}`;
 
   // A double click on a file: show the file in the chat, and the agent asks what to do with it.
@@ -498,7 +518,7 @@ export function App() {
         )}
         {info.chat ? null : showTree
           ? <FileTree tree={tree} selected={selectedFile} onEscape={focusComposer} onSelect={selectFile} onOpen={askAboutFile} onDiff={setViewing} onRefresh={() => setTreeTick((t) => t + 1)} onCollapse={() => setShowTree(false)}
-            onPin={(p) => openSide({ type: "file", path: p })} onPreview={previewFile} />
+            onPin={(p) => openSide({ type: "file", path: p })} onPreview={previewFile} onMove={moveItem} reveal={reveal} />
           : <button className="tree-strip" onClick={() => setShowTree(true)} title="Show the files">»</button>}
         {viewing && <FileViewer path={viewing} tick={treeTick + state.items.length} onClose={closeViewer} />}
         <div className={`main-col ${dropping ? "dropping" : ""}`}
@@ -523,7 +543,7 @@ export function App() {
         {side.tabs.length > 0 && (
           <SidePanel side={side} width={sideWidth} setWidth={setSideWidth} onActivate={(id) => setSide((st) => ({ ...st, active: id }))}
             onClose={closeSide} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })} fileTick={fileTick} reloadTick={reloadTick}
-            files={tree.files} webApp={tree.webApp} onAsk={askAboutFile}
+            files={tree.files} webApp={tree.webApp} onReveal={revealFile}
             onStartServer={(sv) => send(`Start the web app of this project with the server tool: ${sv.command}. When it runs, show http://localhost:${sv.port} with show_preview.`)} />
         )}
       </div>
@@ -549,9 +569,16 @@ const FILE_PREFIX = "[file] ";
 // openProject returns this when another window has the folder. That window comes to the front.
 const MOVED = Symbol("moved");
 
-// Paths -> a tree of folders. Each folder: { dirs: Map, files: [] }.
-function buildTree(paths) {
+// Paths -> a tree of folders. Each folder: { dirs: Map, files: [] }. Empty folders ("a/b") have no files.
+function buildTree(paths, emptyDirs = []) {
   const root = { dirs: new Map(), files: [] };
+  for (const d of emptyDirs) {
+    let node = root;
+    for (const dir of d.split("/")) {
+      if (!node.dirs.has(dir)) node.dirs.set(dir, { dirs: new Map(), files: [] });
+      node = node.dirs.get(dir);
+    }
+  }
   for (const p of paths) {
     const parts = p.split("/");
     let node = root;
@@ -565,7 +592,7 @@ function buildTree(paths) {
 }
 
 // The files of the project, with the git status. A click shows the file, a double click asks the agent about it.
-function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onCollapse, onEscape, onPin, onPreview }) {
+function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onCollapse, onEscape, onPin, onPreview, onMove, reveal }) {
   const [changedOnly, setChangedOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(() => new Set());
@@ -585,14 +612,67 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
     const m = mark(p);
     const isText = !/\.(xlsx?|docx?|pptx?|pdf|png|jpe?g|gif|webp|ico|zip|gz)$/i.test(p);
     const canAudit = folder || /\.(pdf|docx|html?)$/i.test(p);
-    const picked = await api.fileMenu(p, { folder, canAudit, canDiff: !folder && isText && (m === "M" || m === "R"), canRollback: !folder && !!m, canLaunch: !folder && !!actions?.canLaunch(p) });
+    const picked = await api.fileMenu(p, { folder, canAudit: canAudit && p !== "", canDiff: !folder && isText && (m === "M" || m === "R"), canRollback: !folder && !!m, canLaunch: !folder && !!actions?.canLaunch(p) });
     if (picked === "add") onOpen(p);
     if (picked === "diff") onDiff(p);
     if (picked === "view") onPin(p);
     if (picked === "launch") actions?.launch(p);
     if (picked === "audit") actions?.audit(p, folder);
+    if (picked?.startsWith("new:")) setCreating({ kind: picked.slice(4), dir: folder ? p : p.split("/").slice(0, -1).join("/") });
   };
-  const root = buildTree(paths);
+  // A search or "Changed only" shows files only, so no empty folders then.
+  const root = buildTree(paths, words.length || changedOnly ? [] : (tree.emptyDirs ?? []));
+  // "New" in the menu: the name dialog for the kind, in the folder (project path, "" is the project folder).
+  const [creating, setCreating] = useState(undefined);
+  // "Show In Project": open the parent folders, clear the search, then scroll to the row and flash it.
+  const body = useRef(null);
+  const [flash, setFlash] = useState(undefined);
+  useEffect(() => {
+    if (!reveal) return;
+    setQuery("");
+    setChangedOnly(false);
+    const parts = reveal.path.split("/");
+    setOpen((o) => { const n = new Set(o); for (let i = 1; i < parts.length; i++) n.add(`${parts.slice(0, i).join("/")}/`); return n; });
+    setFlash(reveal.path);
+    const t1 = setTimeout(() => {
+      const row = [...(body.current?.querySelectorAll(".tree-row") ?? [])].find((r) => r.dataset.path === reveal.path);
+      row?.scrollIntoView({ block: "center" });
+      row?.focus({ preventScroll: true });
+    }, 50);
+    const t2 = setTimeout(() => setFlash(undefined), 1600);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [reveal?.at]);
+  // Drag and drop in the tree moves a file or a folder. dropDir: the folder under the mouse ("" is the project folder).
+  const MOVE = "text/x-catatui-move";
+  const [dropDir, setDropDir] = useState(undefined);
+  const dragProps = (path) => ({ draggable: true, onDragStart: (e) => { e.dataTransfer.setData(MOVE, path); e.dataTransfer.effectAllowed = "copyMove"; } });
+  const dropProps = (dir) => ({
+    onDragOver: (e) => {
+      if (!e.dataTransfer.types.includes(MOVE)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      if (dropDir !== dir) setDropDir(dir);
+    },
+    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropDir(undefined); },
+    onDrop: (e) => {
+      const from = e.dataTransfer.getData(MOVE);
+      setDropDir(undefined);
+      if (!from) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onMove(from, dir);
+    },
+  });
+  const created = (r) => {
+    setCreating(undefined);
+    onRefresh();
+    if (r.folder) setOpen((o) => new Set(o).add(`${r.path}/`));
+    else { onSelect(r.path); onPin(r.path); }
+    // Show the parent folders of the new item.
+    const parts = r.path.split("/");
+    setOpen((o) => { const n = new Set(o); for (let i = 1; i < parts.length; i++) n.add(`${parts.slice(0, i).join("/")}/`); return n; });
+  };
   const hasChange = (prefix) => paths.some((p) => p.startsWith(prefix) && mark(p));
   const toggle = (dir) => setOpen((o) => { const n = new Set(o); n.has(dir) ? n.delete(dir) : n.add(dir); return n; });
   // The keyboard in the tree: Up and Down move, Right opens a folder, Left closes it or goes to the parent folder,
@@ -632,8 +712,8 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
         const isOpen = expandAll || open.has(dir);
         return (
           <div key={dir}>
-            <button className="tree-row dir" data-dir={dir} style={{ paddingLeft: `${0.4 + depth * 1.1}rem` }} onClick={() => toggle(dir)}
-              onContextMenu={(e) => menu(e, dir.slice(0, -1), true)}>
+            <button className={`tree-row dir ${dropDir === dir.slice(0, -1) ? "drop" : ""}`} data-dir={dir} style={{ paddingLeft: `${0.4 + depth * 1.1}rem` }} onClick={() => toggle(dir)}
+              onContextMenu={(e) => menu(e, dir.slice(0, -1), true)} {...dragProps(dir.slice(0, -1))} {...dropProps(dir.slice(0, -1))}>
               <span className="tree-caret">{isOpen ? "▾" : "▸"}</span>
               <FolderIcon open={isOpen} />
               <span className={`tree-name ${hasChange(dir) ? "git-M" : ""}`}>{name}</span>
@@ -645,9 +725,10 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
       {node.files.sort().map((p) => {
         const m = mark(p);
         return (
-          <button key={p} data-path={p} className={`tree-row ${p === selected ? "current" : ""}`} style={{ paddingLeft: `${1.4 + depth * 1.1}rem` }}
+          <button key={p} data-path={p} className={`tree-row ${p === selected ? "current" : ""} ${p === flash ? "flash" : ""}`} style={{ paddingLeft: `${1.4 + depth * 1.1}rem` }}
             title={`${p}\nDouble-click or drag into the chat to add the file. catatui asks what you want to do with it.`}
-            draggable onDragStart={(e) => { e.dataTransfer.setData("text/x-catatui-path", p); e.dataTransfer.effectAllowed = "copy"; }}
+            draggable onDragStart={(e) => { e.dataTransfer.setData("text/x-catatui-path", p); e.dataTransfer.setData(MOVE, p); e.dataTransfer.effectAllowed = "copyMove"; }}
+            {...dropProps(prefix.replace(/\/$/, ""))}
             onClick={() => onSelect(p)} onDoubleClick={() => onOpen(p)} onContextMenu={(e) => menu(e, p, false)}>
             <FileIcon name={p.slice(prefix.length)} />
             <span className={`tree-name ${m ? `git-${m === "?" || m === "A" ? "new" : m === "D" ? "D" : "M"}` : ""}`} title={m ? STATUS_NAMES[m] ?? m : undefined}>{p.slice(prefix.length)}</span>
@@ -679,11 +760,51 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
             if (e.key === "ArrowDown") { e.preventDefault(); e.currentTarget.closest(".tree").querySelector(".tree-row")?.focus(); }
           }} />
       </div>
-      <div className="tree-body" onKeyDown={onTreeKeys}>
+      {/* A right click on the empty part of the tree: the menu of the project folder. */}
+      <div ref={body} className={`tree-body ${dropDir === "" ? "drop" : ""}`} onKeyDown={onTreeKeys} onContextMenu={(e) => { if (!e.defaultPrevented) menu(e, "", true); }} {...dropProps("")}>
         {paths.length === 0 && <p className="muted small pad">{words.length ? "No files match the search." : changedOnly ? "No changed files." : "No files."}</p>}
         {renderNode(root, "", 0)}
       </div>
+      {creating && <NewFileDialog {...creating} onDone={created} onCancel={() => setCreating(undefined)} />}
     </aside>
+  );
+}
+
+// The kinds of "New" in the tree menu, with the names in newfile.ts (NEW_KINDS).
+const NEW_LABELS = { folder: "Folder", md: "Markdown file", txt: "Text file", html: "Web page", css: "Style sheet", js: "JavaScript file",
+  py: "Python file", json: "JSON file", xlsx: "Excel workbook", csv: "CSV file", docx: "Word document" };
+const NEW_EXT = { md: ".md", txt: ".txt", html: ".html", css: ".css", js: ".js", py: ".py", json: ".json", xlsx: ".xlsx", csv: ".csv", docx: ".docx" };
+
+// The name dialog of "New". main.js adds the extension and makes the file with its start content.
+function NewFileDialog({ kind, dir, onDone, onCancel }) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const what = NEW_LABELS[kind] ?? "File";
+  const create = async () => {
+    const r = await api.newFile(dir, name, kind);
+    if (r.error) setError(r.error); else onDone(r);
+  };
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <div className="window new-file" role="dialog" aria-modal="true" aria-label={`New ${what}`}>
+        <div className="window-title"><img src={logo} alt="" /><span>New {what}</span></div>
+        <div className="new-file-body">
+          <label htmlFor="new-file-name">Name{dir ? <> in <bdi>{dir}</bdi></> : ""}</label>
+          <div className="new-folder">
+            <input id="new-file-name" className="input-field" autoFocus value={name} onChange={(e) => { setName(e.target.value); setError(""); }}
+              placeholder={kind === "folder" ? "Folder name" : `File name, for example ${kind === "html" ? "index" : "notes"}`}
+              onKeyDown={(e) => { if (e.key === "Enter") create(); if (e.key === "Escape") { e.stopPropagation(); onCancel(); } }} />
+            {NEW_EXT[kind] && <span className="new-ext">{NEW_EXT[kind]}</span>}
+          </div>
+          {error && <p className="error">{error}</p>}
+        </div>
+        <div className="window-buttons">
+          <span className="spacer" />
+          <button className="btn" onClick={onCancel}>Cancel</button>
+          <button className="btn primary default" onClick={create}>Create</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1007,7 +1128,7 @@ function MaximizeIcon() {
   );
 }
 
-function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, fileTick, reloadTick, files, webApp, onAsk, onStartServer }) {
+function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, fileTick, reloadTick, files, webApp, onReveal, onStartServer }) {
   // Drag the left edge to change the width (240 px to 75% of the window).
   const drag = (e) => {
     e.preventDefault();
@@ -1042,7 +1163,7 @@ function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, file
         ))}
       </div>
       <div className="side-body">
-        {active?.type === "file" && <FilePane key={active.path} path={active.path} tick={fileTick} onAsk={onAsk} onPreview={onOpenWeb} />}
+        {active?.type === "file" && <FilePane key={active.path} path={active.path} tick={fileTick} onReveal={onReveal} onPreview={onOpenWeb} />}
         {/* The web preview stays mounted (hidden) when another tab is on, so the page keeps its state. */}
         {side.tabs.some((t) => t.type === "web") && (
           <WebPane hidden={active?.type !== "web"} tab={side.tabs.find((t) => t.type === "web")} reloadTick={reloadTick} webApp={webApp} onOpen={onOpenWeb} onStartServer={onStartServer} />
@@ -1053,7 +1174,7 @@ function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, file
 }
 
 // A pinned file: the whole text with line numbers, or the image. It reads the file again after each change.
-function FilePane({ path, tick, onAsk, onPreview }) {
+function FilePane({ path, tick, onReveal, onPreview }) {
   const [f, setF] = useState(undefined);
   useEffect(() => { api.fileRead(path).then(setF); }, [path, tick]);
   const ext = path.split(".").pop().toLowerCase();
@@ -1061,17 +1182,94 @@ function FilePane({ path, tick, onAsk, onPreview }) {
     <div className="file-pane">
       <div className="pane-bar">
         <span className="pane-path" title={path}><bdi>{path}</bdi></span>
-        <button className="btn small" onClick={() => onAsk(path)}>Add to chat</button>
-        <FileButtons path={path} except={["view"]} />
+        <span className="ro-badge" title="This is a preview. You cannot change the file here.">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></svg>
+          Read-only
+        </span>
+        <button className="btn small" onClick={() => onReveal(path)}>Show In Project</button>
+        <FileButtons path={path} except={["view"]} primaryOpen />
       </div>
       {f?.error && <p className="error pad">{f.error}</p>}
       {f?.image && <div className="pane-image"><img src={f.image} alt={path} /></div>}
+      {f?.sheets && <ExcelGrid sheets={f.sheets} />}
       {(f?.binary || f?.big) && <p className="muted pad">{f.big ? "This file is too large to show." : "This file is not text."} Click {OPEN_IN[ext] ? `"Open in ${OPEN_IN[ext]}"` : "\"Open\""}.</p>}
       {f?.text !== undefined && (
         <div className="diff-view pane-text" tabIndex={0}>
           {f.text.split("\n").map((line, i) => <div key={i} className="dl ctx"><span className="ln">{i + 1}</span><span className="dt">{line}</span></div>)}
         </div>
       )}
+    </div>
+  );
+}
+
+// An .xlsx file in the side panel: sheet tabs and a grid with column letters and row numbers.
+// A formula with no saved result (excel_write does not calculate) shows the formula in gray. Excel calculates it on open.
+const colName = (i) => (i >= 26 ? colName(Math.floor(i / 26) - 1) : "") + String.fromCharCode(65 + (i % 26));
+function ExcelGrid({ sheets }) {
+  const [tab, setTab] = useState(0);
+  // Like Excel, empty cells fill the pane to the right and to the bottom. fill: the number of columns and rows
+  // that the pane can show, from the size of a cell. It changes when the pane changes size.
+  const scroll = useRef(null);
+  const [fill, setFill] = useState({ cols: 12, rows: 40 });
+  // A click on a cell selects it and shows a small "read-only" note for some seconds.
+  const [sel, setSel] = useState(undefined);
+  const [note, setNote] = useState(0);
+  useEffect(() => { if (!note) return; const t = setTimeout(() => setNote(0), 2500); return () => clearTimeout(t); }, [note]);
+  useEffect(() => {
+    const el = scroll.current;
+    if (!el) return;
+    const measure = () => {
+      const cell = el.querySelector("tbody td:last-child");
+      const head = el.querySelector("tbody th");
+      const w = cell?.offsetWidth || 80;
+      const h = cell?.offsetHeight || 24;
+      const cols = Math.ceil((el.clientWidth - (head?.offsetWidth || 40)) / w) + 1;
+      const rows = Math.ceil(el.clientHeight / h) + 1;
+      setFill((f) => (f.cols === cols && f.rows === rows ? f : { cols, rows }));
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, []);
+  const sheet = sheets[Math.min(tab, sheets.length - 1)];
+  if (!sheet) return <p className="muted pad">The workbook has no sheets.</p>;
+  const cols = Math.max(fill.cols, sheet.cells.reduce((m, r) => Math.max(m, r.length), 0));
+  const rows = [...sheet.cells, ...Array.from({ length: Math.max(0, fill.rows - sheet.cells.length) }, () => [])];
+  const uncalculated = sheet.cells.some((r) => r.some((c) => c?.f && c.v === ""));
+  return (
+    <div className="xl">
+      <div className={`xl-readonly ${note ? "show" : ""}`} role="status" aria-live="polite">{note ? <>Read-only view. To edit, click &quot;Open in Excel&quot;.</> : ""}</div>
+      {sheets.length > 1 && (
+        <div className="xl-tabs" role="tablist">
+          {sheets.map((s, i) => <button key={s.name} role="tab" aria-selected={i === tab} className={i === tab ? "on" : ""} onClick={() => setTab(i)}>{s.name}</button>)}
+        </div>
+      )}
+      {uncalculated && <p className="xl-note">Gray cells are formulas with no result yet. Excel calculates them when you open the file.</p>}
+      <div className="xl-scroll" tabIndex={0} ref={scroll}>
+        <table className="xl-grid">
+          <thead><tr><th className="xl-corner" />{Array.from({ length: cols }, (_, i) => <th key={i} scope="col">{colName(i)}</th>)}</tr></thead>
+          <tbody>
+            {rows.map((r, ri) => (
+              <tr key={ri}>
+                <th scope="row">{ri + 1}</th>
+                {Array.from({ length: cols }, (_, ci) => {
+                  const c = r[ci];
+                  const pending = c?.f && c.v === "";
+                  return (
+                    <td key={ci} className={[c?.n && "num", c?.b && "bold", pending && "formula", sel?.r === ri && sel?.c === ci && "sel"].filter(Boolean).join(" ") || undefined}
+                      onClick={() => { setSel({ r: ri, c: ci }); setNote(Date.now()); }}
+                      title={c ? (c.f ? `${colName(ci)}${ri + 1}: ${c.f}${c.v !== "" ? ` = ${c.v}` : ""}` : `${colName(ci)}${ri + 1}: ${c.v}`) : undefined}>
+                      {pending ? c.f : c?.v}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {sheet.cut && <p className="xl-note">The sheet has {sheet.rows} rows and {sheet.cols} columns. The view shows at most 500 rows and 52 columns.</p>}
     </div>
   );
 }
@@ -1655,7 +1853,7 @@ function LinkProject({ code, onPick, onCancel }) {
     .sort((a, b) => Number(!!match(b)) - Number(!!match(a)));
   useEffect(() => setSel(0), [query]);
   useEffect(() => { document.querySelector(".link-list .list-row.selected")?.scrollIntoView({ block: "nearest" }); }, [sel]);
-  if (browsing) return <FolderPicker title={`Select A Folder For ${code}`} action="Link Project" onCancel={() => setBrowsing(false)} onPick={onPick} />;
+  if (browsing) return <FolderPicker title={`Select A Folder For ${code}`} action="Link Project" createLabel="Create and Link" onCancel={() => setBrowsing(false)} onPick={onPick} />;
   const onKey = (e) => {
     if (e.key === "Escape") { e.preventDefault(); onCancel(); }
     else if (e.key === "ArrowDown") { e.preventDefault(); setSel((i) => Math.min(shown.length - 1, i + 1)); }
@@ -1691,9 +1889,10 @@ function LinkProject({ code, onPick, onCancel }) {
   );
 }
 
-// "Select a folder for your project": a folder picker in the app. Places on the left, folders on the right,
-// "New Folder" to make one. It starts in Documents/catai.
-function FolderPicker({ onPick, onCancel, title = "Select A Folder For Your Project", action = "Open Project" }) {
+// "Start or open a project": a folder picker in the app. Places on the left, folders on the right. It starts in
+// Documents/catai. A new student has no folders there, so the middle asks for a project name: "Create Project"
+// makes the folder and opens it in one step. With folders, the first row of the list ("New project") does the same.
+function FolderPicker({ onPick, onCancel, title = "Start Or Open A Project", action = "Open Project", createLabel = "Create Project" }) {
   const [dir, setDir] = useState(undefined);
   const [selected, setSelected] = useState(undefined);
   const [naming, setNaming] = useState(false);
@@ -1712,14 +1911,21 @@ function FolderPicker({ onPick, onCancel, title = "Select A Folder For Your Proj
   // A place (Documents, Home, catai projects) is not a good project folder. Select or make a folder in it.
   const isPlace = !selected && dir.places.some((p) => p.path === dir.path);
   const crumbs = dir.path.split(/[\\/]/).filter(Boolean);
+  // Make the folder, then open it (or link it).
   async function makeFolder() {
-    const r = await api.makeFolder(dir.path, name);
+    if (!name.trim()) return setError("Type a name for the project.");
+    const r = await api.makeFolder(dir.path, name.trim());
     if (r.error) return setError(r.error);
-    setNaming(false);
-    setName("");
-    await go(dir.path);
-    setSelected(r.path.split(/[\\/]/).pop());
+    onPick(r.path);
   }
+  const nameBox = (
+    <div className="new-folder">
+      <input className="input-field" autoFocus value={name} placeholder="Project name, for example Budget Planner" aria-label="Project name"
+        onChange={(e) => { setName(e.target.value); setError(""); }}
+        onKeyDown={(e) => { if (e.key === "Enter") makeFolder(); if (e.key === "Escape" && dir.folders.length) { e.stopPropagation(); setNaming(false); } }} />
+      <button className="btn primary" onClick={makeFolder}>{createLabel}</button>
+    </div>
+  );
   return (
     <div className="overlay">
       <div className="window picker" role="dialog" aria-modal="true" aria-label={title}>
@@ -1736,26 +1942,32 @@ function FolderPicker({ onPick, onCancel, title = "Select A Folder For Your Proj
               <span className="crumbs"><bdi>{crumbs.slice(-3).join(` ${dir.sep} `)}</bdi></span>
             </div>
             <div className="listbox picker-list">
-              {dir.folders.length === 0 && <div className="list-empty">No folders here. Click "New Folder" to make one.</div>}
+              {dir.folders.length === 0 && (
+                <div className="picker-start">
+                  <strong>Start a new project</strong>
+                  <span>Enter a project name and catai will make a folder for it!</span>
+                  {nameBox}
+                  {error && <p className="error">{error}</p>}
+                </div>
+              )}
+              {dir.folders.length > 0 && (naming ? (
+                <div className="picker-new-row">{nameBox}{error && <p className="error">{error}</p>}</div>
+              ) : (
+                <div className="list-row folder-row new-row" role="button" tabIndex={0} onClick={() => { setNaming(true); setSelected(undefined); }}
+                  onKeyDown={(e) => e.key === "Enter" && setNaming(true)}>
+                  <span className="col-name"><span className="new-plus" aria-hidden="true">+</span> New project</span>
+                </div>
+              ))}
               {dir.folders.map((f) => (
                 <div key={f} className={`list-row folder-row ${f === selected ? "selected" : ""}`} onClick={() => setSelected(f)} onDoubleClick={() => go(join(dir.path, f))}>
                   <span className="col-name"><FolderIcon open={false} /> {f}</span>
                 </div>
               ))}
             </div>
-            {naming && (
-              <div className="new-folder">
-                <input className="input-field" autoFocus value={name} placeholder="Folder name, for example Semester Plan" onChange={(e) => setName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") makeFolder(); if (e.key === "Escape") { e.stopPropagation(); setNaming(false); } }} />
-                <button className="btn" onClick={makeFolder}>Make</button>
-              </div>
-            )}
-            {error && <p className="error">{error}</p>}
           </div>
         </div>
         <div className="window-buttons">
-          <button className="btn" onClick={() => setNaming(true)}>New Folder</button>
-          <span className="picker-target" title={target}>{isPlace ? "Select a folder, or make a new one." : <>Project folder: <bdi>{target.split(/[\\/]/).pop()}</bdi></>}</span>
+          <span className="picker-target" title={target}>{isPlace ? (dir.folders.length ? "Select a project folder, or make a new project." : "") : <>Project folder: <bdi>{target.split(/[\\/]/).pop()}</bdi></>}</span>
           <span className="spacer" />
           <button className="btn" onClick={onCancel}>Cancel</button>
           <button className="btn primary default" onClick={() => onPick(target)} disabled={isPlace}>{action}</button>
@@ -2423,15 +2635,16 @@ function serverEntry(server) {
 }
 const launchable = (p, webApp) => /\.html?$/i.test(p) || (!!webApp?.server && p === serverEntry(webApp.server));
 
-function FileButtons({ path, except = [] }) {
+// primaryOpen: "Open in Excel" (Word, PowerPoint) is the gold button, because the preview is read-only.
+function FileButtons({ path, except = [], primaryOpen = false }) {
   const a = useContext(FileActions);
   if (!a || !path) return null;
   const ext = path.split(".").pop().toLowerCase();
   const show = (k) => !except.includes(k);
   return <>
     {show("launch") && a.canLaunch(path) && <button className="btn small" onClick={() => a.launch(path)} title="Run the page or app in the preview, next to the chat">Launch</button>}
-    {show("open") && <button className="btn small" onClick={() => a.open(path)} title="Open the file in its app on this computer">{OPEN_IN[ext] ? `Open in ${OPEN_IN[ext]}` : "Open"}</button>}
-    {show("view") && <button className="btn small" onClick={() => a.view(path)} title="Show the file in the side panel">View</button>}
+    {show("open") && <button className={`btn small ${primaryOpen && OPEN_IN[ext] ? "primary" : ""}`} onClick={() => a.open(path)} title="Open the file in its app on this computer">{OPEN_IN[ext] ? `Open in ${OPEN_IN[ext]}` : "Open"}</button>}
+    {show("view") && <button className="btn small" onClick={() => a.view(path)} title="Show a read-only preview of the file in the side panel">Preview</button>}
     {show("diff") && a.canDiff(path) && <button className="btn small" onClick={() => a.diff(path)} title="Show the changes since the last commit">Diff</button>}
   </>;
 }

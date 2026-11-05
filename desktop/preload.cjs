@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld("catatui", {
   widgetFrame: (html) => ipcRenderer.invoke("widget-frame", html),
   listFolders: (path) => ipcRenderer.invoke("list-folders", path),
   makeFolder: (parent, name) => ipcRenderer.invoke("make-folder", parent, name),
+  newFile: (dir, name, kind) => ipcRenderer.invoke("file-new", dir, name, kind),
+  moveFile: (from, toDir) => ipcRenderer.invoke("file-move", from, toDir),
   // changed files
   changedFiles: () => ipcRenderer.invoke("changed-files"),
   fileTree: () => ipcRenderer.invoke("file-tree"),

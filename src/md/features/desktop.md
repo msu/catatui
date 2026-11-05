@@ -96,9 +96,17 @@ A desktop app (like Claude Desktop) for students who do not use the command line
 - File buttons (`FileButtons`, the `FileActions` context in App.jsx). The same actions are on the file card, in the side panel panes, in the diff view, and in the right-click menu of the tree:
   - Launch: only for an HTML file (it opens in the web preview) and for the entry file of a server app (`package.json`, `manage.py`, or the Flask file; it opens the preview with "Start").
   - Open: the default app of the computer. Office files say "Open in Excel" (Word, PowerPoint).
-  - View: the file in the side panel.
+  - Preview: a read-only view of the file in the side panel.
   - Diff: only for a text file that git shows as modified.
   - A pane leaves out its own action: the file view has no View, the web preview has no Launch, and the diff view has no Diff.
+- The right-click menu of the tree also has:
+  - "New": a submenu with Folder and the kinds of files that catai understands (`NEW_KINDS` in `src/catatui/newfile.ts`): Markdown, Text, HTML, CSS, JavaScript, Python, JSON, Excel, CSV, and Word. A dialog asks for the name. main.js adds the extension, refuses a name that is there already, and writes a small start file. The HTML and Word files have a title, a language, and a heading. Then the file opens in the side panel.
+  - "Open in Terminal": Terminal on macOS, PowerShell on Windows, and `x-terminal-emulator` on Linux, in the folder (or the folder of the file).
+  - A right click on the empty part of the tree gives the menu of the project folder.
+  - The tree shows empty folders (`emptyDirs` from main.js), so a new folder is visible. Not in a search or with "Changed only".
+- Drag and drop in the tree moves a file or a folder into a folder (a folder row, the folder of a file row, or the empty part of the tree for the project folder). main.js (`file-move`) does not replace an item and does not move a folder into itself.
+  - After a move, the chat shows a notice, and the app sends `/catai-moved [{from, to}]` (`src/catatui/moved.ts`). The command queues a hidden note with `deliverAs: "nextTurn"`, so the agent gets the new paths with the next message of the student. It does not start a turn.
+  - The note is in memory only. If the app closes before the next message, the agent does not get it.
 - The desktop app is named "catai" (the window title and the header). The CLI is still catatui. The header has a larger bobcat. The project path is in a row under the header, with "Open New Folder".
 - The message box: the text field on the left. Undo, Send, the model, and the mode on the right, in this order. While the agent works, Send becomes a red Stop button with a spinner.
 - History lists the chats of all projects (`SessionManager.listAll`, newest 100), each with its folder. A chat in a different folder opens that project first.
@@ -130,7 +138,7 @@ A desktop app (like Claude Desktop) for students who do not use the command line
   - The text already went to CatChat when the student sent it. The app says that this does not remove it there.
 - Delete a conversation (Conversation menu and History window): "Move to Trash" or "Delete Permanently". A conversation that is open in another window cannot be deleted. Test hook: CATATUI_DESKTOP_YES=<button index> answers these questions.
 - Side panel (right): tabs with pinned files and the web preview. Drag its left edge to change the width (kept in localStorage).
-  - View a file: "View" on a file card or in the tree's right-click menu. The pane shows the whole file with line numbers (or the image), and reads it again after each change. Buttons: Add to chat and the file buttons.
+  - Preview a file: "Preview" on a file card or in the tree's right-click menu. The pane shows the whole file with line numbers (or the image, or the Excel grid), and reads it again after each change and when the window gets the focus (the student can have changed the file in Excel or an editor). The pane is read-only: the bar has a "Read-only" badge, "Open in Excel" (Word, PowerPoint) is the gold button, and a click on an Excel cell shows a short read-only note. Buttons: "Show In Project" (it opens the folders of the file in the tree, selects the file, and flashes it) and the file buttons.
   - Remove a file card: the x button on the card. It removes the message from the conversation (the same as "Remove"). A removed message shows as "Removed".
   - The side panel closes when the window moves to another folder (another project, a chat, or a closed project).
   - A show_preview tool card has "Show preview", which opens the page again.

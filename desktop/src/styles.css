@@ -996,3 +996,55 @@ body.resizing webview { pointer-events: none; }
 .a11y-findings li.error::marker { color: var(--err); }
 .a11y-findings li.warning::marker { color: var(--warn); }
 .a11y-note { margin: .45rem 0 0; color: var(--muted); font-size: .75rem; }
+
+/* An .xlsx file in the side panel (ExcelGrid). The headers stay in place when the grid scrolls. */
+.xl { display: flex; flex-direction: column; min-height: 0; flex: 1; position: relative; }
+.xl-tabs { display: flex; gap: .2rem; padding: .35rem .5rem 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.xl-tabs button { border: 1px solid var(--line); border-bottom: 0; background: var(--bg); color: var(--fg); padding: .2rem .7rem; border-radius: 6px 6px 0 0; font-size: .8rem; cursor: pointer; }
+.xl-tabs button.on { background: var(--panel); font-weight: 700; color: var(--blue); }
+.xl-note { margin: .35rem .6rem; color: var(--muted); font-size: .75rem; }
+.xl-scroll { overflow: auto; flex: 1; min-height: 0; }
+.xl-grid { border-collapse: separate; border-spacing: 0; font-size: .8rem; }
+.xl-grid th, .xl-grid td { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: .15rem .45rem; white-space: nowrap; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; }
+.xl-grid td { background: var(--panel); min-width: 4rem; }
+.xl-grid td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.xl-grid td.bold { font-weight: 700; }
+.xl-grid td.formula { color: var(--muted); font-style: italic; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .75rem; }
+.xl-grid thead th { position: sticky; top: 0; z-index: 2; background: var(--code); color: var(--muted); font-weight: 600; text-align: center; }
+.xl-grid tbody th { position: sticky; left: 0; z-index: 1; background: var(--code); color: var(--muted); font-weight: 600; text-align: right; min-width: 2.4rem; }
+.xl-grid .xl-corner { left: 0; z-index: 3; }
+
+/* The folder picker: the first-project form in the middle, and the "New project" row. */
+.picker-start { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .5rem; height: 100%; padding: 1.5rem; text-align: center; }
+.picker-start strong { font-size: 1.15rem; color: var(--blue); }
+.picker-start > span { color: var(--muted); font-size: .85rem; }
+.picker-start .new-folder { width: min(26rem, 100%); margin-top: .4rem; }
+.picker-new-row { padding: .4rem .5rem; border-bottom: 1px solid var(--line); }
+.list-row.new-row { color: var(--blue); font-weight: 600; border-bottom: 1px solid var(--line); }
+.new-plus { display: inline-flex; width: 1.1rem; justify-content: center; font-weight: 700; }
+
+/* "New" in the tree menu: the name dialog. */
+.window.new-file { width: min(28rem, 92vw); }
+.new-file-body { padding: 1rem 1.1rem .4rem; display: flex; flex-direction: column; gap: .4rem; }
+.new-file-body label { font-size: .85rem; color: var(--muted); }
+.new-ext { align-self: center; color: var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .85rem; }
+
+/* Drag and drop in the tree: the folder under the mouse. */
+.tree-row.dir.drop { background: var(--user); outline: 2px dashed var(--blue); outline-offset: -2px; }
+.tree-body.drop { background: var(--user); }
+
+/* "Show In Project": the file row flashes gold two times. */
+@keyframes tree-flash { 0%, 50%, 100% { background: transparent; } 25%, 75% { background: rgba(212, 160, 23, .45); } }
+.tree-row.flash { animation: tree-flash 1.4s ease-in-out; }
+
+/* ExcelGrid: the selected cell, and the small read-only note. */
+.xl-grid td { cursor: cell; }
+.xl-grid td.sel { outline: 2px solid var(--blue); outline-offset: -2px; }
+.xl-readonly { position: absolute; right: .7rem; bottom: .7rem; z-index: 5; padding: .3rem .7rem; border-radius: 999px; font-size: .75rem;
+  background: var(--fg); color: var(--bg); opacity: 0; transform: translateY(4px); transition: opacity .2s, transform .2s; pointer-events: none; }
+.xl-readonly.show { opacity: .88; transform: none; }
+
+/* The side panel file preview: a quiet "Read-only" badge in the pane bar. */
+.ro-badge { display: inline-flex; align-items: center; gap: .25rem; padding: .05rem .5rem; border: 1px solid var(--line); border-radius: 999px;
+  color: var(--muted); font-size: .7rem; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+.ro-badge svg { width: .75rem; height: .75rem; fill: none; stroke: currentColor; stroke-width: 1.6; }

@@ -17,6 +17,7 @@ import { registerMsu } from "./msu.ts";
 import { registerNewProject } from "./project.ts";
 import { registerWidget } from "./widget.ts";
 import { registerPreview } from "./preview.ts";
+import { registerMoved } from "./moved.ts";
 import { registerViews } from "./views.ts";
 import { registerAdvising } from "./advising.ts";
 import { registerClasses } from "./classes.ts";
@@ -88,6 +89,7 @@ export default async function (pi: ExtensionAPI) {
     registerNewProject(pi);
     registerWidget(pi);
     registerPreview(pi);
+    registerMoved(pi);
     // Advising and Classes are mock data for a demo: only with catai --demo-mode.
     if (process.env.CATAI_DEMO === "1") registerViews(pi);
   }
