@@ -31,6 +31,15 @@ The code is in `src/catatui/pdfwrite.ts`, `src/catatui/documents.ts`, `src/catat
 - HTML (regular expressions, basic): `lang`, `<title>`, `img` alt, the heading order, `<th>`, link text, and form field labels.
 - The result has errors, warnings, what passed, and the limits.
 
+## Audit in the desktop app
+
+- In the file tree, the right-click menu of a folder, or of a PDF, Word, or HTML file, has "Audit accessibility".
+- It sends a message: audit the path, with the audit steps of the skill. The agent runs `a11y_check` one time on the path.
+- With a folder, `a11y_check` checks all `.pdf`, `.docx`, `.html`, and `.htm` files in it and its subfolders, at most 100. It does not go into hidden folders or `node_modules`, and it skips Word lock files (`~$name.docx`).
+- The result `details.files` has each file: the path, the findings, or the error. The app shows it as a card (`A11yCard`): counts, a list of the files with a fixed height (it scrolls), and the problems of a file when you click it.
+- "Fix" (one file) and "Fix all" send a message with the paths and the fix steps of the skill.
+- Fix steps: the agent changes HTML in place. For Word and PDF, it writes a new file `<name>-accessible.<ext>` next to the original, because the writers make a new file from the text and lose some layout.
+
 ## Decisions
 
 - A tool for the checks, not only the model. A model cannot read the tags of a PDF reliably, and the same file must give the same result each time.

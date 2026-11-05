@@ -307,7 +307,15 @@ export function App() {
     open: (p) => api.openPath(p),
     view: (p) => openSide({ type: "file", path: p }),
     diff: (p) => setViewing(p),
+    // "Audit accessibility" in the tree menu. The steps are in the accessible-documents skill.
+    audit: (p, folder) => send(
+      `Audit the accessibility of the ${folder ? "documents in the folder" : "document"} ${PROJECT.replace(/[\\/]$/, "")}/${p}. ` +
+      "Follow the audit steps in the accessible-documents skill."),
   };
+  // The "Fix" buttons of the audit card (A11yCard).
+  const fixA11y = (paths) => send(
+    `Fix the accessibility problems in ${paths.length === 1 ? "this document" : `these ${paths.length} documents`}: ${paths.join(", ")}. ` +
+    "Follow the fix steps in the accessible-documents skill.");
   // The web preview reloads when the agent is done (it can have changed the files) and after a file change.
   const [reloadTick, setReloadTick] = useState(0);
   // The "History" window: all chats and projects, with a search.
@@ -504,7 +512,7 @@ export function App() {
             kind={info.kind} project={info.project} onOpenSession={openAnySession} onRemove={removeFromChat}
             onPin={(p) => openSide({ type: "file", path: p })} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })}
             onOpenView={(view, course) => (view === "advising" ? goAdvising() : goClasses(course))}
-            queued={state.queued} onUnqueue={unqueue} />
+            onFixA11y={fixA11y} queued={state.queued} onUnqueue={unqueue} />
           <Composer context={lastAssistantText(state.items)} busy={state.busy} onSend={send} onStop={stop} editorText={state.editorText}
             clearEditorText={() => local((s) => ({ ...s, editorText: undefined }))}
             canUndo={undoSteps > 0} onUndo={() => send("/undo")}
@@ -576,11 +584,13 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
     if (!folder) onSelect(p);
     const m = mark(p);
     const isText = !/\.(xlsx?|docx?|pptx?|pdf|png|jpe?g|gif|webp|ico|zip|gz)$/i.test(p);
-    const picked = await api.fileMenu(p, { folder, canDiff: !folder && isText && (m === "M" || m === "R"), canRollback: !folder && !!m, canLaunch: !folder && !!actions?.canLaunch(p) });
+    const canAudit = folder || /\.(pdf|docx|html?)$/i.test(p);
+    const picked = await api.fileMenu(p, { folder, canAudit, canDiff: !folder && isText && (m === "M" || m === "R"), canRollback: !folder && !!m, canLaunch: !folder && !!actions?.canLaunch(p) });
     if (picked === "add") onOpen(p);
     if (picked === "diff") onDiff(p);
     if (picked === "view") onPin(p);
     if (picked === "launch") actions?.launch(p);
+    if (picked === "audit") actions?.audit(p, folder);
   };
   const root = buildTree(paths);
   const hasChange = (prefix) => paths.some((p) => p.startsWith(prefix) && mark(p));
@@ -2178,7 +2188,7 @@ function GitHubSignIn({ onDone }) {
   );
 }
 
-function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove, onPin, onOpenWeb, onOpenView, queued, onUnqueue }) {
+function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove, onPin, onOpenWeb, onOpenView, onFixA11y, queued, onUnqueue }) {
   const end = useRef(null);
   const box = useRef(null);
   // Keep the newest text in view, unless the student scrolled up to read.
@@ -2217,7 +2227,7 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
       {items.map((it, i) => {
         const item = <Item key={i} it={it} onShowChanges={onShowChanges} changed={changed} fileTick={fileTick} widgets={widgets} onWidgetAnswer={onWidgetAnswer}
           onPin={onPin} onRemove={busy ? undefined : onRemove} onOpenWeb={onOpenWeb} onOpenView={busy ? undefined : onOpenView}
-          live={busy && i === items.length - 1} />;
+          onFixA11y={busy ? undefined : onFixA11y} live={busy && i === items.length - 1} />;
         // File cards have their own buttons. A removed message has nothing to remove.
         if (it.kind === "user" && (it.text.startsWith(FILE_PREFIX) || it.text === "[removed]")) return item;
         // "Remove" on a message or a tool call, when the agent is not working.
@@ -2247,7 +2257,76 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
   );
 }
 
-function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, onPin, onRemove, onOpenWeb, onOpenView, live }) {
+// a11y_check (a11y.ts): one card for one file or for a folder audit. The list has a fixed height, so a large
+// folder does not make the chat long. A click on a file shows its problems. "Fix" sends a message to the agent.
+const A11Y_ORDER = { error: 0, warning: 1, skipped: 2, ok: 3 };
+function a11yStatus(f) {
+  if (f.error) return "skipped";
+  if (f.findings.some((x) => x.level === "error")) return "error";
+  return f.findings.length ? "warning" : "ok";
+}
+function plural(n, word) { return `${n} ${word}${n === 1 ? "" : "s"}`; }
+function A11yCard({ it, onFix }) {
+  if (it.running) return <div className="a11y-card"><div className="a11y-head"><strong>Accessibility audit</strong><span className="a11y-sub">Checking the documents<Dots /></span></div></div>;
+  const files = [...(it.result?.details?.files ?? [])].sort((a, b) => A11Y_ORDER[a11yStatus(a)] - A11Y_ORDER[a11yStatus(b)] || a.path.localeCompare(b.path));
+  const count = (st) => files.filter((f) => a11yStatus(f) === st).length;
+  const fixable = files.filter((f) => ["error", "warning"].includes(a11yStatus(f))).map((f) => f.path);
+  const name = (p) => p.split(/[\\/]/).pop();
+  return (
+    <div className="a11y-card">
+      <div className="a11y-head">
+        <strong>Accessibility audit</strong>
+        <span className="a11y-sub">{files.length ? plural(files.length, "document") : "No PDF, Word, or HTML documents"}</span>
+        {fixable.length > 0 && (
+          <button className="btn small primary" disabled={!onFix} onClick={() => onFix?.(fixable)}>{fixable.length === 1 ? "Fix it" : `Fix all ${fixable.length}`}</button>
+        )}
+      </div>
+      {files.length > 0 && (
+        <div className="a11y-chips">
+          {count("error") > 0 && <span className="a11y-chip error">{count("error")} with errors</span>}
+          {count("warning") > 0 && <span className="a11y-chip warning">{count("warning")} with warnings</span>}
+          {count("ok") > 0 && <span className="a11y-chip ok">{count("ok")} OK</span>}
+          {count("skipped") > 0 && <span className="a11y-chip skipped">{count("skipped")} not checked</span>}
+        </div>
+      )}
+      {files.length > 0 && (
+        <ul className="a11y-list">
+          {files.map((f) => {
+            const st = a11yStatus(f);
+            const errors = f.findings.filter((x) => x.level === "error").length;
+            const warnings = f.findings.length - errors;
+            const what = st === "skipped" ? "Not checked" : st === "ok" ? "No problems found" : [errors && plural(errors, "error"), warnings && plural(warnings, "warning")].filter(Boolean).join(", ");
+            return (
+              <li key={f.path}>
+                <details>
+                  <summary title={f.path}>
+                    <span className={`a11y-dot ${st}`} aria-hidden="true" />
+                    <bdi className="a11y-name">{name(f.path)}</bdi>
+                    <span className="a11y-dir">{f.path.slice(0, -name(f.path).length).replace(/[\\/]$/, "")}</span>
+                    <span className={`a11y-what ${st}`}>{what}</span>
+                    {(st === "error" || st === "warning") && (
+                      <button className="link-btn" disabled={!onFix} onClick={(e) => { e.preventDefault(); onFix?.([f.path]); }}>Fix</button>
+                    )}
+                  </summary>
+                  <ul className="a11y-findings">
+                    {f.error && <li className="skipped">{f.error}</li>}
+                    {f.findings.map((x, i) => <li key={i} className={x.level}>{x.text}</li>)}
+                    {st === "ok" && f.summary && <li className="ok">{f.summary}</li>}
+                  </ul>
+                </details>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {it.result?.details?.truncated && <p className="a11y-note">The folder has more documents. The audit checked the first 100.</p>}
+      <p className="a11y-note">The check finds common problems only. A person must still check the alt text and the reading order.</p>
+    </div>
+  );
+}
+
+function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, onPin, onRemove, onOpenWeb, onOpenView, onFixA11y, live }) {
+  if (it.kind === "tool" && it.name === "a11y_check" && !it.isError && (it.running || it.result?.details?.files)) return <A11yCard it={it} onFix={onFixA11y} />;
   // advising_submit_plan: the plan card. It is live while its request waits. After that, the result has the plan and the status.
   if (it.kind === "tool" && it.name === "advising_submit_plan") {
     const req = it.running ? widgets.find((w) => w.title.startsWith(`${WIDGET_PREFIX}{"type":"plan"`)) : undefined;

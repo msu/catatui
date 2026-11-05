@@ -92,8 +92,15 @@ electron="$epkg/dist/Electron.app/Contents/MacOS/Electron"
 mkdir -p "$APP/bin"
 cat >"$APP/bin/catai" <<EOF
 #!/bin/sh
-# Start catai. Usage: catai [project folder]
-if [ \$# -gt 0 ]; then dir="\$(cd "\$1" && pwd)" || exit 1; set -- "\$dir"; fi
+# Start catai. Usage: catai [--demo-mode] [project folder]
+# A folder becomes a full path, because Electron does not start in this folder. Options stay as they are.
+for a in "\$@"; do
+  shift
+  case "\$a" in
+    -*) set -- "\$@" "\$a" ;;
+    *) a="\$(cd "\$a" && pwd)" || exit 1; set -- "\$@" "\$a" ;;
+  esac
+done
 nohup "$electron" "$CATAI" "\$@" >"$APP/catai.log" 2>&1 &
 EOF
 chmod +x "$APP/bin/catai"
@@ -102,3 +109,4 @@ say ""
 say "catai is installed."
 say "To start it, run: catai"
 say "To open a project folder, run: catai <folder>"
+say "For the demo (Advising and Classes), run: catai --demo-mode"

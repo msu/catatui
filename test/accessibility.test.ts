@@ -1,11 +1,11 @@
 // Accessible documents: the Markdown parser, docx_write and pdf_write defaults, and a11y_check.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { deflateSync } from "node:zlib";
 import { test } from "node:test";
-import { checkDocx, checkFile, checkHtml, checkPdf, contrastOnWhite } from "../src/catatui/a11y.ts";
+import { auditFolder, checkDocx, checkFile, checkHtml, checkPdf, contrastOnWhite, findDocuments } from "../src/catatui/a11y.ts";
 import { registerDocumentTools } from "../src/catatui/documents.ts";
 import { parseMarkdown } from "../src/catatui/markdown.ts";
 import { registerPdfWrite, writePdf } from "../src/catatui/pdfwrite.ts";
@@ -210,4 +210,23 @@ test("a11y_check refuses other file types", async () => {
   const cwd = dir();
   writeFileSync(join(cwd, "a.txt"), "x");
   await assert.rejects(checkFile(join(cwd, "a.txt")), /checks .pdf, .docx, .html/);
+});
+
+test("a11y_check: a folder audit checks the documents in subfolders, not hidden folders", async () => {
+  const d = dir();
+  mkdirSync(join(d, "sub"));
+  mkdirSync(join(d, ".git"));
+  writeFileSync(join(d, "good.html"), '<html lang="en"><head><title>Good</title></head><body><h1>Good</h1></body></html>');
+  writeFileSync(join(d, "sub", "bad.htm"), "<html><body><img src=a.png></body></html>");
+  writeFileSync(join(d, "sub", "broken.pdf"), "not a pdf");
+  writeFileSync(join(d, ".git", "hidden.html"), "<html></html>");
+  writeFileSync(join(d, "notes.txt"), "text");
+  writeFileSync(join(d, "~$lock.docx"), "lock");
+  assert.deepEqual(findDocuments(d).map((p) => relative(d, p)), ["good.html", join("sub", "bad.htm"), join("sub", "broken.pdf")]);
+  const audit = await auditFolder(d, d);
+  assert.equal(audit.files.length, 3);
+  assert.equal(audit.files.find((f) => f.path === "good.html")?.findings.length, 0);
+  assert.ok(audit.files.find((f) => f.path === join("sub", "bad.htm"))!.findings.some((f) => f.level === "error"));
+  assert.ok(audit.files.find((f) => f.path === join("sub", "broken.pdf"))?.error);
+  assert.match(audit.text, /3 documents\. 1 with errors, 0 with warnings only, 1 with no problems, 1 not checked\./);
 });

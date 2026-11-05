@@ -1,10 +1,10 @@
-// "a11y_check" tool: find common accessibility problems in a PDF, Word, or HTML file.
+// "a11y_check" tool: find common accessibility problems in a PDF, Word, or HTML file, or in all of these files in a folder.
 // It finds problems that a program can find. It does not prove that a file conforms to WCAG or PDF/UA.
 // See src/md/features/accessibility.md.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { readFileSync } from "node:fs";
-import { extname } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { extname, isAbsolute, join, relative } from "node:path";
 import { Type } from "typebox";
 import { fullPath } from "./documents.ts";
 import { badLinkText } from "./markdown.ts";
@@ -14,6 +14,29 @@ export interface Report { kind: string; summary: string; findings: Finding[]; pa
 
 const MAX_PAGES = 200;
 const MAX_LISTED = 5;
+// A folder audit checks at most this number of documents.
+export const MAX_FILES = 100;
+const DOCUMENT = /\.(pdf|docx|html?)$/i;
+const LIMITS = "Limits: this check finds common problems only. A person must still check that the alt text is correct, that the reading order is logical, " +
+  "that color is not the only way to show meaning, and that the language is clear. For PDF/UA conformance, use a validator such as veraPDF or PAC.";
+
+// The PDF, Word, and HTML files in a folder and its subfolders, in name order. It does not go into hidden folders
+// or node_modules, and it skips the lock files of Word (~$name.docx). It stops after MAX_FILES + 1 files.
+export function findDocuments(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string) => {
+    const entries = readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    for (const e of entries) {
+      if (out.length > MAX_FILES) return;
+      if (e.name.startsWith(".") || e.name.startsWith("~$") || e.name === "node_modules") continue;
+      const p = join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.isFile() && DOCUMENT.test(e.name)) out.push(p);
+    }
+  };
+  walk(dir);
+  return out;
+}
 
 // Many findings of one kind become one finding with some examples.
 function group(findings: Finding[], level: Finding["level"], what: string, items: string[], fix: string) {
@@ -248,7 +271,8 @@ export async function checkFile(path: string): Promise<Report> {
   throw new Error(`a11y_check cannot check ${ext || "this"} files. It checks .pdf, .docx, .html, and .htm files.`);
 }
 
-export function formatReport(path: string, r: Report): string {
+// The lines for one file, without the limits.
+function fileLines(path: string, r: Report): string[] {
   const errors = r.findings.filter((f) => f.level === "error");
   const warnings = r.findings.filter((f) => f.level === "warning");
   return [
@@ -257,9 +281,44 @@ export function formatReport(path: string, r: Report): string {
     ...errors.map((f) => `- ERROR: ${f.text}`),
     ...warnings.map((f) => `- WARNING: ${f.text}`),
     r.passed.length ? `Passed: ${r.passed.join("; ")}.` : "",
-    "Limits: this check finds common problems only. A person must still check that the alt text is correct, that the reading order is logical, " +
-      "that color is not the only way to show meaning, and that the language is clear. For PDF/UA conformance, use a validator such as veraPDF or PAC.",
-  ].filter(Boolean).join("\n");
+  ].filter(Boolean);
+}
+
+export function formatReport(path: string, r: Report): string {
+  return [...fileLines(path, r), LIMITS].join("\n");
+}
+
+// One file of an audit. The desktop app shows these in the audit card (details.files).
+export interface Checked { path: string; kind?: string; summary?: string; findings: Finding[]; error?: string }
+
+// Check all documents in a folder. The paths in the result are relative to cwd, if the folder is in cwd.
+export async function auditFolder(cwd: string, dir: string): Promise<{ text: string; files: Checked[]; truncated: boolean }> {
+  const found = findDocuments(dir);
+  const truncated = found.length > MAX_FILES;
+  const show = (p: string) => { const r = relative(cwd, p); return r.startsWith("..") || isAbsolute(r) ? p : r; };
+  const files: Checked[] = [];
+  const parts: string[] = [];
+  for (const full of found.slice(0, MAX_FILES)) {
+    const path = show(full);
+    try {
+      const r = await checkFile(full);
+      files.push({ path, kind: r.kind, summary: r.summary, findings: r.findings });
+      parts.push(fileLines(path, r).join("\n"));
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      files.push({ path, findings: [], error });
+      parts.push(`Accessibility check: ${path}\nNot checked: ${error}`);
+    }
+  }
+  const withErrors = files.filter((f) => f.findings.some((x) => x.level === "error")).length;
+  const withWarnings = files.filter((f) => f.findings.length && !f.findings.some((x) => x.level === "error")).length;
+  const failed = files.filter((f) => f.error).length;
+  const head = files.length
+    ? `Accessibility audit of ${show(dir)}: ${files.length} documents. ${withErrors} with errors, ${withWarnings} with warnings only, ` +
+      `${files.length - withErrors - withWarnings - failed} with no problems, ${failed} not checked.` +
+      (truncated ? ` The folder has more documents. Only the first ${MAX_FILES} were checked.` : "")
+    : `Accessibility audit of ${show(dir)}: the folder has no .pdf, .docx, .html, or .htm files.`;
+  return { text: [head, ...parts, files.length ? LIMITS : ""].filter(Boolean).join("\n\n"), files, truncated };
 }
 
 export function registerA11yCheck(pi: ExtensionAPI) {
@@ -268,15 +327,22 @@ export function registerA11yCheck(pi: ExtensionAPI) {
     label: "Accessibility check",
     description:
       "Check a .pdf, .docx, or .html file for common accessibility problems: tags, title, language, headings, alt text, " +
-      "table headers, link text, fonts, and contrast. Gives errors, warnings, and what passed.",
+      "table headers, link text, fonts, and contrast. Gives errors, warnings, and what passed. " +
+      `With a folder, it checks all of these files in the folder and its subfolders (at most ${MAX_FILES}).`,
     promptSnippet: "Check PDF, Word, and HTML files for accessibility problems",
     promptGuidelines: [
       "After you write a document for other people (pdf_write, docx_write, or an HTML page), run a11y_check on it. Fix the errors and the warnings, then run it again.",
     ],
-    parameters: Type.Object({ path: Type.String({ description: "Path to the .pdf, .docx, .html, or .htm file" }) }),
+    parameters: Type.Object({ path: Type.String({ description: "Path to the .pdf, .docx, .html, or .htm file, or to a folder" }) }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
-      const report = await checkFile(fullPath(ctx.cwd, params.path));
-      return { content: [{ type: "text", text: formatReport(params.path, report) }], details: { findings: report.findings } };
+      const full = fullPath(ctx.cwd, params.path);
+      if (statSync(full).isDirectory()) {
+        const audit = await auditFolder(ctx.cwd, full);
+        return { content: [{ type: "text", text: audit.text }], details: { files: audit.files, truncated: audit.truncated } };
+      }
+      const report = await checkFile(full);
+      const files: Checked[] = [{ path: params.path, kind: report.kind, summary: report.summary, findings: report.findings }];
+      return { content: [{ type: "text", text: formatReport(params.path, report) }], details: { findings: report.findings, files, truncated: false } };
     },
   });
 }

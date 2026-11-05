@@ -244,6 +244,8 @@ ipcMain.handle("file-menu", (e, path, opts) => new Promise((done) => {
   let picked;
   const reveal = process.platform === "darwin" ? "Show in Finder" : process.platform === "win32" ? "Show in Explorer" : "Show in folder";
   const template = [
+    // A folder, or a PDF, Word, or HTML file: the agent checks the documents and offers to fix them.
+    ...(opts?.canAudit ? [{ label: "Audit accessibility", click: () => { picked = "audit"; } }, { type: "separator" }] : []),
     ...(opts?.folder ? [] : [
       { label: "Add to chat", click: () => { picked = "add"; } },
       { type: "separator" },
