@@ -12,7 +12,7 @@ catatui compacts the context when the student is away, so the next prompt does n
 
 ## Setting
 
-`idleCompaction` in `~/.catatui/settings.json` (or `.pi/settings.json` in the project):
+`idleCompaction` in `~/.catatui/catatui.json` (`settings.ts`). catatui reads the file each time pi is idle, so a change is active at once. The desktop app Settings window changes it.
 
 ```json
 { "idleCompaction": { "enabled": true, "minutes": 10, "percent": 50 } }

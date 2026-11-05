@@ -3,10 +3,14 @@
 // See src/md/features/documents.md.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { Paragraph as DocxParagraph, Table as DocxTable, TextRun as DocxTextRun } from "docx";
+import type { ExternalHyperlink, Paragraph as DocxParagraph, Table as DocxTable, TextRun as DocxTextRun } from "docx";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { Type } from "typebox";
+import { type Block, parseMarkdown, type Run, structureErrors, structureWarnings } from "./markdown.ts";
+
+type DocxRun = DocxTextRun | ExternalHyperlink;
+export const DEFAULT_LANG = "en-US";
 
 // The libraries load when a tool runs first, not at catatui start. This keeps the start fast.
 type Docx = typeof import("docx");
@@ -28,7 +32,7 @@ async function loadDocx(): Promise<Docx> {
 
 const MAX_CHARS = 50_000;
 
-const fullPath = (cwd: string, path: string) => resolve(cwd, path.replace(/^@/, ""));
+export const fullPath = (cwd: string, path: string) => resolve(cwd, path.replace(/^@/, ""));
 
 function cut(text: string, hint: string): string {
   return text.length > MAX_CHARS ? `${text.slice(0, MAX_CHARS)}\n[Output cut at ${MAX_CHARS} characters. ${hint}]` : text;
@@ -75,72 +79,107 @@ function htmlToMarkdown(html: string): string {
     .trim();
 }
 
-// ---- docx_write ----
+// ---- docx_write and pdf_write ----
 
-const DOCX_WRITE_PARAMS = Type.Object({
-  path: Type.String({ description: "Path to the .docx file. The tool replaces the file if it exists." }),
-  markdown: Type.String({
-    description:
-      "The document as simple Markdown: # to ### headings, paragraphs (blank line between), - bullets, 1. numbered items, " +
-      "| a | b | tables (first row is the header), **bold**, and *italic*.",
-  }),
+export const WRITE_MARKDOWN =
+  "The document as simple Markdown: # to ###### headings (start with one #, do not skip levels), paragraphs (blank line between), " +
+  "- bullets, 1. numbered items, | a | b | tables (first row is the header), **bold**, *italic*, `code`, ``` code blocks, " +
+  "[link text](url) (the text names the target, not \"click here\"), and ![alt text](image.png) on its own line " +
+  "(PNG or JPEG in the project; the alt text says what the image shows).";
+
+export const WRITE_PARAMS = (ext: string) => Type.Object({
+  path: Type.String({ description: `Path to the ${ext} file. The tool replaces the file if it exists.` }),
+  title: Type.String({ description: "The document title. Screen readers and the window title show it." }),
+  markdown: Type.String({ description: WRITE_MARKDOWN }),
+  lang: Type.Optional(Type.String({ description: "The language of the document, for example en-US or es-MX. Default: en-US" })),
 });
 
-// **bold** and *italic* runs in one line of text.
-function runs(d: Docx, text: string): DocxTextRun[] {
-  return text
-    .split(/(\*\*[^*]+\*\*|\*[^*]+\*)/)
-    .filter(Boolean)
-    .map((part) => {
-      if (part.startsWith("**") && part.endsWith("**")) return new d.TextRun({ text: part.slice(2, -2), bold: true });
-      if (part.startsWith("*") && part.endsWith("*") && part.length > 2) return new d.TextRun({ text: part.slice(1, -1), italics: true });
-      return new d.TextRun(part);
-    });
+// An image in the Markdown: the file must be in the project, and it must be PNG or JPEG.
+export function loadImage(cwd: string, path: string): { data: Buffer; type: "png" | "jpg"; width: number; height: number } {
+  const full = fullPath(cwd, path);
+  const rel = relative(resolve(cwd), full);
+  if (rel.startsWith("..") || isAbsolute(rel)) throw new Error(`The image ${path} is not in the project folder. Copy it into the project first.`);
+  const data = readFileSync(full);
+  if (data.subarray(1, 4).toString("latin1") === "PNG") return { data, type: "png", width: data.readUInt32BE(16), height: data.readUInt32BE(20) };
+  if (data[0] === 0xff && data[1] === 0xd8) {
+    // The size is in the first SOFn segment.
+    for (let i = 2; i + 9 < data.length;) {
+      if (data[i] !== 0xff) break;
+      const marker = data[i + 1];
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+        return { data, type: "jpg", height: data.readUInt16BE(i + 5), width: data.readUInt16BE(i + 7) };
+      }
+      i += 2 + data.readUInt16BE(i + 2);
+    }
+  }
+  throw new Error(`The image ${path} is not a PNG or JPEG file. Convert it to PNG first.`);
 }
 
-function table(d: Docx, lines: string[]): DocxTable {
-  const rows = lines
-    .filter((l) => !/^\|\s*:?-{2,}/.test(l)) // the |---|---| line
-    .map((l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
-  return new d.Table({
-    width: { size: 100, type: d.WidthType.PERCENTAGE },
-    rows: rows.map((cells, i) => new d.TableRow({
-      tableHeader: i === 0,
-      children: cells.map((c) => new d.TableCell({ children: [new d.Paragraph({ children: i === 0 ? [new d.TextRun({ text: c, bold: true })] : runs(d, c) })] })),
-    })),
+export function checkStructure(blocks: Block[]): string[] {
+  const errors = structureErrors(blocks);
+  if (errors.length) throw new Error(`The document is not accessible, so the tool did not write it:\n- ${errors.join("\n- ")}`);
+  return structureWarnings(blocks);
+}
+
+export const wroteText = (path: string, warnings: string[]) =>
+  `Wrote ${path}${warnings.length ? `\nAccessibility warnings (fix them, then write the file again):\n- ${warnings.join("\n- ")}` : ""}`;
+
+function docxRuns(d: Docx, runs: Run[]): DocxRun[] {
+  return runs.map((r) => {
+    const run = new d.TextRun({ text: r.text, bold: r.bold, italics: r.italic, font: r.code ? "Consolas" : undefined, style: r.link ? "Hyperlink" : undefined });
+    return r.link ? new d.ExternalHyperlink({ link: r.link, children: [run] }) : run;
   });
 }
 
-function markdownToDocx(d: Docx, markdown: string): (DocxParagraph | DocxTable)[] {
-  const headings = [d.HeadingLevel.HEADING_1, d.HeadingLevel.HEADING_2, d.HeadingLevel.HEADING_3];
+const HEADINGS = ["HEADING_1", "HEADING_2", "HEADING_3", "HEADING_4", "HEADING_5", "HEADING_6"] as const;
+// Width of the text on a Letter page with 1 inch margins, in pixels at 96 to the inch.
+const DOCX_TEXT_WIDTH = 624;
+
+function blocksToDocx(d: Docx, blocks: Block[], cwd: string): (DocxParagraph | DocxTable)[] {
   const out: (DocxParagraph | DocxTable)[] = [];
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-  let para: string[] = [];
-  const flush = () => {
-    if (para.length) out.push(new d.Paragraph({ children: runs(d, para.join(" ")), spacing: { after: 160 } }));
-    para = [];
-  };
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const h = /^(#{1,3})\s+(.*)$/.exec(line);
-    if (h) { flush(); out.push(new d.Paragraph({ heading: headings[h[1].length - 1], children: runs(d, h[2]) })); continue; }
-    const b = /^\s*[-*]\s+(.*)$/.exec(line);
-    if (b) { flush(); out.push(new d.Paragraph({ bullet: { level: 0 }, children: runs(d, b[1]) })); continue; }
-    // Numbered items keep their number as text, so no numbering setup is necessary.
-    const n = /^\s*(\d+)[.)]\s+(.*)$/.exec(line);
-    if (n) { flush(); out.push(new d.Paragraph({ indent: { left: 360, hanging: 360 }, children: [new d.TextRun(`${n[1]}.\t`), ...runs(d, n[2])] })); continue; }
-    if (line.trim().startsWith("|")) {
-      flush();
-      const rows: string[] = [];
-      while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(lines[i++]);
-      i--;
-      out.push(table(d, rows), new d.Paragraph({ children: [] }));
-      continue;
+  let lists = 0;
+  for (const b of blocks) {
+    if (b.type === "heading") out.push(new d.Paragraph({ heading: d.HeadingLevel[HEADINGS[b.level - 1]], children: docxRuns(d, b.runs) }));
+    else if (b.type === "paragraph") out.push(new d.Paragraph({ children: docxRuns(d, b.runs), spacing: { after: 160 } }));
+    else if (b.type === "list") {
+      // Word lists, not typed bullets or numbers: screen readers say "list, 3 items". A new instance starts at 1.
+      const instance = ++lists;
+      for (const item of b.items) {
+        out.push(new d.Paragraph({
+          children: docxRuns(d, item),
+          ...(b.ordered ? { numbering: { reference: "numbers", level: 0, instance } } : { bullet: { level: 0 } }),
+        }));
+      }
+      out.push(new d.Paragraph({ children: [], spacing: { after: 80 } }));
+    } else if (b.type === "table") {
+      out.push(new d.Table({
+        width: { size: 100, type: d.WidthType.PERCENTAGE },
+        rows: b.rows.map((cells, i) => new d.TableRow({
+          // The first row repeats on each page, and Word marks it as the header row for screen readers.
+          tableHeader: i === 0,
+          children: cells.map((c) => new d.TableCell({ children: [new d.Paragraph({ children: docxRuns(d, i === 0 ? c.map((r) => ({ ...r, bold: true })) : c) })] })),
+        })),
+      }), new d.Paragraph({ children: [] }));
+    } else if (b.type === "image") {
+      const img = loadImage(cwd, b.path);
+      const scale = Math.min(1, DOCX_TEXT_WIDTH / img.width);
+      out.push(new d.Paragraph({
+        children: [new d.ImageRun({
+          type: img.type,
+          data: img.data,
+          transformation: { width: Math.round(img.width * scale), height: Math.round(img.height * scale) },
+          altText: { name: basename(b.path), title: b.alt, description: b.alt },
+        })],
+        spacing: { after: 160 },
+      }));
+    } else if (b.type === "code") {
+      const lines = b.text.split("\n");
+      out.push(new d.Paragraph({
+        children: lines.map((l, i) => new d.TextRun({ text: l, font: "Consolas", break: i ? 1 : undefined })),
+        spacing: { after: 160 },
+      }));
     }
-    if (line.trim() === "") { flush(); continue; }
-    para.push(line.trim());
   }
-  flush();
   return out;
 }
 
@@ -186,17 +225,31 @@ export function registerDocumentTools(pi: ExtensionAPI) {
     name: "docx_write",
     label: "Word write",
     description:
-      "Write a Word .docx file from simple Markdown. Replaces the file if it exists. To change a document, read it with docx_read, then write all of it again. " +
-      "Images, comments, tracked changes, and other formatting in the old file are lost.",
-    promptSnippet: "Write Word .docx files from Markdown (use this, not Python)",
-    parameters: DOCX_WRITE_PARAMS,
+      "Write an accessible Word .docx file from simple Markdown: real headings, lists, table header rows, image alt text, the title, and the language. " +
+      "Replaces the file if it exists. To change a document, read it with docx_read, then write all of it again. " +
+      "Comments, tracked changes, and other formatting in the old file are lost.",
+    promptSnippet: "Write accessible Word .docx files from Markdown (use this, not Python)",
+    parameters: WRITE_PARAMS(".docx"),
     async execute(_id, params, _signal, _onUpdate, ctx) {
+      const blocks = parseMarkdown(params.markdown);
+      const warnings = checkStructure(blocks);
       const d = await loadDocx();
-      const doc = new d.Document({ sections: [{ children: markdownToDocx(d, params.markdown) }] });
+      const lang = params.lang || DEFAULT_LANG;
+      const doc = new d.Document({
+        title: params.title,
+        styles: { default: { document: { run: { language: { value: lang } } } } },
+        numbering: {
+          config: [{
+            reference: "numbers",
+            levels: [{ level: 0, format: d.LevelFormat.DECIMAL, text: "%1.", alignment: d.AlignmentType.START, style: { paragraph: { indent: { left: 720, hanging: 360 } } } }],
+          }],
+        },
+        sections: [{ children: blocksToDocx(d, blocks, ctx.cwd) }],
+      });
       const path = fullPath(ctx.cwd, params.path);
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, await d.Packer.toBuffer(doc));
-      return { content: [{ type: "text", text: `Wrote ${params.path}` }], details: {} };
+      return { content: [{ type: "text", text: wroteText(params.path, warnings) }], details: { warnings } };
     },
   });
 }

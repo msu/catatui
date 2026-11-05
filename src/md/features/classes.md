@@ -2,6 +2,8 @@
 
 catai shows the student's classes this term, with mock data. It uses the same mock student as advising.
 
+- Only in demo mode: start the app with `--demo-mode` (for example `npx electron . --demo-mode` in `desktop/`). Without it, the app has no Advising or Classes items, refuses to open these folders, hides their sessions from the history lists, and does not load `open_view`. See [desktop.md](desktop.md), "Demo mode".
+
 - In the desktop app, open the session menu and click Classes, or use File > Classes (Cmd+Shift+C).
 - Classes (one session, `Documents/catai/Classes`): all classes, the work due soon, the term dates, and the grades.
   - The left panel lists the classes (code, title, grade so far, next work due). A click opens the class chat.

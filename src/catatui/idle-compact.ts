@@ -2,6 +2,7 @@
 // See src/md/features/idle-compact.md.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { readSettings } from "./settings.ts";
 
 export const IDLE_DEFAULTS = { enabled: true, minutes: 10, percent: 50 };
 // The status while the compaction runs. The desktop app reads this key: a new prompt stops the compaction first.
@@ -9,7 +10,7 @@ export const IDLE_STATUS = "idle-compact";
 
 export type IdleSettings = typeof IDLE_DEFAULTS;
 
-// "idleCompaction" in settings.json: false, or { enabled, minutes, percent }. A bad value uses the default.
+// "idleCompaction" in catatui.json (settings.ts): false, or { enabled, minutes, percent }. A bad value uses the default.
 export function idleSettings(raw: unknown): IdleSettings {
   if (raw === false) return { ...IDLE_DEFAULTS, enabled: false };
   const s = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -56,7 +57,8 @@ export function registerIdleCompact(pi: ExtensionAPI) {
   // agent_settled: pi does not continue on its own. Start the timer from there.
   pi.on("agent_settled", async (_event, ctx) => {
     stop();
-    const s = idleSettings((pi.getSettings() as Record<string, unknown> | undefined)?.idleCompaction);
+    // Read the file each time: the desktop app can change the setting while catatui runs.
+    const s = idleSettings(readSettings().idleCompaction);
     if (!s.enabled) return;
     timer = setTimeout(() => compactIfFull(ctx, s), s.minutes * 60_000);
     // The timer does not keep catatui running (for example in print mode).

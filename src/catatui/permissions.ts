@@ -3,6 +3,9 @@
 //   Mode (one of):
 //   - ask:  ask before each file change, bash command, and http request. This is the default.
 //   - plan: the model writes a plan to PLAN_FILE and changes no other files. Block http requests other than GET.
+//   - auto: ask only when an action can do damage. A CatChat model (judge.ts) decides the commands that the
+//           rules do not decide. Needs the sandbox: with the sandbox off, auto asks like ask mode for commands.
+//           See src/md/features/auto-mode.md.
 //   - yolo: ask nothing.
 //   Flags (on or off):
 //   - ta:      teaching assistant. Block file changes and http requests other than GET, in all modes.
@@ -10,9 +13,9 @@
 //              Students can turn it off, so it is a learning aid, not an integrity control.
 //   - sandbox: sandbox.ts
 //   - ste:     Simplified Technical English, ste.ts
-// "/mode ask|plan|yolo" sets the mode. "/mode ta|sandbox|ste [on|off]" turns an option on or off. Tab completes these words.
+// "/mode ask|plan|auto|yolo" sets the mode. "/mode ta|sandbox|ste [on|off]" turns an option on or off. Tab completes these words.
 // In RPC mode (the desktop app), the status "catatui" has the mode and options as JSON, for the app controls.
-// In ask and plan mode, risky commands and changes outside the project folder always ask.
+// In ask, plan, and auto mode, risky commands and changes outside the project folder always ask.
 // The git remote tools (clone, pull, push) always ask, also in yolo mode: they send to or get from GitHub.
 // The mode, ta, and the "do not ask again" choices last for one session only.
 
@@ -20,16 +23,19 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { isAbsolute, relative, resolve } from "node:path";
 import { CHANGE_TOOLS, GIT_CHANGE_TOOLS, GIT_REMOTE_TOOLS, toolPaths } from "./config.ts";
+import { type JudgeInput, type Judgment, judge as defaultJudge, logJudgment } from "./judge.ts";
 import { programName } from "./run.ts";
 import { sandboxOn, setSandbox } from "./sandbox.ts";
 import { setSte, steOn } from "./ste.ts";
+import { readCredential } from "./store.ts";
 
-type Mode = "ask" | "plan" | "yolo";
-const MODES: Mode[] = ["ask", "plan", "yolo"];
+type Mode = "ask" | "plan" | "auto" | "yolo";
+const MODES: Mode[] = ["ask", "plan", "auto", "yolo"];
 
 const MODE_HELP: Record<Mode, string> = {
   ask: "The agent will ask before each file change, command and http request.",
   plan: "Planning mode. The model will write a plan file for work but make no changes.",
+  auto: "The agent will ask only when an action can do damage. A safety check decides. Needs the sandbox.",
   yolo: "The agent will make changes without asking you to approve them.",
 };
 
@@ -51,12 +57,24 @@ const RUNNERS = ["npx", "sh", "bash", "zsh", "eval", "xargs", "env", "python", "
 
 // These always ask, and the student cannot allow them for the whole session.
 const RISKY = [
-  /\bgit\s+(commit|push|reset|rebase|clean|checkout\s+--|restore)\b/,
+  // "checkout --" has no \b after "--", so it is a separate pattern.
+  /\bgit\s+((commit|push|reset|rebase|clean|restore)\b|checkout\s+--(\s|$))/,
   /\brm\s/,
   /\bsudo\b/,
   /\b(chmod|chown)\b/,
   /\b(curl|wget)\b.*\|\s*(sh|bash|zsh)\b/,
 ];
+
+// A command that always asks, also in auto mode (the RISKY list).
+export const alwaysAsk = (command: string) => RISKY.some((re) => re.test(command));
+
+// A bash command that the student cannot allow for the session: a risky command, a runner program, or a chain.
+// A chain (for example "ls && python x.py") can hide a second command after an allowed first word.
+// scripts/auto-eval.ts uses this as the "rules only" version.
+export function riskyCommand(command: string): boolean {
+  const first = command.trim().split(/\s+/)[0] ?? "";
+  return alwaysAsk(command) || RUNNERS.includes(first) || /[;&|`]|\$\(/.test(command);
+}
 
 const PLAN_CONTEXT = `[PLAN MODE]
 The student turned on plan mode. Do not change project files.
@@ -80,20 +98,50 @@ const PLAN_BLOCK = `Plan mode is on. Do not change project files. Write the plan
 const ALLOW_EDITS = "Yes, and do not ask again for file changes in this project this session";
 const ALLOW_COMMITS = "Yes, and do not ask again for commits in this project this session";
 
+// The mode and ta are for the process, not for one session. pi loads the extension again for a new session, a
+// resume, or a fork (session replacement). With these in the function, a new conversation went back to "ask".
+// The sandbox (sandbox.ts) and ste (ste.ts) also keep their state for the process.
+let mode: Mode = "ask";
+let ta = false;
+
+// The auto mode judge. Tests set a fake judge.
+type JudgeFn = (input: JudgeInput, key: string) => Promise<Judgment>;
+let judgeFn: JudgeFn = defaultJudge;
+export function setJudge(fn: JudgeFn | undefined) {
+  judgeFn = fn ?? defaultJudge;
+}
+
 export function registerPermissions(pi: ExtensionAPI) {
-  let mode: Mode = "ask";
-  let ta = false;
   let editsAllowed = false;
   let commitsAllowed = false;
   // First words of bash commands that the student allowed for this session, for example "npm".
   const allowedCommands = new Set<string>();
   // Hosts that the student allowed for GET requests from the http tool this session.
   const allowedHosts = new Set<string>();
+  // The last student message, for the judge: it shows if the command matches the request.
+  let lastRequest: string | undefined;
+
+  // Auto mode for a command or an http request: "allow", or the reason to ask (the first line of the dialog).
+  // Not auto mode: "". The sandbox off, no sign-in, or a judge error: ask. Never allow on an error.
+  const autoCheck = async (ctx: ExtensionContext, tool: string, command: string): Promise<string> => {
+    if (mode !== "auto") return "";
+    if (tool !== "http" && alwaysAsk(command)) return "Auto mode always asks before this command.";
+    if (!sandboxOn()) return "The sandbox is off, so auto mode asks.";
+    const key = readCredential()?.access;
+    if (!key) return "There is no CatChat sign-in, so auto mode asks.";
+    const input: JudgeInput = { tool, command, request: lastRequest, project: ctx.cwd, sandbox: true };
+    const j = await judgeFn(input, key);
+    logJudgment(input, j);
+    if (j.allow) return "allow";
+    return j.error ? "The safety check did not answer, so auto mode asks." : "The safety check wants you to look at this first.";
+  };
+  const withReason = (reason: string, text: string) => (reason ? `${reason}\n\n${text}` : text);
 
   const showStatus = (ctx: ExtensionContext) => {
     const t = ctx.ui.theme;
     const color = mode === "ask" ? "muted" : mode === "yolo" ? "warning" : "accent";
-    ctx.ui.setStatus("mode", `${t.fg("dim", "mode:")} ${t.fg(color, mode)}`);
+    const shown = mode === "auto" && !sandboxOn() ? "auto (sandbox off: asks)" : mode;
+    ctx.ui.setStatus("mode", `${t.fg("dim", "mode:")} ${t.fg(color, shown)}`);
     ctx.ui.setStatus("ta", ta ? `${t.fg("dim", "ta:")} ${t.fg("accent", "on")}` : undefined);
     if (ctx.mode === "rpc") {
       const state = { mode, ta, sandbox: sandboxOn(), ste: steOn(), modes: MODES, flags: FLAGS, help: { ...MODE_HELP, ...FLAG_HELP } };
@@ -158,7 +206,7 @@ export function registerPermissions(pi: ExtensionAPI) {
 
   const WORDS = [...MODES, ...FLAGS];
   pi.registerCommand("mode", {
-    description: "Pick the mode (ask, plan, yolo), and turn ta, the sandbox, and Simplified Technical English on or off",
+    description: "Pick the mode (ask, plan, auto, yolo), and turn ta, the sandbox, and Simplified Technical English on or off",
     getArgumentCompletions: (prefix: string) =>
       WORDS.filter((w) => w.startsWith(prefix.trim())).map((w) => ({
         value: w,
@@ -178,16 +226,18 @@ export function registerPermissions(pi: ExtensionAPI) {
         return;
       }
       if (!MODES.includes(want as Mode)) {
-        ctx.ui.notify(`Unknown word "${want}". Use ask, plan, yolo, ta, sandbox, or ste.`, "error");
+        ctx.ui.notify(`Unknown word "${want}". Use ask, plan, auto, yolo, ta, sandbox, or ste.`, "error");
         return;
       }
       mode = want as Mode;
       showStatus(ctx);
       say(`Mode: ${mode}`, mode === "yolo" ? "warning" : "info");
+      if (mode === "auto" && !sandboxOn()) say("The sandbox is off, so auto mode asks before each command. Turn on the sandbox with /mode sandbox on.", "warning");
     },
   });
 
   pi.on("before_agent_start", async (event) => {
+    if (event.messageType === "user") lastRequest = event.prompt;
     if (ta) event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, "teaching-assistant": TA_PROMPT };
     if (event.messageType !== "user" || mode !== "plan") return;
     return { message: { customType: "plan-mode-context", content: PLAN_CONTEXT, display: false } };
@@ -215,7 +265,8 @@ export function registerPermissions(pi: ExtensionAPI) {
         const choice = await ask(ctx, `Put back ${paths} to the last commit? The changes since the last commit will be lost.`, ["Yes", "No"]);
         return choice === "Yes" ? undefined : { block: true, reason: "The student did not allow this git command." };
       }
-      if (commitsAllowed) return;
+      // A commit or a new repository loses no work.
+      if (commitsAllowed || mode === "auto") return;
       const what = event.toolName === "git_init" ? "Make the project folder a git repository?" : `Commit the changes?\n\n  ${event.input.message ?? ""}`;
       const choice = await ask(ctx, what, event.toolName === "git_commit" ? ["Yes", ALLOW_COMMITS, "No"] : ["Yes", "No"]);
       if (choice === ALLOW_COMMITS) commitsAllowed = true;
@@ -228,7 +279,8 @@ export function registerPermissions(pi: ExtensionAPI) {
       if (mode === "plan") return rels.length && rels.every((r) => r === PLAN_FILE) ? undefined : { block: true, reason: PLAN_BLOCK };
       const inProject = rels.every((rel) => rel !== "" && !rel.startsWith("..") && !isAbsolute(rel));
       // delete always asks: a file in a folder can be outside the undo limits.
-      if (editsAllowed && inProject && event.toolName !== "delete") return;
+      // Auto mode allows the other changes in the project: /undo can roll them back.
+      if ((editsAllowed || mode === "auto") && inProject && event.toolName !== "delete") return;
       const where = `${paths.join(" -> ")}${inProject ? "" : " (outside the project folder)"}`;
       const choice = await ask(ctx, `Allow ${event.toolName} ${where}?`, inProject && event.toolName !== "delete" ? ["Yes", ALLOW_EDITS, "No"] : ["Yes", "No"]);
       if (choice === ALLOW_EDITS) editsAllowed = true;
@@ -243,8 +295,10 @@ export function registerPermissions(pi: ExtensionAPI) {
       const command = [String(event.input.program ?? ""), ...args].join(" ");
       const risky = RISKY.some((re) => re.test(command)) || RUNNERS.includes(name);
       if (!risky && allowedCommands.has(name)) return;
+      const reason = await autoCheck(ctx, "run", command);
+      if (reason === "allow") return;
       const always = `Yes, and do not ask again for "${name}" this session`;
-      const choice = await ask(ctx, `Run this program?\n\n  ${command}`, risky ? ["Yes", "No"] : ["Yes", always, "No"]);
+      const choice = await ask(ctx, withReason(reason, `Run this program?\n\n  ${command}`), risky ? ["Yes", "No"] : ["Yes", always, "No"]);
       if (choice === always) allowedCommands.add(name);
       return choice?.startsWith("Yes") ? undefined : { block: true, reason: "The student did not allow this program." };
     }
@@ -260,24 +314,28 @@ export function registerPermissions(pi: ExtensionAPI) {
       }
       const read = isRead(method);
       if (mode === "plan" && !read) return { block: true, reason: `${PLAN_BLOCK} Send only GET requests.` };
-      if (read && allowedHosts.has(host)) return;
+      if (read && (allowedHosts.has(host) || mode === "auto")) return;
+      const reason = read ? "" : await autoCheck(ctx, "http", `${method} ${url}`);
+      if (reason === "allow") return;
       const always = `Yes, and do not ask again for GET requests to ${host} this session`;
-      const choice = await ask(ctx, `Send this request?\n\n  ${method} ${url}`, read ? ["Yes", always, "No"] : ["Yes", "No"]);
+      const choice = await ask(ctx, withReason(reason, `Send this request?\n\n  ${method} ${url}`), read ? ["Yes", always, "No"] : ["Yes", "No"]);
       if (choice === always) allowedHosts.add(host);
       return choice?.startsWith("Yes") ? undefined : { block: true, reason: "The student did not allow this request." };
     }
 
     // "server start" (web.ts) runs a command in the background, so it asks like bash.
     const serverStart = event.toolName === "server" && event.input.action === "start";
-    if (event.toolName === "bash" || serverStart) {
+    // powershell is the shell tool on Windows (windows.ts), so it asks like bash.
+    if (event.toolName === "bash" || event.toolName === "powershell" || serverStart) {
       const command = String(event.input.command ?? "");
       const first = command.trim().split(/\s+/)[0] ?? "";
-      // A chain (for example "ls && python x.py") can hide a second command after an allowed first word.
-      const risky = RISKY.some((re) => re.test(command)) || RUNNERS.includes(first) || /[;&|`]|\$\(/.test(command);
+      const risky = riskyCommand(command);
       if (!risky && allowedCommands.has(first)) return;
+      const reason = await autoCheck(ctx, serverStart ? "bash" : event.toolName, command);
+      if (reason === "allow") return;
       const always = `Yes, and do not ask again for "${first}" commands this session`;
       const question = serverStart ? "Run this command in the background (server)?" : "Run this command?";
-      const choice = await ask(ctx, `${question}\n\n  ${command}`, risky ? ["Yes", "No"] : ["Yes", always, "No"]);
+      const choice = await ask(ctx, withReason(reason, `${question}\n\n  ${command}`), risky ? ["Yes", "No"] : ["Yes", always, "No"]);
       if (choice === always) allowedCommands.add(first);
       return choice?.startsWith("Yes") ? undefined : { block: true, reason: "The student did not allow this command." };
     }

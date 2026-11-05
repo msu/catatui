@@ -3,15 +3,23 @@ import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { registerPermissions } from "../src/catatui/permissions.ts";
+import { registerPermissions, setJudge } from "../src/catatui/permissions.ts";
+import { setSandbox } from "../src/catatui/sandbox.ts";
+import { saveCredential } from "../src/catatui/store.ts";
 import { fakeCtx, fakePi } from "./fake-pi.ts";
 
 const project = realpathSync(mkdtempSync(join(tmpdir(), "catatui-perm-")));
+// The auto mode tests need a sign-in, and the judge writes a log. Keep both out of the real ~/.catatui.
+process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "catatui-perm-agent-"));
 
 // A new permissions state for each test, so "do not ask again" choices do not leak between tests.
+// The mode and ta are for the process (they stay after a new session), so set them back to ask and off here.
 function setup(answers: (string | undefined)[] = [], opts: { hasUI?: boolean } = {}) {
   const { pi, fire, commands } = fakePi();
   registerPermissions(pi);
+  const quiet = fakeCtx(project).ctx;
+  commands.get("mode").handler("ask", quiet);
+  commands.get("mode").handler("ta off", quiet);
   const c = fakeCtx(project, { answers, hasUI: opts.hasUI });
   const call = (toolName: string, input: Record<string, unknown>) => fire("tool_call", { toolName, input }, c.ctx);
   const mode = (args: string) => commands.get("mode").handler(args, c.ctx);
@@ -135,6 +143,17 @@ test("/mode: an unknown word is an error", async () => {
   assert.match(s.notices.at(-1)?.text ?? "", /ta on/);
 });
 
+test("a new session (pi loads the extension again) keeps the mode and ta", async () => {
+  const s = setup();
+  await s.mode("yolo");
+  await s.mode("ta on");
+  const { pi, commands } = fakePi();
+  registerPermissions(pi);
+  const c = fakeCtx(project, { mode: "rpc" });
+  await commands.get("mode").handler("", c.ctx);
+  assert.match(c.notices.at(-1)?.text ?? "", /Mode: yolo. ta: on./);
+});
+
 test("/mode in RPC: the status has the mode and options as JSON, and no chat notice", async () => {
   const { pi, commands } = fakePi();
   registerPermissions(pi);
@@ -142,7 +161,7 @@ test("/mode in RPC: the status has the mode and options as JSON, and no chat not
   await commands.get("mode").handler("plan", c.ctx);
   const state = JSON.parse(c.status.catatui ?? "{}");
   assert.equal(state.mode, "plan");
-  assert.deepEqual(state.modes, ["ask", "plan", "yolo"]);
+  assert.deepEqual(state.modes, ["ask", "plan", "auto", "yolo"]);
   assert.equal(c.notices.length, 0);
 });
 
@@ -192,4 +211,83 @@ test("file tools: move asks with both paths; delete always asks; outside paths n
   assert.equal((await s.call("delete", { path: "x" })).block, true);
   assert.equal((await s.call("copy", { from: "a.txt", to: "../b.txt" })).block, true);
   assert.match(s.asked[2].title, /outside the project folder/);
+});
+
+// ---- auto mode
+
+// A fake judge: it allows the commands in "safe", and records each input.
+function autoSetup(answers: (string | undefined)[] = [], safe: string[] = [], opts: { error?: boolean } = {}) {
+  saveCredential({ access: "test-key", expires: Date.now() + 86_400_000 });
+  const judged: { tool: string; command: string; request?: string }[] = [];
+  setJudge(async (input) => {
+    judged.push(input);
+    return opts.error ? { allow: false, ms: 1, error: "timeout" } : { allow: safe.includes(input.command), answer: "x", ms: 1 };
+  });
+  const s = setup(answers);
+  setSandbox(fakeCtx(project).ctx, true);
+  s.mode("auto");
+  return { ...s, judged };
+}
+
+test("auto: changes in the project, commits, and GET requests do not ask", async () => {
+  const s = autoSetup();
+  assert.equal(await s.call("write", { path: "a.txt" }), undefined);
+  assert.equal(await s.call("move", { from: "a.txt", to: "b/a.txt" }), undefined);
+  assert.equal(await s.call("git_commit", { message: "x" }), undefined);
+  assert.equal(await s.call("git_init", {}), undefined);
+  assert.equal(await s.call("http", { method: "GET", url: "https://example.com/" }), undefined);
+  assert.equal(s.asked.length, 0);
+  assert.equal(s.judged.length, 0);
+});
+
+test("auto: delete, restore, outside paths, and remote git always ask", async () => {
+  const s = autoSetup(["No", "No", "No", "No"]);
+  assert.equal((await s.call("delete", { path: "a.txt" })).block, true);
+  assert.equal((await s.call("git_restore", { paths: ["a.txt"] })).block, true);
+  assert.equal((await s.call("write", { path: "../x.txt" })).block, true);
+  assert.equal((await s.call("git_push", {})).block, true);
+  assert.equal(s.asked.length, 4);
+  assert.equal(s.judged.length, 0);
+});
+
+test("auto: the judge decides commands; the always-ask list does not go to the judge", async () => {
+  const s = autoSetup(["No", "No"], ["npm test", "python3 game.py"]);
+  await s.fire("before_agent_start", { messageType: "user", prompt: "run the tests", systemPromptOptions: {} }, s.ctx);
+  assert.equal(await s.call("bash", { command: "npm test" }), undefined);
+  assert.equal(await s.call("run", { program: "python3", args: ["game.py"] }), undefined);
+  assert.equal(s.judged[0].request, "run the tests");
+  // The judge says ask.
+  assert.equal((await s.call("bash", { command: "npm install -g typescript" })).block, true);
+  assert.match(s.asked[0].title, /safety check wants you to look/);
+  // rm is on the always-ask list.
+  assert.equal((await s.call("bash", { command: "rm -rf build" })).block, true);
+  assert.match(s.asked[1].title, /always asks/);
+  assert.equal(s.judged.length, 3);
+});
+
+test("auto: a judge error asks; the sandbox off asks; no sign-in asks", async () => {
+  const s = autoSetup(["No"], [], { error: true });
+  assert.equal((await s.call("bash", { command: "ls" })).block, true);
+  assert.match(s.asked[0].title, /did not answer/);
+
+  const t = autoSetup(["No"], ["ls"]);
+  setSandbox(fakeCtx(project).ctx, false);
+  assert.equal((await t.call("bash", { command: "ls" })).block, true);
+  assert.match(t.asked[0].title, /sandbox is off/);
+  assert.equal(t.judged.length, 0);
+  setSandbox(fakeCtx(project).ctx, true);
+});
+
+test("auto: a POST request goes to the judge", async () => {
+  const s = autoSetup(["No"], ["POST http://localhost:3000/api"]);
+  assert.equal(await s.call("http", { method: "POST", url: "http://localhost:3000/api" }), undefined);
+  assert.equal((await s.call("http", { method: "DELETE", url: "https://api.example.com/x" })).block, true);
+  assert.equal(s.judged.length, 2);
+});
+
+test("ask mode: powershell asks like bash", async () => {
+  setJudge(undefined);
+  const s = setup(["No"]);
+  assert.equal((await s.call("powershell", { command: "Remove-Item -Recurse x" })).block, true);
+  assert.equal(s.asked.length, 1);
 });

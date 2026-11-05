@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld("catatui", {
   // The side panel: a whole file, and a project file as a file:// URL for the web preview.
   fileRead: (path) => ipcRenderer.invoke("file-read", path),
   suggest: (text, context) => ipcRenderer.invoke("suggest", text, context),
+  getSettings: () => ipcRenderer.invoke("get-settings"),
+  setSetting: (key, value) => ipcRenderer.invoke("set-setting", key, value),
   fileUrl: (path) => ipcRenderer.invoke("file-url", path),
   chatMenu: (text) => ipcRenderer.invoke("chat-menu", text),
   newChat: () => ipcRenderer.invoke("new-chat"),

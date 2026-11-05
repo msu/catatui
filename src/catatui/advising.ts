@@ -9,17 +9,18 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "typebox";
+import { advisor, fullName, PROFILE } from "./profile.ts";
 import { WIDGET_PREFIX } from "./widget.ts";
 
 type Grade = "A" | "A-" | "B+" | "B" | "B-" | "C+" | "C" | "C-" | "D+" | "D" | "F" | "IP";
 type Taken = { term: string; course: string; title: string; credits: number; grade: Grade; core?: string };
 
 const STUDENT = {
-  name: "Alex Rivera (mock student)",
-  id: "-12345678",
-  major: "Computer Science, BS",
+  name: `${fullName()} (mock student)`,
+  id: PROFILE.student_id,
+  major: PROFILE.major,
   catalog: "2024-2025",
-  advisor: "Dr. Sam Lee (mock)",
+  advisor: `${advisor().name} (mock)`,
   current_term: "Fall 2026",
   next_term: "Spring 2027",
   registration_opens: "November 10, 2026 (mock date)",
@@ -220,11 +221,12 @@ export function registerAdvising(pi: ExtensionAPI) {
   pi.registerTool({
     name: "advising_transcript",
     label: "Transcript",
-    description: "Get the student's transcript: the student information, all courses by term with grades, the GPA, and the credits.",
+    description: "Get the student's transcript: the student information (standing, advisor, department chair, and dean with email, office, and office hours), all courses by term with grades, the GPA, and the credits.",
     promptSnippet: "Get the student's transcript (courses, grades, GPA, credits)",
     parameters: Type.Object({}),
     async execute() {
-      return json({ student: STUDENT, ...gpa(), ...earnedCredits(), courses: TRANSCRIPT });
+      const student = { ...STUDENT, standing: PROFILE.standing, academic_standing: PROFILE.academic_standing, contacts: PROFILE.contacts };
+      return json({ student, ...gpa(), ...earnedCredits(), courses: TRANSCRIPT });
     },
   });
 

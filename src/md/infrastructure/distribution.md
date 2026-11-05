@@ -30,3 +30,13 @@ catatui is on GitHub (`msu/catatui`). It is not on the npm registry. The install
 - On Windows, `catatui --update` shows the install command only, because the script cannot replace `node.exe` while catatui runs.
 - raw.githubusercontent.com keeps a file in its cache for up to 5 minutes, so students can see a new version up to 5 minutes after a push.
 - The check does not use the GitHub API. Without a login, the API allows 60 requests per hour from one IP address, and students on the campus network can share one IP address.
+
+## Release to the public repository
+
+The development repository is private. The public repository `msu/catatui` has GitHub Pages, the issues, and the release files. The install URLs (codeload tarball, raw `package.json`) use the public repository.
+
+- `scripts/release-files.txt` lists the files that go public. A path that is not on the list stays private.
+- `scripts/release.sh` copies these files from `HEAD` (only committed files) into a temporary clone of the public master. It makes one commit, "Release <version>", and the tag `v<version>`. Without `--push`, it shows the changes and does not push.
+- The script replaces the whole public tree, so a file removed from the list goes away in the public repository.
+- The script stops if the public repository already has the tag. Increase the version in `package.json` first.
+- `docs/catai` and `desktop/` are not on the list. The hidden catai installer downloads `desktop/` from the public tarball, so it does not work while `desktop/` is private.

@@ -1,0 +1,25 @@
+# The files that go to the public repository (msu/catatui). scripts/release.sh reads this list.
+# One git pathspec on each line. A line that starts with "!" removes a path from the paths above it.
+# Add a path here only if it is safe to publish. A path that is not on this list stays in the private repository.
+
+# The catatui package: the installers download the master tarball, and npm installs it.
+package.json
+package-lock.json
+README.md
+.gitignore
+bin
+src/catatui
+skills
+themes
+assets/bobcat-head.png
+
+# Copies of catatui 0.5.2 and older download these forwarders.
+install.sh
+install.ps1
+
+# GitHub Pages (catatui.cs.montana.edu).
+docs
+# The hidden catai installer. It downloads desktop/ from the public master tarball, so it stops working
+# when desktop/ is not public. Keep both lines removed, or remove the "!" from both.
+!docs/catai
+# desktop

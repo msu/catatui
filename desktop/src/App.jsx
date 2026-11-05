@@ -1,6 +1,6 @@
 import { structuredPatch } from "diff";
 import { marked } from "marked";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useReducer, useRef, useState } from "react";
 import logo from "./bobcat.png";
 import { FileIcon, FolderIcon } from "./icons.jsx";
 import { PlanCard, Widget } from "./widgets.jsx";
@@ -298,10 +298,21 @@ export function App() {
     const url = await api.fileUrl(path);
     if (url) openSide({ type: "web", url, at: Date.now() });
   }
+  // The file actions (FileButtons, the tree menu): Launch, Open, View, and Diff.
+  const fileActions = {
+    canLaunch: (p) => launchable(p, tree.webApp),
+    canDiff: (p) => !!tree.git && ["M", "R"].includes(tree.status?.[p]) && isTextPath(p),
+    // An HTML file opens in the web preview. The entry file of a server app opens the preview with "Start".
+    launch: (p) => (/\.html?$/i.test(p) ? previewFile(p) : openSide({ type: "web" })),
+    open: (p) => api.openPath(p),
+    view: (p) => openSide({ type: "file", path: p }),
+    diff: (p) => setViewing(p),
+  };
   // The web preview reloads when the agent is done (it can have changed the files) and after a file change.
   const [reloadTick, setReloadTick] = useState(0);
   // The "History" window: all chats and projects, with a search.
   const [history, setHistory] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Link a project to a class: the folder picker, then project.json in the class folder.
   const [linking, setLinking] = useState(false);
   const [linkTick, setLinkTick] = useState(0);
@@ -396,6 +407,7 @@ export function App() {
       case "advising": return goAdvising();
       case "classes": return goClasses();
       case "history": return setHistory(true);
+      case "settings": return setSettingsOpen(true);
       case "preview": return tree.webApp && openSide({ type: "web" });
       case "all-projects": return setPhase("projects");
       case "open": return openProject(arg).then((err) => err && local((s) => notice(s, "error", err)));
@@ -450,7 +462,7 @@ export function App() {
           onNewChatHere={newChat} onAdvising={goAdvising} onClasses={() => goClasses()} onOpen={openAnySession} onAllProjects={() => setPhase("projects")} onHistory={() => setHistory(true)} />
         <div className="actions">
           {Object.entries(state.status).filter(([k]) => !CONTROLLED.includes(k)).map(([k, v]) => <span key={k} className="chip">{plain(v)}</span>)}
-          <AccountMenu user={info.user} expiryDays={info.expiryDays} onSignOut={signOut} />
+          <AccountMenu user={info.user} expiryDays={info.expiryDays} profile={info.profile} onSignOut={signOut} />
         </div>
       </header>
 
@@ -458,8 +470,7 @@ export function App() {
         <span className="pathbar-label">Project Directory:</span>
         <FolderIcon open />
         <button className="project" title={`${info.project}\nClick to open a different project`} onClick={() => setPhase("projects")}><bdi>{info.project}</bdi></button>
-        {tree.webApp && <button className="btn small preview-btn" onClick={() => openSide({ type: "web" })}
-          title={tree.webApp.server ? `Preview this ${tree.webApp.server.tool} app next to the chat` : "Preview the web pages of this project next to the chat"}><GlobeIcon /> Preview</button>}
+        <span className="pathbar-label conversation-label">Conversation:</span>
         <ConversationMenu project={info.project} busy={state.busy} tick={state.items.length} onNew={newChat} onOpen={openSession} />
       </div>}
 
@@ -470,6 +481,7 @@ export function App() {
         </div>
       )}
 
+      <FileActions.Provider value={fileActions}>
       <div className="body">
         {info.kind === "advising" && <AdvisingTasks busy={state.busy} onAsk={send} />}
         {(info.kind === "classes" || info.kind === "class") && (
@@ -507,7 +519,9 @@ export function App() {
             onStartServer={(sv) => send(`Start the web app of this project with the server tool: ${sv.command}. When it runs, show http://localhost:${sv.port} with show_preview.`)} />
         )}
       </div>
+      </FileActions.Provider>
 
+      {settingsOpen && <SettingsWindow onClose={() => setSettingsOpen(false)} />}
       {history && <HistoryWindow info={info} onClose={() => setHistory(false)} onOpen={(s) => { setHistory(false); openAnySession(s); }} onDeleted={afterDelete} />}
       {linking && <LinkProject code={info.project?.split(/[\\/]/).pop()} onCancel={() => setLinking(false)}
         onPick={async (p) => { setLinking(false); await api.linkClassProject(p); setLinkTick((t) => t + 1); }} />}
@@ -556,16 +570,17 @@ function FileTree({ tree, selected, onSelect, onOpen, onDiff, onRefresh, onColla
     .filter((p) => words.every((w) => p.toLowerCase().includes(w)));
   const expandAll = changedOnly || words.length > 0;
   // The right-click menu (native, from main.js).
+  const actions = useContext(FileActions);
   const menu = async (e, p, folder) => {
     e.preventDefault();
     if (!folder) onSelect(p);
     const m = mark(p);
     const isText = !/\.(xlsx?|docx?|pptx?|pdf|png|jpe?g|gif|webp|ico|zip|gz)$/i.test(p);
-    const picked = await api.fileMenu(p, { folder, canDiff: !folder && isText && (m === "M" || m === "R"), canRollback: !folder && !!m });
+    const picked = await api.fileMenu(p, { folder, canDiff: !folder && isText && (m === "M" || m === "R"), canRollback: !folder && !!m, canLaunch: !folder && !!actions?.canLaunch(p) });
     if (picked === "add") onOpen(p);
     if (picked === "diff") onDiff(p);
-    if (picked === "pin") onPin(p);
-    if (picked === "preview") onPreview(p);
+    if (picked === "view") onPin(p);
+    if (picked === "launch") actions?.launch(p);
   };
   const root = buildTree(paths);
   const hasChange = (prefix) => paths.some((p) => p.startsWith(prefix) && mark(p));
@@ -672,6 +687,7 @@ function FileViewer({ path, tick, onClose }) {
     <aside className="files" tabIndex={-1} onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}>
       <div className="files-head">
         <strong className="file-name" title={path}>{path}</strong>
+        <span className="file-viewer-buttons"><FileButtons path={path} except={["diff"]} /></span>
         <button className="icon-btn" onClick={onClose} title="Close (Escape)" aria-label="Close">×</button>
       </div>
       {file?.error && <p className="error pad">{file.error}</p>}
@@ -1036,8 +1052,7 @@ function FilePane({ path, tick, onAsk, onPreview }) {
       <div className="pane-bar">
         <span className="pane-path" title={path}><bdi>{path}</bdi></span>
         <button className="btn small" onClick={() => onAsk(path)}>Add to chat</button>
-        {/^html?$/.test(ext) && <button className="btn small" onClick={async () => { const u = await api.fileUrl(path); if (u) onPreview(u); }}>Preview</button>}
-        <button className="btn small" onClick={() => api.openPath(path)}>{OPEN_IN[ext] ? `Open in ${OPEN_IN[ext]}` : "Open"}</button>
+        <FileButtons path={path} except={["view"]} />
       </div>
       {f?.error && <p className="error pad">{f.error}</p>}
       {f?.image && <div className="pane-image"><img src={f.image} alt={path} /></div>}
@@ -1059,6 +1074,16 @@ function previewUrl(input) {
   return t;
 }
 
+// The project path of a file:// URL in the preview, or undefined (a server page or a file outside the project).
+function projectFileOf(url) {
+  if (!url?.startsWith("file:") || !PROJECT) return undefined;
+  let p;
+  try { p = decodeURIComponent(new URL(url).pathname); } catch { return undefined; }
+  if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1); // Windows: /C:/x -> C:/x
+  const root = PROJECT.replace(/\\/g, "/").replace(/\/$/, "");
+  return p.startsWith(`${root}/`) ? p.slice(root.length + 1) : undefined;
+}
+
 // The web preview: an embedded browser for a local server or a project HTML file. It reloads after each agent turn.
 function WebPane({ hidden, tab, reloadTick, webApp, onOpen, onStartServer }) {
   const view = useRef(null);
@@ -1066,16 +1091,23 @@ function WebPane({ hidden, tab, reloadTick, webApp, onOpen, onStartServer }) {
   const [failed, setFailed] = useState(undefined);
   const url = tab?.url;
   useEffect(() => { setAddress(url ?? ""); setFailed(undefined); }, [url, tab?.at]);
-  useEffect(() => { if (url && reloadTick) { setFailed(undefined); view.current?.reload?.(); } }, [reloadTick]);
+  // The webview methods throw until the webview gives "dom-ready" (for example a reload just after Launch).
+  // So call them only after dom-ready. A new url makes a new page, so it is not ready again.
+  const ready = useRef(false);
+  const call = (method) => { if (ready.current) view.current?.[method]?.(); };
+  useEffect(() => { if (url && reloadTick) { setFailed(undefined); call("reload"); } }, [reloadTick]);
   useEffect(() => {
     const v = view.current;
+    ready.current = false;
     if (!v) return;
+    const onReady = () => { ready.current = true; };
+    v.addEventListener("dom-ready", onReady);
     const nav = (e) => { setAddress(e.url); setFailed(undefined); };
     const fail = (e) => { if (e.errorCode !== -3 && e.isMainFrame !== false) setFailed(e.errorDescription || "The page did not load."); };
     v.addEventListener("did-navigate", nav);
     v.addEventListener("did-navigate-in-page", nav);
     v.addEventListener("did-fail-load", fail);
-    return () => { v.removeEventListener("did-navigate", nav); v.removeEventListener("did-navigate-in-page", nav); v.removeEventListener("did-fail-load", fail); };
+    return () => { v.removeEventListener("dom-ready", onReady); v.removeEventListener("did-navigate", nav); v.removeEventListener("did-navigate-in-page", nav); v.removeEventListener("did-fail-load", fail); };
   }, [url]);
   // Only this project: a local server (localhost) or a file in the project. Other sites open in the browser.
   async function go(input) {
@@ -1088,12 +1120,13 @@ function WebPane({ hidden, tab, reloadTick, webApp, onOpen, onStartServer }) {
   return (
     <div className="web-pane" hidden={hidden}>
       <div className="pane-bar">
-        <button className="icon-btn" onClick={() => view.current?.goBack?.()} aria-label="Back" title="Back">&larr;</button>
-        <button className="icon-btn" onClick={() => view.current?.goForward?.()} aria-label="Forward" title="Forward">&rarr;</button>
-        <button className="icon-btn" onClick={() => { setFailed(undefined); view.current?.reload?.(); }} aria-label="Reload" title="Reload">&#x21bb;</button>
+        <button className="icon-btn" onClick={() => call("goBack")} aria-label="Back" title="Back">&larr;</button>
+        <button className="icon-btn" onClick={() => call("goForward")} aria-label="Forward" title="Forward">&rarr;</button>
+        <button className="icon-btn" onClick={() => { setFailed(undefined); call("reload"); }} aria-label="Reload" title="Reload">&#x21bb;</button>
         <input className="input-field pane-address" value={address} placeholder={webApp?.server ? `localhost:${webApp.server.port}` : webApp?.pages?.[0] ?? "A project file"} spellCheck={false}
           onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") go(address); }} />
-        {url && <button className="btn small" onClick={() => view.current?.openDevTools?.()} title="Developer tools for the page">Tools</button>}
+        <FileButtons path={projectFileOf(url)} except={["launch"]} />
+        {url && <button className="btn small" onClick={() => call("openDevTools")} title="Developer tools for the page">Tools</button>}
         {url && /^https?:/.test(url) && <button className="btn small" onClick={() => api.openExternal(address || url)} title="Open in the browser">Browser</button>}
       </div>
       {url ? (
@@ -1418,8 +1451,8 @@ function SessionMenu({ info, name, busy, onNewChat, onNewProject, onNewChatHere,
           <div className="session-col">
             {item(<ChatIcon />, "New Chat", "Cmd+N", onNewChat, "menu-strong")}
             {item(<FolderIcon open={false} />, "New Project...", "Cmd+Shift+N", onNewProject, "menu-strong")}
-            {item(<AdvisingIcon />, "Advising", "Cmd+Shift+A", onAdvising, `menu-strong ${kind === "advising" ? "current" : ""}`)}
-            {item(<ClassIcon />, "Classes", "Cmd+Shift+C", onClasses, `menu-strong ${kind === "classes" || kind === "class" ? "current" : ""}`)}
+            {info.demo && item(<AdvisingIcon />, "Advising", "Cmd+Shift+A", onAdvising, `menu-strong ${kind === "advising" ? "current" : ""}`)}
+            {info.demo && item(<ClassIcon />, "Classes", "Cmd+Shift+C", onClasses, `menu-strong ${kind === "classes" || kind === "class" ? "current" : ""}`)}
             <div className="menu-sep" />
             {item(<WindowIcon />, "New Window", "Cmd+Alt+N", () => api.openInWindow(), "menu-strong")}
           </div>
@@ -1461,6 +1494,63 @@ const sessionSub = (s) => `${s.kind === "project" ? `Project ${s.projectName}` :
 
 // "History": a window with all chats and projects. A search, and a filter for the type (all, chats, projects, advising).
 // Up and Down move, Enter opens, Escape closes.
+// Settings (catatui.json, settings.ts). The terminal program uses the same file. A change saves at once, and a
+// running catatui process reads it the next time it needs it.
+function SettingsWindow({ onClose }) {
+  const [s, setS] = useState(undefined);
+  useEffect(() => { api.getSettings().then(setS); }, []);
+  const save = async (key, value) => {
+    await api.setSetting(key, value);
+    setS(await api.getSettings());
+  };
+  const idle = s?.idleCompaction;
+  const setIdle = (patch) => save("idleCompaction", { ...idle, ...patch });
+  // A number field saves on blur or Enter, so a partly typed number does not save.
+  const num = (key, min, max, label) => (
+    <label className="settings-field">
+      <span>{label}</span>
+      <input key={idle[key]} className="input-field" type="number" min={min} max={max} defaultValue={idle[key]} disabled={!idle.enabled}
+        onBlur={(e) => setIdle({ [key]: Number(e.target.value) })}
+        onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
+    </label>
+  );
+  return (
+    <div className="overlay" onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}>
+      <div className="window settings-window" role="dialog" aria-modal="true" aria-label="Settings">
+        <div className="window-title"><img src={logo} alt="" /><span>Settings</span></div>
+        {s === undefined ? <div className="list-empty">Loading...</div> : (
+          <div className="settings-grid">
+            <section>
+              <h3>Suggestions</h3>
+              <label className="settings-check">
+                <input type="checkbox" checked={s.suggest} onChange={(e) => save("suggest", e.target.checked)} />
+                <span>Suggest the rest of my message</span>
+              </label>
+              <p className="muted">While you type, a fast model shows the next words in gray. Press Tab to accept them, or Escape to hide them. Each pause in typing sends one request to CatChat.</p>
+            </section>
+            <section>
+              <h3>Compaction while idle</h3>
+              <label className="settings-check">
+                <input type="checkbox" checked={idle.enabled} onChange={(e) => setIdle({ enabled: e.target.checked })} />
+                <span>Compact the context when I am away</span>
+              </label>
+              <div className="settings-row">
+                {num("minutes", 1, 1440, "After (minutes)")}
+                {num("percent", 1, 100, "When the context is at (%)")}
+              </div>
+              <p className="muted">The next message does not wait for a compaction. A compaction removes detail from older messages.</p>
+            </section>
+          </div>
+        )}
+        <p className="muted settings-note">The catatui terminal program uses the same settings.</p>
+        <div className="window-buttons">
+          <button className="btn primary" autoFocus onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HistoryWindow({ info, onClose, onOpen, onDeleted }) {
   const [sessions, setSessions] = useState(undefined);
   const [err, setErr] = useState("");
@@ -1483,7 +1573,8 @@ function HistoryWindow({ info, onClose, onOpen, onDeleted }) {
     else if (e.key === "ArrowUp") { e.preventDefault(); setSel((i) => Math.max(0, i - 1)); }
     else if (e.key === "Enter" && shown[sel]?.exists) { e.preventDefault(); onOpen(shown[sel]); }
   };
-  const TYPES = [["all", "All"], ["chat", "Chats"], ["project", "Projects"], ["class", "Classes"], ["advising", "Advising"]];
+  // Classes and Advising are only in the demo (--demo-mode).
+  const TYPES = [["all", "All"], ["chat", "Chats"], ["project", "Projects"], ...(info.demo ? [["class", "Classes"], ["advising", "Advising"]] : [])];
   return (
     <div className="overlay" onKeyDown={onKey}>
       <div className="window history-window" role="dialog" aria-modal="true" aria-label="History">
@@ -1512,6 +1603,7 @@ function HistoryWindow({ info, onClose, onOpen, onDeleted }) {
                 }}>
                   <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 6V4.5h4V6M6 6l.8 10h6.4L14 6" /></svg>
                 </button>
+                {s.exists && <NewWindowButton onClick={() => openNew(s)} />}
                 <button className={`history-row ${i === sel ? "selected" : ""} ${s.cwd === info.project ? "current" : ""}`} disabled={!s.exists}
                   title={s.exists ? s.cwd : `${s.cwd} does not exist now`} onMouseEnter={() => setSel(i)} onClick={() => onOpen(s)}>
                   <span className={`history-icon is-${s.kind}`}><KindIcon kind={s.kind} open={false} /></span>
@@ -1720,7 +1812,7 @@ function ModeMenu({ state, onCommand }) {
 }
 
 // One button for the model and the permissions: "Qwen3.8-27B · ask ▾". The menu opens upward.
-// "Permissions" is the app name for the catatui modes (ask, plan, yolo). The CLI command is still /mode.
+// "Permissions" is the app name for the catatui modes (ask, plan, auto, yolo). The CLI command is still /mode.
 const THINKING_NOTES = {
   off: "No thinking. The fastest answers.",
   minimal: "Very little thinking.",
@@ -1788,11 +1880,19 @@ function AgentMenu({ model, busy, onPick, state, onCommand, thinking, onThinking
             {thinking?.levels.length > 1 && (
               <div className="thinking-section">
                     <div className="menu-head">Thinking <span className="menu-head-key">{MAC ? "\u21e7Tab" : "Shift+Tab"}</span></div>
-                    <div className="thinking-levels" role="radiogroup" aria-label="Thinking level">
-                      {thinking.levels.map((l) => (
-                        <button key={l} role="radio" aria-checked={thinking.level === l} className={thinking.level === l ? "on" : ""}
-                          title={THINKING_NOTES[l] ?? l} onClick={() => onThinking(l)}>{l}</button>
-                      ))}
+                    {/* A slider: one stop for each level that the model supports. */}
+                    <div className="thinking-slider">
+                      <input type="range" min={0} max={thinking.levels.length - 1} step={1}
+                        value={Math.max(0, thinking.levels.indexOf(thinking.level))}
+                        aria-label="Thinking level" aria-valuetext={thinking.level}
+                        onChange={(e) => onThinking(thinking.levels[Number(e.target.value)])} />
+                      <div className="thinking-stops">
+                        {thinking.levels.map((l) => (
+                          <button key={l} className={thinking.level === l ? "on" : ""} tabIndex={-1}
+                            title={THINKING_NOTES[l] ?? l} onClick={() => onThinking(l)}>{l}</button>
+                        ))}
+                      </div>
+                      <div className="menu-note">{THINKING_NOTES[thinking.level] ?? ""}</div>
                     </div>
               </div>
             )}
@@ -1940,7 +2040,55 @@ function ModelMenu({ model, busy, onPick }) {
 // CatChat has no real name for the student, only the NetID.
 export const netId = (user) => (user ? user.split("_")[0] : undefined);
 
-function AccountMenu({ user, expiryDays, onSignOut }) {
+const money = (n) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+// The mock student profile (profile.ts), only in the demo. A 2 by 2 grid, so the panel stays short:
+// the contacts and the student (with the sign-ins, in children) on top, the events and the balance below.
+function ProfilePanel({ profile, children }) {
+  const total = profile.balance.reduce((n, c) => n + c.amount, 0);
+  return (
+    <div className="profile">
+      <section className="profile-cell">
+        {profile.contacts.map((c) => (
+          <div key={c.role} className="profile-contact">
+            <div className="menu-head">{c.role}</div>
+            <div className="profile-line"><b>{c.name}</b> <button className="link inline" onClick={() => api.openExternal(`mailto:${c.email}`)}>{c.email}</button></div>
+            <div className="profile-line muted">{c.office}. {c.hours}</div>
+          </div>
+        ))}
+      </section>
+      <section className="profile-cell">
+        <div className="profile-name">{profile.first_name} {profile.last_name}</div>
+        <div className="profile-line">{profile.standing}, {profile.academic_standing}</div>
+        <div className="profile-line muted">{profile.major}, {profile.college}</div>
+        <div className="profile-line muted">Student ID {profile.student_id} <span className="demo-badge">Demo</span></div>
+        {children}
+      </section>
+      <section className="profile-cell">
+        <div className="menu-head">University events</div>
+        {profile.events.map((ev) => (
+          <div key={ev.title} className="profile-event">
+            <span className="profile-date">{ev.date}</span>
+            <span>{ev.title} <span className="muted small">{ev.place}</span></span>
+          </div>
+        ))}
+      </section>
+      <section className="profile-cell">
+        <div className="menu-head">Account balance</div>
+        <div className={`profile-total ${total > 0 ? "due" : ""}`}>{total > 0 ? `${money(total)} due` : "No balance due"}</div>
+        {profile.balance.map((b) => (
+          <div key={b.item} className="profile-row">
+            <span className="grow">{b.item} <span className="muted small">due {b.due}</span></span>
+            <span className="amount">{money(b.amount)}</span>
+          </div>
+        ))}
+        <button className="link inline profile-pay" onClick={() => api.openExternal(profile.payment_url)}>Manage payments</button>
+      </section>
+    </div>
+  );
+}
+
+function AccountMenu({ user, expiryDays, profile, onSignOut }) {
   const [open, setOpen] = useState(false);
   const id = netId(user);
   const keys = useMenuKeys(open, setOpen);
@@ -1948,14 +2096,7 @@ function AccountMenu({ user, expiryDays, onSignOut }) {
   const [gh, setGh] = useState(undefined);
   const [ghWindow, setGhWindow] = useState(false);
   useEffect(() => { if (open) api.gitHubState().then(setGh); }, [open]);
-  return (
-    <span className="menu-wrap" {...keys}>
-      <button className={`btn ${open ? "pressed" : ""}`} onClick={() => setOpen(!open)} title={id ? `Signed in to CatChat as ${id}` : "Account"}>
-        <svg className="person" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="7" r="4" /><path d="M2.5 18c.8-4 4-6 7.5-6s6.7 2 7.5 6z" /></svg>
-        {id ?? "MSU account"} <Caret />
-      </button>
-      {open && (
-        <div className="menu" tabIndex={-1} onMouseLeave={() => setOpen(false)}>
+  const signIns = <>
           <div className="menu-head">Signed in to CatChat</div>
           <div className="account-id">{id ?? "MSU account (pasted key)"}</div>
           {expiryDays !== undefined && <div className="menu-note pad-x">The key expires in {expiryDays} days.</div>}
@@ -1971,6 +2112,26 @@ function AccountMenu({ user, expiryDays, onSignOut }) {
             <div className="menu-note pad-x">Sign in to push to and pull from GitHub.</div>
             <button onClick={() => { setOpen(false); setGhWindow(true); }}>Sign in to GitHub...</button>
           </>}
+  </>;
+  return (
+    <span className="menu-wrap" {...keys}>
+      <button className={`btn ${open ? "pressed" : ""}`} onClick={() => setOpen(!open)} title={id ? `Signed in to CatChat as ${id}` : "Account"}>
+        <svg className="person" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="7" r="4" /><path d="M2.5 18c.8-4 4-6 7.5-6s6.7 2 7.5 6z" /></svg>
+        {profile ? `${profile.first_name} ${profile.last_name}` : id ?? "MSU account"} <Caret />
+      </button>
+      {open && (
+        <div className={`menu ${profile ? "account-menu" : ""}`} tabIndex={-1} onMouseLeave={() => setOpen(false)}>
+          {profile ? <ProfilePanel profile={profile}>
+            <div className="profile-signin">
+              <span className="signin-label">CatChat:</span>
+              <span className="signin-status"><b>{id ?? "pasted key"}</b></span>
+              <button className="btn small" onClick={() => { setOpen(false); onSignOut(); }}>Sign out</button>
+              <span className="signin-label">GitHub:</span>
+              <span className="signin-status">{gh ? <b>{gh.login}</b> : gh === null ? <span className="muted">Not signed in</span> : "..."}</span>
+              {gh ? <button className="btn small" onClick={async () => { setOpen(false); setGh(await api.gitHubSignOut()); }}>Sign out</button>
+                : <button className="btn small" disabled={gh === undefined} onClick={() => { setOpen(false); setGhWindow(true); }}>Sign in...</button>}
+            </div>
+          </ProfilePanel> : signIns}
         </div>
       )}
       {ghWindow && <GitHubSignIn onDone={(state) => { setGhWindow(false); if (state !== undefined) setGh(state); }} />}
@@ -2169,6 +2330,33 @@ function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, o
 }
 
 // The app that opens a file type, for the "Open in ..." button. The computer's default app for the type opens it.
+// The actions on a project file. The same buttons are on the file card in the chat, in the side panel, and in the
+// right-click menu of the tree. A pane leaves out its own action (for example no "View" in the file view).
+const FileActions = createContext(undefined);
+const isTextPath = (p) => !/\.(xlsx?|docx?|pptx?|pdf|png|jpe?g|gif|webp|ico|zip|gz)$/i.test(p);
+// The file that starts the server app of the project (webapp.js), so "Launch" is on it.
+function serverEntry(server) {
+  if (!server) return undefined;
+  if (server.tool === "Django") return "manage.py";
+  const flask = /--app (\S+)/.exec(server.command)?.[1];
+  if (flask) return `${flask}.py`;
+  return "package.json";
+}
+const launchable = (p, webApp) => /\.html?$/i.test(p) || (!!webApp?.server && p === serverEntry(webApp.server));
+
+function FileButtons({ path, except = [] }) {
+  const a = useContext(FileActions);
+  if (!a || !path) return null;
+  const ext = path.split(".").pop().toLowerCase();
+  const show = (k) => !except.includes(k);
+  return <>
+    {show("launch") && a.canLaunch(path) && <button className="btn small" onClick={() => a.launch(path)} title="Run the page or app in the preview, next to the chat">Launch</button>}
+    {show("open") && <button className="btn small" onClick={() => a.open(path)} title="Open the file in its app on this computer">{OPEN_IN[ext] ? `Open in ${OPEN_IN[ext]}` : "Open"}</button>}
+    {show("view") && <button className="btn small" onClick={() => a.view(path)} title="Show the file in the side panel">View</button>}
+    {show("diff") && a.canDiff(path) && <button className="btn small" onClick={() => a.diff(path)} title="Show the changes since the last commit">Diff</button>}
+  </>;
+}
+
 // Only Office files get a name. Other files get "Open".
 const OPEN_IN = { xlsx: "Excel", xls: "Excel", csv: "Excel", docx: "Word", doc: "Word", pptx: "PowerPoint", ppt: "PowerPoint" };
 const sizeText = (n) => (n < 1024 ? `${n} bytes` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
@@ -2189,7 +2377,6 @@ function FileCard({ path, tick, onShowChanges, onPin, onRemove }) {
         <FileIcon name={name} />
         <span className="file-card-name">{name}</span>
         <span className="file-card-tools">
-          {onPin && <button className="icon-btn" data-tip="Open in the side panel" aria-label="Open in the side panel" onClick={onPin}><MaximizeIcon /></button>}
           {onRemove && <button className="icon-btn" data-tip="Remove from the chat" aria-label="Remove from the chat" onClick={onRemove}>&times;</button>}
         </span>
       </div>
@@ -2202,8 +2389,7 @@ function FileCard({ path, tick, onShowChanges, onPin, onRemove }) {
       <div className="file-card-foot">
         <span className="menu-note">{meta}</span>
         <span className="file-card-buttons">
-          {onShowChanges && p && !p.binary && !p.error && <button className="btn small" onClick={onShowChanges}>Diff</button>}
-          {p && !p.error && <button className="btn small" onClick={() => api.openPath(path)}>{app ? `Open in ${app}` : "Open"}</button>}
+          {p && !p.error && <FileButtons path={path} />}
         </span>
       </div>
     </div>

@@ -12,7 +12,8 @@ catatui is built as an extension on top of the excellent [pi harness](https://pi
 Like all coding agents, catatui can read your code, run commands, and write code for you.
 
 By default catatui runs in `ask` mode and will ask before making any changes. You can also run in `plan`, where it will
-write a plan to `PLAN.md` and make no other changes. Turn off `plan` to carry out the plan. You can also run it in `yolo` where it will
+write a plan to `PLAN.md` and make no other changes. Turn off `plan` to carry out the plan. In `auto` mode, it will
+ask only when an action can do damage, and a safety check decides. You can also run it in `yolo` where it will
 not ask permission to make changes.
 
 There is a `ta` option, which works in any mode, that will have the agent teach you and offer hints, rather than writing code for you. We suggest
@@ -113,8 +114,9 @@ In addition to the pi tools (read, write, edit, bash, grep, find, ls), the agent
 |-----------------------------|--------------------------------------------------------------------------------|
 | `http`                      | Send HTTP requests, for example to read docs or test a server                  |
 | `excel_read`, `excel_write` | Read and write Excel `.xlsx` files. Python is not necessary.                   |
-| `pdf_read`                  | Read the text of PDF files                                                     |
-| `docx_read`, `docx_write`   | Read and write Word `.docx` files. Python is not necessary.                    |
+| `pdf_read`, `pdf_write`     | Read PDF files, and write accessible (tagged, PDF/UA) PDF files                |
+| `docx_read`, `docx_write`   | Read and write accessible Word `.docx` files. Python is not necessary.         |
+| `a11y_check`                | Find accessibility problems in PDF, Word, and HTML files                       |
 | `show_page`                 | Show a quiz, form, or chart in your browser and send your answers to the agent |
 | `server`                    | Start and stop your dev server in the background, so the agent can test it     |
 | `run`                       | Run a program with arguments and no shell, for example `python main.py`        |
@@ -141,6 +143,7 @@ On Windows, the agent uses PowerShell, not bash, so you do not need Git for Wind
 | `/undo`           | Put back the files that the agent changed for your last request                                  |
 | `/model`          | Pick a CatChat model                                                                             |
 | `/context`        | Show what uses the context window of the model                                                   |
+| `/suggest`        | Turn the suggestions in the message box on or off. Tab accepts a suggestion.                     |
 | `/catchat`        | Show your sign-in status and get the model list again                                            |
 | `/catchat login`  | Sign in to CatChat and get a new key                                                             |
 | `/catchat logout` | Sign out of CatChat and stop catatui                                                             |
@@ -162,6 +165,7 @@ line. Press Escape to close.
 |--------|----------------------------------------------------------------------------------------------------|
 | `ask`  | The agent will ask before each file change, command and http request. catatui starts in this mode. |
 | `plan` | Planning mode. The model will write a plan file (`PLAN.md`) for work but make no changes.          |
+| `auto` | The agent will ask only when an action can do damage. A safety check decides. Needs the sandbox.   |
 | `yolo` | The agent will make changes without asking you to approve them. Use this mode with care.           |
 
 | Option    | What it does                                                                                  | Start value |

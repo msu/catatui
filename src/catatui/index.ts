@@ -9,6 +9,8 @@ import { login, refreshToken } from "./auth.ts";
 import { bannerComponent } from "./banner.ts";
 import { registerContext } from "./context.ts";
 import { registerDocumentTools } from "./documents.ts";
+import { registerPdfWrite } from "./pdfwrite.ts";
+import { registerA11yCheck } from "./a11y.ts";
 import { registerExcelTools } from "./excel.ts";
 import { registerHelp } from "./help.ts";
 import { registerMsu } from "./msu.ts";
@@ -33,6 +35,7 @@ import { registerFileTools } from "./files.ts";
 import { registerGitTools } from "./gittools.ts";
 import { registerWindows } from "./windows.ts";
 import { registerIdleCompact } from "./idle-compact.ts";
+import { registerSuggest } from "./suggest-editor.ts";
 
 // The catatui command sets this. As a plain pi package, the extension does not change the theme or model.
 const WRAPPED = process.env.CATATUI === "1";
@@ -60,6 +63,8 @@ export default async function (pi: ExtensionAPI) {
   registerHttpTool(pi);
   registerExcelTools(pi);
   registerDocumentTools(pi);
+  registerPdfWrite(pi);
+  registerA11yCheck(pi);
   registerWebTools(pi);
   // Tools that work with no shell and no installed git, the same on all systems.
   registerRun(pi);
@@ -71,6 +76,7 @@ export default async function (pi: ExtensionAPI) {
     registerSte(pi);
     registerWindows(pi);
     registerIdleCompact(pi);
+    registerSuggest(pi);
   }
   registerUndo(pi);
   registerContext(pi);
@@ -82,7 +88,8 @@ export default async function (pi: ExtensionAPI) {
     registerNewProject(pi);
     registerWidget(pi);
     registerPreview(pi);
-    registerViews(pi);
+    // Advising and Classes are mock data for a demo: only with catai --demo-mode.
+    if (process.env.CATAI_DEMO === "1") registerViews(pi);
   }
   // The desktop app starts catatui with this in the advising folder.
   if (process.env.CATATUI_ADVISING === "1") registerAdvising(pi);

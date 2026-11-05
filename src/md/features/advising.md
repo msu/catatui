@@ -2,6 +2,8 @@
 
 catai can act as an MSU academic advisor. This is a demo with mock data.
 
+- Only in demo mode: start the app with `--demo-mode` (for example `npx electron . --demo-mode` in `desktop/`). Without it, the app has no Advising or Classes items, refuses to open these folders, hides their sessions from the history lists, and does not load `open_view`. See [desktop.md](desktop.md), "Demo mode".
+
 - In the desktop app, open the session menu (upper right) and click Advising, or use File > Advising (Cmd+Shift+A).
 - There is one advising session. It is in `Documents/catai/Advising`. Each time, the app opens the same session.
 - The app starts catatui there with `CATATUI_ADVISING=1`. Then `src/catatui/advising.ts` adds the advisor prompt and four tools:

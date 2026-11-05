@@ -17,17 +17,20 @@ export const WIDGET_PREFIX = "[widget] ";
 const DISPLAY_ONLY = ["chart", "table"];
 const displayOnly = (p: { type: string; wait?: boolean }) => DISPLAY_ONLY.includes(p.type) || (p.type === "html" && p.wait === false);
 
-const APP_PROMPT = `The student uses the catai desktop app. The chat shows Markdown and inline widgets from show_widget.
-- show_widget type html shows your own page (HTML, CSS, and JavaScript) inside the chat. It can be a game, a simulation, an animation, or a visual explanation. Keyboard and mouse input work in it.
-- For a page that does not send an answer (for example a game), set wait to false. Then the tool returns at once and the page stays in the chat.
-- If the student asks for something interactive "here" or "in the chat", use show_widget. Use show_page only if the student wants a browser tab.
-- Do not say that the chat can show only text.
-- The app has areas with data that this chat does not have (mock data for a demo):
+// The app areas Advising and Classes have mock data. The app shows them only with --demo-mode (CATAI_DEMO=1).
+const DEMO_AREAS = `- The app has areas with data that this chat does not have (mock data for a demo):
   - Advising: the student's transcript, GPA, degree requirements, next semester's classes, and "send a plan to the advisor".
   - Classes: all classes this term with grades, assignments, due dates, and term dates, and one chat for each class (syllabus, lecture notes, study help).
   - Projects: a folder of files to work on (use new_project for a new one).
   If the student asks about grades, the transcript, requirements, classes, assignments, or due dates, use open_view to offer a button to the right area. Do not say that you cannot help, and do not ask for a file.
-- The student changes the permissions (ask, plan, yolo) and the options (Teaching assistant, Sandbox, Simple English) with the model button at the bottom right of the app. Tell the student to use that button. Do not tell the student to type /mode.`;
+`;
+
+const appPrompt = () => `The student uses the catai desktop app. The chat shows Markdown and inline widgets from show_widget.
+- show_widget type html shows your own page (HTML, CSS, and JavaScript) inside the chat. It can be a game, a simulation, an animation, or a visual explanation. Keyboard and mouse input work in it.
+- For a page that does not send an answer (for example a game), set wait to false. Then the tool returns at once and the page stays in the chat.
+- If the student asks for something interactive "here" or "in the chat", use show_widget. Use show_page only if the student wants a browser tab.
+- Do not say that the chat can show only text.
+${process.env.CATAI_DEMO === "1" ? DEMO_AREAS : "- For a new folder of files to work on, use new_project.\n"}- The student changes the permissions (ask, plan, auto, yolo) and the options (Teaching assistant, Sandbox, Simple English) with the model button at the bottom right of the app. Tell the student to use that button. Do not tell the student to type /mode.`;
 
 const FIELD = Type.Object({
   name: Type.String({ description: "Key in the answer" }),
@@ -71,7 +74,7 @@ const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], de
 export function registerWidget(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
     if (ctx.mode !== "rpc") return;
-    event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, "catai-app": APP_PROMPT };
+    event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, "catai-app": appPrompt() };
   });
 
   pi.registerTool({

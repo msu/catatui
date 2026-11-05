@@ -13,7 +13,7 @@ import { fakeCtx, fakePi } from "./fake-pi.ts";
 const APP_TOOLS = ["new_project", "show_widget", "show_preview", "open_view"];
 
 async function toolsWith(env: Record<string, string>) {
-  const keys = ["CATAI", "CATATUI_ADVISING", "CATATUI_CLASSES", "CATATUI_CLASS"];
+  const keys = ["CATAI", "CATAI_DEMO", "CATATUI_ADVISING", "CATATUI_CLASSES", "CATATUI_CLASS"];
   const old = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
   for (const k of keys) delete process.env[k];
   Object.assign(process.env, env);
@@ -30,13 +30,15 @@ test("the CLI does not load the app-only tools", async () => {
   const tools = await toolsWith({});
   for (const t of APP_TOOLS) assert.equal(tools.includes(t), false, t);
   assert.ok(tools.includes("http"));
-  for (const t of ["run", "move", "copy", "delete", "mkdir", "git_status", "git_commit", "git_push"]) assert.ok(tools.includes(t), t);
+  for (const t of ["run", "move", "copy", "delete", "mkdir", "git_status", "git_commit", "git_push", "pdf_write", "a11y_check"]) assert.ok(tools.includes(t), t);
   assert.equal(tools.some((t) => t.startsWith("advising_") || t.startsWith("class")), false);
 });
 
-test("CATAI=1 loads the app-only tools", async () => {
+test("CATAI=1 loads the app-only tools; open_view (Advising and Classes) only with CATAI_DEMO=1", async () => {
   const tools = await toolsWith({ CATAI: "1" });
-  for (const t of APP_TOOLS) assert.ok(tools.includes(t), t);
+  for (const t of APP_TOOLS.filter((x) => x !== "open_view")) assert.ok(tools.includes(t), t);
+  assert.equal(tools.includes("open_view"), false);
+  assert.ok((await toolsWith({ CATAI: "1", CATAI_DEMO: "1" })).includes("open_view"));
 });
 
 test("the area variables load the advising and classes tools", async () => {

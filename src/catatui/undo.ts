@@ -102,7 +102,7 @@ export function registerUndo(pi: ExtensionAPI) {
       }
       const step = steps.at(-1);
       if (!step) {
-        ctx.ui.notify("There is nothing to undo. Undo puts back only the changes from the file tools (edit, write, excel_write, docx_write) in this session.", "info");
+        ctx.ui.notify("There is nothing to undo. Undo puts back only the changes from the file tools (edit, write, excel_write, docx_write, pdf_write, and the file tools) in this session.", "info");
         return;
       }
       if (!(await confirm(ctx, step))) return;

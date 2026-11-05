@@ -8,9 +8,9 @@ export const CLIENT_NAME = "catatui";
 
 // Tools that change a file. sandbox.ts, permissions.ts, and undo.ts treat them all like "write".
 // move, copy, delete, and mkdir are in files.ts. toolPaths gives the paths that each one changes.
-export const CHANGE_TOOLS = ["edit", "write", "excel_write", "docx_write", "move", "copy", "delete", "mkdir"];
+export const CHANGE_TOOLS = ["edit", "write", "excel_write", "docx_write", "pdf_write", "move", "copy", "delete", "mkdir"];
 // Tools that read a file. The sandbox checks their path.
-export const READ_TOOLS = ["read", "grep", "find", "ls", "excel_read", "pdf_read", "docx_read"];
+export const READ_TOOLS = ["read", "grep", "find", "ls", "excel_read", "pdf_read", "docx_read", "a11y_check"];
 
 // The paths in a file tool call (READ_TOOLS and CHANGE_TOOLS). move and copy have "from" and "to".
 // No path: the tool uses the project folder (for example "ls").

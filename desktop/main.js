@@ -57,6 +57,14 @@ const CLASSES_ROOT = join(homedir(), "Documents", "catai", "Classes");
 const isClasses = (p) => inside(CLASSES_ROOT, p);
 // A chat, an advising session, and a class session have no file tree and no path row. Projects are all other folders.
 const isChat = (p) => isPlainChat(p) || isAdvising(p) || isClasses(p);
+// Advising and Classes have mock data for a demo. The app shows them only with "--demo-mode" on the command line.
+const DEMO = process.argv.includes("--demo-mode");
+const isDemoArea = (p) => isAdvising(p) || isClasses(p);
+// The mock student profile (account menu) for the demo.
+const profileData = await jiti.import(join(ROOT, "src", "catatui", "profile.ts"));
+const settings = await jiti.import(join(ROOT, "src", "catatui", "settings.ts"));
+const suggestion = await jiti.import(join(ROOT, "src", "catatui", "suggest.ts"));
+const idleCompact = await jiti.import(join(ROOT, "src", "catatui", "idle-compact.ts"));
 const kindOf = (p) => (isAdvising(p) ? "advising" : p === CLASSES_ROOT ? "classes" : isClasses(p) ? "class" : isPlainChat(p) ? "chat" : "project");
 
 // A folder for a new chat. If the newest chat folder is empty and has no chat yet, use it again,
@@ -87,7 +95,9 @@ async function newChatFolder() {
 const windows = new Map();
 const ctxOf = (e) => windows.get(e.sender.id);
 const windowFor = (folder) => [...windows.values()].find((c) => c.project === folder);
-const focusedCtx = () => windows.get(BrowserWindow.getFocusedWindow()?.webContents.id) ?? [...windows.values()].at(-1);
+// snapshotWin: in a snapshot test the windows are hidden, so no window has focus. The menu goes to the snapshot window.
+let snapshotWin;
+const focusedCtx = () => windows.get((BrowserWindow.getFocusedWindow() ?? (snapshotWin?.isDestroyed() ? undefined : snapshotWin))?.webContents.id) ?? [...windows.values()].at(-1);
 const titleFor = (p) => (isAdvising(p) ? "catai - Advising" : p === CLASSES_ROOT ? "catai - Classes" : isClasses(p) ? `catai - ${basename(p)}` : isChat(p) ? "catai - Chat" : p ? `catai - ${basename(p)}` : "catai");
 let nextId = 1;
 /** @type {Map<string, (r: unknown) => void>} */
@@ -236,9 +246,11 @@ ipcMain.handle("file-menu", (e, path, opts) => new Promise((done) => {
   const template = [
     ...(opts?.folder ? [] : [
       { label: "Add to chat", click: () => { picked = "add"; } },
-      { label: "Open in Side Panel", click: () => { picked = "pin"; } },
-      ...(/\.html?$/i.test(rel) ? [{ label: "Preview in Side Panel", click: () => { picked = "preview"; } }] : []),
+      { type: "separator" },
+      // The same actions as the file buttons in the app (FileButtons): Launch, Open, View, Diff.
+      ...(opts?.canLaunch ? [{ label: "Launch", click: () => { picked = "launch"; } }] : []),
       { label: "Open", click: () => shell.openPath(full) },
+      { label: "View", click: () => { picked = "view"; } },
       ...(opts?.canDiff ? [{ label: "Diff", click: () => { picked = "diff"; } }] : []),
       ...(opts?.canRollback ? [{ label: "Roll back to last commit...", click: async () => { if (await rollBack(c, rel)) toRenderer(c, "files-changed"); } }] : []),
       { type: "separator" },
@@ -387,7 +399,7 @@ function spawnEntry(folder) {
   const proc = spawn(process.execPath, [CATATUI_BIN, "--mode", "rpc"], {
     cwd: folder,
     env: {
-      ...process.env, ELECTRON_RUN_AS_NODE: "1", CATAI: "1",
+      ...process.env, ELECTRON_RUN_AS_NODE: "1", CATAI: "1", ...(DEMO ? { CATAI_DEMO: "1" } : {}),
       ...(isAdvising(folder) ? { CATATUI_ADVISING: "1" } : {}),
       ...(folder === CLASSES_ROOT ? { CATATUI_CLASSES: "1" } : isClasses(folder) ? { CATATUI_CLASS: basename(folder) } : {}),
     },
@@ -493,7 +505,7 @@ function warmOther(c) {
       folder = readState().lastProject;
     } else {
       const { SessionManager } = await pi();
-      folder = (await SessionManager.listAll()).sort((a, b) => new Date(b.modified) - new Date(a.modified)).find((s) => isChat(s.cwd) && isFolder(s.cwd))?.cwd;
+      folder = (await SessionManager.listAll()).sort((a, b) => new Date(b.modified) - new Date(a.modified)).find((s) => isChat(s.cwd) && (DEMO || !isDemoArea(s.cwd)) && isFolder(s.cwd))?.cwd;
     }
     if (!folder || folder === project || pool.has(folder) || !isFolder(folder)) return;
     spawnEntry(folder).used = Date.now() - 1;
@@ -547,7 +559,10 @@ ipcMain.handle("info", (e) => {
   // lastProject: the Project button opens it with one click from a chat.
   const lastProject = st.lastProject && isFolder(st.lastProject) && st.lastProject !== project ? st.lastProject : undefined;
   const resumeProject = st.lastKind === "project" ? lastProject : undefined;
-  return { project, chat: isChat(project), kind: kindOf(project), resumeProject, lastProject, openSession, signedIn: !!cred, user: cred?.user, expiryDays: store.expiryDays(cred) };
+  return {
+    project, chat: isChat(project), kind: kindOf(project), resumeProject, lastProject, openSession, signedIn: !!cred, user: cred?.user, expiryDays: store.expiryDays(cred),
+    demo: DEMO, profile: DEMO ? profileData.PROFILE : undefined,
+  };
 });
 
 // Start catatui, or start it again so that pi reads a new sign-in. Resolves when catatui answers.
@@ -561,7 +576,7 @@ ipcMain.handle("start", async (e) => {
   return command(c, { type: "get_state" });
 });
 
-// catatui keeps the mode (ask, plan, yolo) and ta for one session only. The app starts catatui again for each
+// catatui keeps the mode (ask, plan, auto, yolo) and ta for one session only. The app starts catatui again for each
 // chat and project, so it keeps the last mode and ta in state.json and sets them again after each start.
 // Before the restore, catatui sends its start state (ask). The app does not save that.
 function rememberMode(c, rec) {
@@ -575,7 +590,7 @@ async function restoreMode(c) {
   const saved = readState().agentMode;
   // A parked process can have an old mode, so set the mode and ta each time.
   if (saved) {
-    await command(c, { type: "prompt", message: `/mode ${["ask", "plan", "yolo"].includes(saved.mode) ? saved.mode : "ask"}` });
+    await command(c, { type: "prompt", message: `/mode ${["ask", "plan", "auto", "yolo"].includes(saved.mode) ? saved.mode : "ask"}` });
     await command(c, { type: "prompt", message: `/mode ta ${saved.ta ? "on" : "off"}` });
     if (saved.thinking) await command(c, { type: "set_thinking_level", level: saved.thinking });
   }
@@ -639,7 +654,7 @@ ipcMain.handle("sign-out", async (e) => {
   for (const o of windows.values()) if (o !== c) o.win.close();
 });
 
-ipcMain.on("open-external", (_e, url) => { if (/^https?:/.test(url)) shell.openExternal(url); });
+ipcMain.on("open-external", (_e, url) => { if (/^(https?|mailto):/.test(url)) shell.openExternal(url); });
 
 // ---- GitHub sign-in (github.ts): a token for git push, pull, and clone. The renderer never gets the token. ----
 const gitHubState = () => { const s = github.readGitHub(); return s ? { login: s.login, expiryDays: github.gitHubExpiryDays(s) } : null; };
@@ -685,7 +700,7 @@ ipcMain.handle("list-sessions", async (e) => {
   const { SessionManager } = await pi();
   const home = homedir();
   return (await SessionManager.listAll())
-    .filter((s) => s.messageCount > 0 && s.cwd)
+    .filter((s) => s.messageCount > 0 && s.cwd && (DEMO || !isDemoArea(s.cwd)))
     .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
     .slice(0, 100)
     .map((s) => ({
@@ -703,9 +718,8 @@ ipcMain.handle("list-sessions", async (e) => {
 });
 
 // ---- suggestions in the message box ----
-// While the student types, a fast model (gemma4, about 0.5 s) completes the message. The renderer shows the rest
-// in gray, and Tab accepts it. Qwen and gpt-oss think first, so they are too slow for this.
-const SUGGEST_MODEL = "gemma4-31B-it";
+// While the student types, a fast model completes the message (suggest.ts). The renderer shows the rest in gray,
+// and Tab accepts it. The "suggest" setting can turn it off.
 const suggestAbort = new Map();
 ipcMain.handle("suggest", async (e, text, context) => {
   const id = e.sender.id;
@@ -713,29 +727,23 @@ ipcMain.handle("suggest", async (e, text, context) => {
   const ac = new AbortController();
   suggestAbort.set(id, ac);
   const key = store.readCredential()?.access;
-  if (!key || typeof text !== "string" || text.trim().length < 3) return "";
-  try {
-    const res = await fetch(`${CATCHAT_API}/v1/chat/completions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: SUGGEST_MODEL, max_tokens: 40, temperature: 0.2,
-        messages: [
-          { role: "system", content: "A student types a message to an AI coding and study assistant at Montana State University. " +
-            "Complete the message with the most likely next words (at most 10). Reply with the full message: the student's text exactly as given, then the new words. " +
-            "No quotes and no explanation. If the message looks complete, reply with the student's text only." },
-          { role: "user", content: `${context ? `The assistant said before: ${String(context).slice(-600)}\n\n` : ""}The student's text: ${text}` },
-        ],
-      }),
-      signal: AbortSignal.any([ac.signal, AbortSignal.timeout(4000)]),
-    });
-    if (!res.ok) return "";
-    const full = (await res.json())?.choices?.[0]?.message?.content?.replace(/^["']|["']$/g, "") ?? "";
-    // Only a continuation of the exact text. One line.
-    return full.startsWith(text) ? full.slice(text.length).split("\n")[0].replace(/\s+$/, "") : "";
-  } catch {
-    return "";
-  }
+  if (!key || typeof text !== "string" || !suggestion.suggestOn()) return "";
+  return suggestion.fetchSuggestion(text, typeof context === "string" ? context : undefined, key, ac.signal);
+});
+
+// ---- settings (catatui.json, settings.ts) ----
+// The terminal program and the app use the same file. A running catatui process reads it each time.
+ipcMain.handle("get-settings", () => ({
+  suggest: suggestion.suggestOn(),
+  idleCompaction: idleCompact.idleSettings(settings.readSettings().idleCompaction),
+}));
+ipcMain.handle("set-setting", (_e, key, value) => {
+  if (key === "suggest" && typeof value === "boolean") settings.writeSetting("suggest", value);
+  else if (key === "idleCompaction" && value && typeof value === "object") {
+    // idleSettings drops bad values, so the file gets only good values.
+    settings.writeSetting("idleCompaction", idleCompact.idleSettings(value));
+  } else return false;
+  return true;
 });
 
 // ---- conversations (the sessions of a project) ----
@@ -945,12 +953,14 @@ ipcMain.handle("make-folder", (_e, parent, name) => {
 
 // Advising: the advising folder. The renderer then calls "start", and "new_session" for a new advising session.
 ipcMain.handle("advising", (e) => {
+  if (!DEMO) return { ok: false, error: "Advising is only in the demo (catai --demo-mode)." };
   mkdirSync(ADVISING_ROOT, { recursive: true });
   return moveTo(ctxOf(e), ADVISING_ROOT);
 });
 
 // Classes: the overview folder, or the folder of one class (only the mock classes in classes.ts).
 ipcMain.handle("classes", (e, code) => {
+  if (!DEMO) return { ok: false, error: "Classes is only in the demo (catai --demo-mode)." };
   const c = code ? classesData.CLASSES.find((x) => x.code === code) : undefined;
   if (code && !c) return { ok: false, error: `There is no class ${code}.` };
   const folder = c ? join(CLASSES_ROOT, c.code) : CLASSES_ROOT;
@@ -1051,7 +1061,7 @@ async function startWindows() {
   if (arg && isFolder(arg)) return [{ project: resolve(arg), bounds: SNAPSHOT ? undefined : fitBounds(readState().window) }];
   if (!SNAPSHOT) {
     const seen = new Set();
-    const saved = (readState().windows ?? []).filter((w) => w?.project && isFolder(w.project) && !seen.has(w.project) && seen.add(w.project));
+    const saved = (readState().windows ?? []).filter((w) => w?.project && isFolder(w.project) && (DEMO || !isDemoArea(w.project)) && !seen.has(w.project) && seen.add(w.project));
     if (saved.length) return saved.map((w) => ({ project: w.project, bounds: fitBounds(w) }));
   }
   return [{ project: await newChatFolder(), bounds: SNAPSHOT ? undefined : fitBounds(readState().window) }];
@@ -1100,6 +1110,8 @@ async function buildMenu() {
       submenu: [
         { label: "About catai", click: showAbout },
         { type: "separator" },
+        { label: "Settings...", accelerator: "Cmd+,", click: act("settings") },
+        { type: "separator" },
         { label: "Sign Out", click: act("sign-out") },
         { type: "separator" },
         { role: "services" },
@@ -1116,8 +1128,10 @@ async function buildMenu() {
         { label: "New Project...", accelerator: "CmdOrCtrl+Shift+N", enabled: !st.busy, click: act("new-project") },
         { label: "New Window", accelerator: "CmdOrCtrl+Alt+N", click: async () => createWindow(await newChatFolder(), { cascade: true }) },
         { label: "New Conversation", accelerator: mac ? "Cmd+Ctrl+N" : "Ctrl+Alt+Shift+N", enabled: !st.busy && !!inProject, click: act("new-chat-here") },
-        { label: "Advising", accelerator: "CmdOrCtrl+Shift+A", enabled: !st.busy, click: act("advising") },
-        { label: "Classes", accelerator: "CmdOrCtrl+Shift+C", enabled: !st.busy, click: act("classes") },
+        ...(DEMO ? [
+          { label: "Advising", accelerator: "CmdOrCtrl+Shift+A", enabled: !st.busy, click: act("advising") },
+          { label: "Classes", accelerator: "CmdOrCtrl+Shift+C", enabled: !st.busy, click: act("classes") },
+        ] : []),
         { type: "separator" },
         { label: "Open Project...", accelerator: "CmdOrCtrl+O", enabled: !st.busy, click: act("all-projects") },
         { label: "Show All History...", accelerator: "CmdOrCtrl+Y", enabled: !st.busy, click: act("history") },
@@ -1130,6 +1144,8 @@ async function buildMenu() {
         { label: mac ? "Show Project in Finder" : "Show Project in Explorer", enabled: !!inProject, click: () => shell.openPath(project) },
         { label: "Close Project", accelerator: "CmdOrCtrl+Shift+W", enabled: !st.busy && !!inProject, click: act("close-project") },
         { type: "separator" },
+        // On macOS, Settings is in the catai menu.
+        ...(mac ? [] : [{ label: "Settings...", accelerator: "Ctrl+,", click: act("settings") }, { type: "separator" }]),
         mac ? { role: "close" } : { role: "quit" },
       ],
     },
@@ -1157,7 +1173,7 @@ async function buildMenu() {
         { label: "Undo Last Request", accelerator: "CmdOrCtrl+Alt+Z", enabled: !st.busy && !!st.canUndo, click: act("undo") },
         { type: "separator" },
         { label: "Permissions", enabled: false },
-        perm("ask", "Ask"), perm("plan", "Plan"), perm("yolo", "Yolo"),
+        perm("ask", "Ask"), perm("plan", "Plan"), perm("auto", "Auto"), perm("yolo", "Yolo"),
         { type: "separator" },
         { label: "Options", enabled: false },
         option("ta", "Teaching Assistant"), option("sandbox", "Sandbox"), option("ste", "Simple English"),
@@ -1304,6 +1320,9 @@ if (process.env.CATATUI_DESKTOP_USER_DATA) app.setPath("userData", process.env.C
 // The web preview (<webview> in the side panel): no preload, no Node, sandboxed, and only http, https, and file
 // pages. Links to other sites and links that open a new window go to the normal browser.
 app.on("web-contents-created", (_e, contents) => {
+  // Errors and crashes go to stdout, so a blank window has a cause in the log.
+  contents.on("render-process-gone", (_ev, d) => console.error(`catai: ${contents.getType()} renderer gone: ${d.reason} (exit ${d.exitCode}) ${contents.getURL()}`));
+  contents.on("console-message", (ev) => { if (ev.level === "error") console.error(`catai: ${contents.getType()} console: ${ev.message} (${ev.sourceId}:${ev.lineNumber})`); });
   contents.on("will-attach-webview", (ev, prefs, params) => {
     delete prefs.preload;
     prefs.nodeIntegration = false;
@@ -1338,6 +1357,7 @@ app.whenReady().then(async () => {
 });
 
 async function snapshot(win) {
+  snapshotWin = win;
   const { writeFileSync } = await import("node:fs");
   const prompt = process.env.CATATUI_DESKTOP_PROMPT;
   await new Promise((r) => win.webContents.once("did-finish-load", r));

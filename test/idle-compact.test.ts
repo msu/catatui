@@ -1,6 +1,10 @@
 // Compaction while idle: the timer, the context limit, and the setting.
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { mock, test } from "node:test";
+import { writeSetting } from "../src/catatui/settings.ts";
 import { IDLE_DEFAULTS, IDLE_STATUS, idleSettings, registerIdleCompact } from "../src/catatui/idle-compact.ts";
 import { fakeCtx, fakePi } from "./fake-pi.ts";
 
@@ -13,9 +17,12 @@ test("idleSettings: defaults, false, and bad values", () => {
   assert.deepEqual(idleSettings("yes"), IDLE_DEFAULTS);
 });
 
+// The setting is in catatui.json in the agent folder. Use a temporary folder.
+process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "catatui-idle-"));
+
 function setup(settings: unknown, percent: number | null, opts: { idle?: boolean; error?: string } = {}) {
   const { pi, fire } = fakePi();
-  pi.getSettings = () => (settings === undefined ? {} : { idleCompaction: settings });
+  writeSetting("idleCompaction", settings);
   registerIdleCompact(pi);
   const f = fakeCtx("/p");
   const calls: number[] = [];
