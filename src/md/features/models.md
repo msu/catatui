@@ -12,6 +12,7 @@ The values are in `src/catatui/config.ts`. The model list comes from CatChat (`s
 - CatChat does not give model descriptions, so the notes are written by hand. The README and the website have the same list.
 - CatChat does not tell what `muse-glimmer:30b` and `nimble:9b` are. Their notes say "Unknown Model".
 - catatui does not change the pi thinking default (`medium`).
+- The desktop app shows a green leaf next to `gpt-oss:120b` (`GREEN_MODELS` in App.jsx), in the model lists and on the model button. Its tooltip says "Uses less energy for each answer". This is an estimate, not a measurement: gpt-oss is a mixture-of-experts model with few active parameters for each token. CatChat does not report energy. For real numbers, ask MSU for GPU power data for each model. The CLI does not show the leaf.
 
 ## Subtleties
 
