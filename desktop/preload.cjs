@@ -67,9 +67,12 @@ contextBridge.exposeInMainWorld("catatui", {
   importFile: (full, toDir) => ipcRenderer.invoke("file-import", full, toDir),
   fileWrite: (path, text, expected) => ipcRenderer.invoke("file-write", path, text, expected),
   trashItem: (path) => ipcRenderer.invoke("file-trash", path),
+  githubRepos: () => ipcRenderer.invoke("github-repos"),
+  cloneProject: (parent, input, name) => ipcRenderer.invoke("clone-project", parent, input, name),
   fileMenu: (path, opts) => ipcRenderer.invoke("file-menu", path, opts),
   // After a roll back from the file menu, the tree and the file cards read the files again.
   onFilesChanged: on("files-changed"),
+  onCloneProgress: on("clone-progress"),
   openPath: (path) => ipcRenderer.send("open-path", path),
   // The application menu: the renderer sends its state, and gets the menu actions.
   menuState: (st) => ipcRenderer.send("menu-state", st),

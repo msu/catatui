@@ -2037,6 +2037,8 @@ function FolderPicker({ onPick, onCancel, title = "Start Or Open A Project", act
   const [selected, setSelected] = useState(undefined);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
+  // "From GitHub...": the clone dialog, over the picker.
+  const [cloning, setCloning] = useState(false);
   const [error, setError] = useState("");
   const go = async (path) => { setSelected(undefined); setError(""); setDir(await api.listFolders(path)); };
   useEffect(() => { go(undefined); }, []);
@@ -2088,6 +2090,7 @@ function FolderPicker({ onPick, onCancel, title = "Start Or Open A Project", act
                   <span>Enter a project name and catai will make a folder for it!</span>
                   {nameBox}
                   {error && <p className="error">{error}</p>}
+                  <button className="link-btn picker-gh-link" onClick={() => setCloning(true)}>Or get a project from GitHub</button>
                 </div>
               )}
               {dir.folders.length > 0 && (naming ? (
@@ -2107,10 +2110,108 @@ function FolderPicker({ onPick, onCancel, title = "Start Or Open A Project", act
           </div>
         </div>
         <div className="window-buttons">
+          <button className="btn" onClick={() => setCloning(true)}><GitHubMark /> From GitHub...</button>
           <span className="picker-target" title={target}>{isPlace ? (dir.folders.length ? "Select a project folder, or make a new project." : "") : <>Project folder: <bdi>{target.split(/[\\/]/).pop()}</bdi></>}</span>
           <span className="spacer" />
           <button className="btn" onClick={onCancel}>Cancel</button>
           <button className="btn primary default" onClick={() => onPick(target)} disabled={isPlace}>{action}</button>
+        </div>
+      </div>
+      {cloning && <GitHubClone parent={dir.path} onCancel={() => setCloning(false)} onDone={(path) => { setCloning(false); onPick(path); }} />}
+    </div>
+  );
+}
+
+const GitHubMark = () => (
+  <svg className="gh-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" /></svg>
+);
+
+// "Get a project from GitHub": paste an address (or user/repo), or pick one of your repositories (if you are signed
+// in to GitHub). main.js clones it into a new folder in parent, then the project opens.
+function GitHubClone({ parent, onCancel, onDone }) {
+  const [input, setInput] = useState("");
+  const [name, setName] = useState("");
+  const [nameEdited, setNameEdited] = useState(false);
+  const [repos, setRepos] = useState(undefined); // undefined: loading; { error } or a list
+  const [filter, setFilter] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [progress, setProgress] = useState(undefined); // { percent, label } from git clone --progress
+  useEffect(() => { api.githubRepos().then(setRepos); }, []);
+  useEffect(() => api.onCloneProgress((p) => setProgress(p)), []);
+  // Escape closes this dialog only, not the picker under it.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && !busy) { e.stopImmediatePropagation(); onCancel(); } };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [busy]);
+  // The folder name follows the address until the student types a name.
+  const guess = (t) => {
+    const m = /([\w.-]+?)(?:\.git)?\/*(?:\/tree\/.*)?$/.exec(t.trim().replace(/\/(tree|blob)\/.*$/, ""));
+    return m ? m[1] : "";
+  };
+  const setAddress = (t) => { setInput(t); setError(""); if (!nameEdited) setName(guess(t)); };
+  const pick = (r) => { setInput(r.fullName); setError(""); if (!nameEdited) setName(r.name); };
+  async function clone() {
+    if (!input.trim()) return setError("Paste a GitHub address, or pick one of your repositories.");
+    setBusy(true);
+    setError("");
+    setProgress({ percent: 0, label: "Connecting to GitHub" });
+    const r = await api.cloneProject(parent, input, name);
+    setBusy(false);
+    setProgress(undefined);
+    if (r.error) setError(r.error); else onDone(r.path);
+  }
+  const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = Array.isArray(repos) ? repos.filter((r) => words.every((w) => r.fullName.toLowerCase().includes(w))) : [];
+  return (
+    <div className="overlay">
+      <div className="window gh-clone" role="dialog" aria-modal="true" aria-label="Get a project from GitHub">
+        <div className="window-title"><img src={logo} alt="" /><span>Get A Project From GitHub</span></div>
+        <div className="gh-body">
+          <label htmlFor="gh-url">GitHub address</label>
+          <input id="gh-url" className="input-field" autoFocus value={input} disabled={busy} placeholder="https://github.com/user/repo, or user/repo"
+            onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => e.key === "Enter" && clone()} />
+          {Array.isArray(repos) && repos.length > 0 && (
+            <>
+              <div className="gh-list-head">
+                <span>Your repositories</span>
+                <input type="search" className="input-field gh-filter" value={filter} placeholder="Search" aria-label="Search your repositories" onChange={(e) => setFilter(e.target.value)} />
+              </div>
+              <div className="listbox gh-list" role="listbox" aria-label="Your repositories">
+                {shown.map((r) => (
+                  <div key={r.fullName} role="option" aria-selected={input === r.fullName} tabIndex={0}
+                    className={`list-row gh-row ${input === r.fullName ? "selected" : ""}`}
+                    onClick={() => pick(r)} onDoubleClick={() => { pick(r); }} onKeyDown={(e) => e.key === "Enter" && pick(r)}>
+                    <span className="gh-name"><bdi>{r.fullName}</bdi>{r.private && <span className="gh-private">Private</span>}</span>
+                    {r.description && <span className="gh-desc">{r.description}</span>}
+                    <span className="gh-when">{ago(Date.parse(r.updated))}</span>
+                  </div>
+                ))}
+                {shown.length === 0 && <div className="list-empty">No repositories match the search.</div>}
+              </div>
+            </>
+          )}
+          {repos === undefined && <p className="small muted">Looking for your repositories...</p>}
+          {repos?.error && <p className="small muted">{repos.error.startsWith("Sign in") ? "To see your repositories (and private ones), sign in to GitHub in the account menu. Public repositories work without a sign-in." : repos.error}</p>}
+          <label htmlFor="gh-name">Project folder name</label>
+          <input id="gh-name" className="input-field" value={name} disabled={busy} placeholder="The repository name"
+            onChange={(e) => { setName(e.target.value); setNameEdited(true); }} onKeyDown={(e) => e.key === "Enter" && clone()} />
+          <p className="small muted">catai copies the repository into <bdi>{parent.split(/[\\/]/).slice(-2).join("/")}</bdi>, then opens it.</p>
+          {error && <p className="error">{error}</p>}
+          {busy && progress && (
+            <div className="gh-progress">
+              <div className="gh-progress-label"><span>{progress.label}<Dots /></span><span>{progress.percent}%</span></div>
+              <div className="gh-progress-track" role="progressbar" aria-label="Copying the project from GitHub" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent}>
+                <div className="gh-progress-fill" style={{ width: `${progress.percent}%` }} />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="window-buttons">
+          <span className="spacer" />
+          <button className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button className="btn primary default" onClick={clone} disabled={busy}>Get Project</button>
         </div>
       </div>
     </div>

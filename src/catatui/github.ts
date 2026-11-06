@@ -60,3 +60,57 @@ export async function signInGitHub(token: string): Promise<GitHubSignIn | { erro
 export function gitHubExpiryDays(s = readGitHub()): number | undefined {
   return s?.expires === undefined ? undefined : Math.ceil((s.expires - Date.now()) / 86_400_000);
 }
+
+// ---- "Get a project from GitHub" in the desktop app (the project picker). ----
+
+export interface Repo { name: string; fullName: string; private: boolean; description: string; updated: string; url: string }
+
+// The repositories of the signed-in student (own, collaborator, and organization), the newest first. At most 100.
+export async function listRepos(): Promise<Repo[] | { error: string }> {
+  const s = readGitHub();
+  if (!s) return { error: "Sign in to GitHub to see your repositories." };
+  let res: Response;
+  try {
+    res = await fetch(`${api()}/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member`, {
+      headers: { Authorization: `Bearer ${s.token}`, Accept: "application/vnd.github+json", "User-Agent": "catai" },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (e) {
+    return { error: `catai cannot connect to GitHub (${(e as Error).message}).` };
+  }
+  if (res.status === 401) return { error: "GitHub did not accept your token. Sign in to GitHub again." };
+  if (!res.ok) return { error: `GitHub returned an error (${res.status}).` };
+  const list = (await res.json()) as { name: string; full_name: string; private: boolean; description: string | null; updated_at: string; clone_url: string }[];
+  return list.map((r) => ({ name: r.name, fullName: r.full_name, private: r.private, description: r.description ?? "", updated: r.updated_at, url: r.clone_url }));
+}
+
+// What the student typed or pasted -> an HTTPS clone address, or an error. Accepts "user/repo", "github.com/user/repo",
+// "https://github.com/user/repo(.git)", a GitHub page address with more path ("/tree/main"), and "git@github.com:user/repo".
+// Other hosts: only https addresses.
+export function repoUrl(input: string): { url: string; name: string } | { error: string } {
+  const t = String(input ?? "").trim();
+  const gh = /^(?:https?:\/\/)?(?:www\.)?github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:\/.*)?$/i.exec(t) ?? /^git@github\.com:([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i.exec(t) ?? /^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/.exec(t);
+  if (gh) return { url: `https://github.com/${gh[1]}/${gh[2]}.git`, name: gh[2] };
+  if (/^https:\/\/[^\s/]+\/\S+$/i.test(t)) return { url: t, name: t.replace(/\.git$/i, "").replace(/\/+$/, "").split("/").pop() ?? "project" };
+  return { error: "Paste a GitHub address, for example https://github.com/user/repo, or type user/repo." };
+}
+
+// git clone --progress -> a percent for the whole clone and a short label. The phases have weights:
+// counting and compressing 0-5, receiving 5-85, resolving 85-95, updating files 95-100. undefined: no progress line.
+const PHASES: [RegExp, string, number, number][] = [
+  [/(?:Counting|Enumerating|Compressing) objects:\s+(\d+)%/, "Preparing", 0, 5],
+  [/Receiving objects:\s+(\d+)%/, "Downloading", 5, 85],
+  [/Resolving deltas:\s+(\d+)%/, "Unpacking", 85, 95],
+  [/Updating files:\s+(\d+)%/, "Writing files", 95, 100],
+];
+export function cloneProgress(text: string): { percent: number; label: string } | undefined {
+  let best: { percent: number; label: string } | undefined;
+  // git rewrites the line with \r. Use the last line that has a phase.
+  for (const line of text.split(/[\r\n]+/)) {
+    for (const [re, label, from, to] of PHASES) {
+      const m = re.exec(line);
+      if (m) best = { percent: Math.round(from + ((to - from) * Number(m[1])) / 100), label };
+    }
+  }
+  return best;
+}

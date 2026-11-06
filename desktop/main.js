@@ -32,7 +32,7 @@ const auth = await jiti.import(join(ROOT, "src", "catatui", "auth.ts"));
 const store = await jiti.import(join(ROOT, "src", "catatui", "store.ts"));
 const { CHANGE_TOOLS, CATCHAT_API, DEFAULT_MODEL, toolPaths } = await jiti.import(join(ROOT, "src", "catatui", "config.ts"));
 // git from the dugite package (git.ts), with the safety settings. The student does not need to install git.
-const { gitSync } = await jiti.import(join(ROOT, "src", "catatui", "git.ts"));
+const { gitSync, git: gitAsync } = await jiti.import(join(ROOT, "src", "catatui", "git.ts"));
 // The catai GitHub sign-in (a pasted token) for the git tools.
 const github = await jiti.import(join(ROOT, "src", "catatui", "github.ts"));
 // The mock class data (classes.ts), for the Classes panels.
@@ -813,6 +813,37 @@ ipcMain.handle("github-sign-in", async (_e, token) => {
   return "error" in r ? { error: r.error } : gitHubState();
 });
 ipcMain.handle("github-sign-out", () => { github.clearGitHub(); return null; });
+// "Get a project from GitHub": the student's repositories, then a clone into a new folder in parent.
+// The token goes only to github.com (git.ts safeConfig: no hooks, no SSH, no credential helpers of the computer).
+ipcMain.handle("github-repos", () => github.listRepos());
+ipcMain.handle("clone-project", async (e, parent, input, name) => {
+  const r = github.repoUrl(input);
+  if ("error" in r) return { error: r.error };
+  const folder = String(name || r.name).replace(/[^A-Za-z0-9 ._-]+/g, " ").replace(/\s+/g, " ").replace(/^[.\s]+/, "").trim();
+  if (!folder) return { error: "Type a name for the project folder." };
+  if (typeof parent !== "string" || !existsSync(parent) || !statSync(parent).isDirectory()) return { error: "Select a folder for the project first." };
+  const dest = join(parent, folder);
+  if (existsSync(dest)) return { error: `A folder named ${folder} is there already. Type a different name.` };
+  const s = github.readGitHub();
+  const onGitHub = r.url.startsWith("https://github.com/");
+  let out;
+  // The progress bar of the dialog: "clone-progress" events with a percent and a label.
+  let last = -1;
+  const onStderr = (text) => {
+    const p = github.cloneProgress(text);
+    if (p && p.percent !== last) { last = p.percent; e.sender.send("clone-progress", p); }
+  };
+  try { out = await gitAsync(parent, ["clone", "--progress", "--", r.url, folder], { token: onGitHub ? s?.token : undefined, user: s?.login, timeout: 600_000, onStderr }); }
+  catch (err) { return { error: err.message }; }
+  if (out.code !== 0) {
+    rmSync(dest, { recursive: true, force: true });
+    const notFound = /not found|could not read|authentication|403|401/i.test(out.stderr);
+    return { error: notFound && onGitHub && !s ? "GitHub did not find the repository. If it is private, sign in to GitHub (the account menu), then try again."
+      : notFound ? "GitHub did not find the repository, or your GitHub sign-in cannot read it. Check the address."
+      : `git could not copy the repository: ${out.stderr.trim().split("\n").pop()}` };
+  }
+  return { path: dest };
+});
 // Open a changed file in its normal app (for example Excel for .xlsx). Only files in the project.
 ipcMain.on("open-path", (e, path) => {
   const project = ctxOf(e)?.project;

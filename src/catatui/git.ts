@@ -95,7 +95,8 @@ export type GitResult = { code: number; stdout: string; stderr: string };
 
 // For the git tools. Throws GitRefused for a risky repository. A failed command gives its code and output.
 // input: text for git's stdin. stdin is always closed, so git never waits for input.
-export function git(cwd: string, args: string[], opts: { token?: string; user?: string; signal?: AbortSignal; timeout?: number; input?: string } = {}): Promise<GitResult> {
+// onStderr: each piece of git's stderr as it comes (for example "Receiving objects:  45%" from clone --progress).
+export function git(cwd: string, args: string[], opts: { token?: string; user?: string; signal?: AbortSignal; timeout?: number; input?: string; onStderr?: (text: string) => void } = {}): Promise<GitResult> {
   const risk = repoRisk(cwd);
   if (risk.length) return Promise.reject(new GitRefused(riskMessage(risk)));
   return new Promise((done) => {
@@ -105,6 +106,7 @@ export function git(cwd: string, args: string[], opts: { token?: string; user?: 
       const code = err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0;
       done({ code, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") || (err && !stderr ? err.message : "") });
     });
+    if (opts.onStderr) child.stderr?.on("data", (d) => opts.onStderr!(String(d)));
     child.stdin?.end(opts.input ?? "");
   });
 }
