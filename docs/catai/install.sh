@@ -16,7 +16,7 @@
 set -eu
 
 # The commit to install. catatui and catai come from the same commit. To release a new version, change it.
-COMMIT="97a2c8f3f508871b7743837e938ceed009bd0e55"
+COMMIT="5431c245e6ae78b97d5b7afb965c6a28e156635a"
 REPO="https://codeload.github.com/msu/catatui/tar.gz/$COMMIT"
 SITE="${CATATUI_SITE:-https://catatui.cs.montana.edu}"
 APP="${CATATUI_APP:-$HOME/.catatui/app}"
