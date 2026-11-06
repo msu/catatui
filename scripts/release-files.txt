@@ -11,7 +11,7 @@ bin
 src/catatui
 skills
 themes
-assets/bobcat-head.png
+assets/logo.png
 
 # Copies of catatui 0.5.2 and older download these forwarders.
 install.sh

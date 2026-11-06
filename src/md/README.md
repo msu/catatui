@@ -22,7 +22,7 @@ catatui is a terminal coding agent for MSU students. I (`@earendil-works/pi-codi
 - `src/md/`: the intent of this project
 - `skills/`: the `simplified-technical-english` skill
 - `themes/`: the `msu` and `msu-light` themes
-- `assets/`: the bobcat logo
+- `assets/`: the logo (`logo.svg` is the source; `logo.png` is 256x256)
 - `docs/`: the GitHub Pages site, and the install scripts `install.sh` and `install.ps1`
 - `install.sh`, `install.ps1`: forwarders to the site for old installs
 - `test/`: the tests. `fake-pi.ts` is a small stand-in for the pi extension API.

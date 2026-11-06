@@ -1,6 +1,6 @@
 import { marked } from "marked";
 import { createContext, useContext, useEffect, useReducer, useRef, useState } from "react";
-import logo from "./bobcat.png";
+import logo from "./logo.png";
 import { FileIcon, FolderIcon } from "./icons.jsx";
 import { PlanCard, Widget } from "./widgets.jsx";
 import { isLocalUrl } from "../webapp.js";
@@ -2414,7 +2414,7 @@ function SignIn({ info, onDone }) {
   return (
     <div className="signin">
       <div className="card">
-        <img src={logo} alt="Montana State University bobcat logo" />
+        <img src={logo} alt="catatui logo" />
         {step !== "done" && <h1>Sign in to CatChat</h1>}
         {info.signedIn && <p className="muted">Your key expires soon. Sign in to get a new key.</p>}
 

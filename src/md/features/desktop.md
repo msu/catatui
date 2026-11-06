@@ -129,13 +129,13 @@ A desktop app (like Claude Desktop) for students who do not use the command line
   - Anywhere else in the window: a copy in the project folder, then the file goes into the chat as a file card. A folder is copied, but it does not go into the chat.
   - The original stays where it was. A name that is there already gets " copy" (" copy 2", ...), like Finder. catai does not copy a folder that has the project in it.
   - A window listener catches drops outside the chat and the tree, because Chromium opens a dropped file in the window.
-- The desktop app is named "catai" (the window title and the header). The CLI is still catatui. The header has a larger bobcat. The project path is in a row under the header, with "Open New Folder".
+- The desktop app is named "catai" (the window title and the header). The CLI is still catatui. The header has a larger logo. The project path is in a row under the header, with "Open New Folder".
 - The message box: the text field on the left. Undo, Send, the model, and the mode on the right, in this order. While the agent works, Send becomes a red Stop button with a spinner.
 - History lists the chats of all projects (`SessionManager.listAll`, newest 100), each with its folder. A chat in a different folder opens that project first.
 - The chat goes to the bottom after a send or a dropped file.
 - The agent text uses Atkinson Hyperlegible (SIL Open Font License, from `@fontsource/atkinson-hyperlegible`), at a larger size. The font is in the app, so it works with no network.
 - Chat items do not shrink (`flex-shrink: 0`). Before this, a card that scrolled off got smaller.
-- The app icon is `desktop/build/icon.png` (the bobcat on a rounded MSU blue square with a gold rim). In development, `main.js` sets it for the Dock and the window. Packaging makes `.icns` and `.ico` from it.
+- The app icon is `desktop/build/icon.png` (a white cat speech bubble with a gold sparkle on a rounded MSU blue square, made from `assets/logo.svg` with `rsvg-convert`). In development, `main.js` sets it for the Dock and the window. Packaging makes `.icns` and `.ico` from it.
 - "Show changes" opens the file in the side panel with "Changes" on: the changes since the last commit, or since the agent changed it.
 - A command question shows the command in an inset box at the top, with a warning that the command can change files on the computer. (A plain-language explanation of commands was tried and removed: it was too complex.) The dialog has the question in a title bar and the buttons in a row. The default button (the first option, Yes) is always on the right, and Enter picks it. "Yes, and do not ask again ..." is a checkbox.
 - `CATATUI_DESKTOP_JS` runs JavaScript in the page before the clicks (for tests).

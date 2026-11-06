@@ -383,7 +383,7 @@ button.project:hover { color: var(--blue); text-decoration: underline; }
 .files { width: min(38%, 30rem); flex-shrink: 1; min-width: 16rem; }
 .main-col { min-width: 24rem; }
 
-/* Header: a larger bobcat and the app name. The project path is in its own row under the header. */
+/* Header: a larger logo and the app name. The project path is in its own row under the header. */
 .logo.big { width: 56px; }
 .app-name { font-size: 1.6rem !important; letter-spacing: .02em; }
 .top { border-bottom: 1px solid var(--btn-border); padding: .45rem 1rem; }

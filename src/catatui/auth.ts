@@ -84,7 +84,7 @@ interface ConnectResult { key: string; key_alias: string; team_id: string; team_
 
 const b64url = (b: Buffer) => b.toString("base64url");
 
-const LOGO = `data:image/png;base64,${readFileSync(new URL("../../assets/bobcat-head.png", import.meta.url)).toString("base64")}`;
+const LOGO = `data:image/png;base64,${readFileSync(new URL("../../assets/logo.png", import.meta.url)).toString("base64")}`;
 
 // The page that the browser shows after the redirect to the loopback. MSU colors, light and dark.
 // The script removes the one-time code from the address bar.
@@ -104,7 +104,7 @@ p { margin: 0; color: var(--muted); line-height: 1.5; }
 code { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--fg); }
 </style></head>
 <body><main>
-<img src="${LOGO}" alt="Montana State University bobcat logo">
+<img src="${LOGO}" alt="catatui logo">
 <h1><span>${ok ? "&#10003;" : "&#10007;"}</span> ${title}</h1>
 <p>${text}</p>
 </main>

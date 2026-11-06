@@ -1,4 +1,4 @@
-<h1><img src="assets/bobcat-head.png" alt="Montana State Bobcat" width="90" align="middle"> catatui</h1>
+<h1><img src="assets/logo.png" alt="catatui logo" width="90" align="middle"> catatui</h1>
 
 A command line agent harness for MSU students
 

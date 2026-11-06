@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="CatChat Desktop icon: white geometric cat speech bubble with gold sparkle on Montana State blue">
+  <rect width="1024" height="1024" rx="205" fill="#162960"/>
+  <path
+    d="M 234 181
+       C 288 214 361 276 418 326
+       H 619
+       C 675 274 751 212 794 181
+       L 821 455
+       C 854 497 870 538 870 583
+       C 870 708 768 795 623 795
+       H 389
+       L 242 892
+       L 281 766
+       C 202 736 157 671 157 583
+       C 157 536 174 493 204 455
+       L 234 181 Z"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-width="56"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+  <path
+    d="M 695 408
+       C 702 455 719 479 774 499
+       C 719 519 702 544 695 593
+       C 687 544 666 519 612 499
+       C 666 479 687 455 695 408 Z"
+    fill="#F4B425"/>
+</svg>

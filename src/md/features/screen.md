@@ -4,8 +4,8 @@
 
 The code is in `src/catatui/banner.ts` and `src/catatui/logo.ts`.
 
-- Terminals with an image protocol (Kitty, iTerm2) show `assets/bobcat-head.png`.
-- Other terminals show a pixel-art bobcat, with a checkerboard of half blocks: green on dark terminals, MSU blue and gold on light terminals.
+- Terminals with an image protocol (Kitty, iTerm2) show `assets/logo.png`.
+- Other terminals show a pixel-art logo, with a checkerboard of half blocks: green on dark terminals, MSU blue and gold on light terminals.
 - The pixel art shows bands in some terminal fonts. This is a font problem, and catatui does not fix it.
 
 ## Footer

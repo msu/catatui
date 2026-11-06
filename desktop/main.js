@@ -1319,7 +1319,7 @@ const act = (action) => () => toRenderer(focusedCtx(), "menu", action);
 const SITE = "https://catatui.cs.montana.edu";
 
 // The About window. The standard macOS About panel shows the Electron icon in development, so the app
-// shows its own window with the bobcat icon.
+// shows its own window with the catai icon.
 function showAbout() {
   let cli = "";
   try { cli = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8")).version; } catch { /* Not in a package. */ }
@@ -1529,7 +1529,7 @@ function createWindow(project, { bounds, openSession, cascade } = {}) {
 // saves a screenshot when the agent is done or a dialog opens (or after 90 seconds), then quits.
 const SNAPSHOT = process.env.CATATUI_DESKTOP_SNAPSHOT;
 
-// The app icon (build/icon.png, the bobcat on MSU blue). Packaging (milestone 6) makes .icns and .ico from it.
+// The app icon (build/icon.png, the cat speech bubble on MSU blue, from assets/logo.svg). Packaging (milestone 6) makes .icns and .ico from it.
 // In development, Electron shows its own icon unless the app sets this one.
 const ICON = join(HERE, "build", "icon.png");
 app.setName("catai");

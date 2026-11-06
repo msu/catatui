@@ -1,35 +1,30 @@
-// Pixel-art bobcat for terminals without an image protocol.
-// Traced from a pixel-art version of the MSU bobcat logo.
-// Each pixel is the main color of a 2x2 block of the trace.
-// N = navy, G = gold, C = cream, . = empty.
+// Pixel-art logo for terminals without an image protocol.
+// Made from assets/logo.svg at 24x24 pixels, with no background and a thicker line.
+// N = navy (the cat line), G = gold (the sparkle), C = cream (not used now), . = empty.
 
 import { foregroundAnsi, getTerminalColorMode, rgbColor } from "@earendil-works/pi-tui";
 
 const ART = [
-  "..................C......",
-  ".................CNC.....",
-  "...............CCNNN.....",
-  "..............CCNNNN.....",
-  ".............CNNNGNC.....",
-  "...........CCNNGGGN......",
-  ".........CCNNNGNGGNCC....",
-  ".......CCNNNNNNNGGGNNC...",
-  ".....CCNNNGGGNGNGGGGNN...",
-  "....CCNNGGGGGGGGGGNGGNN..",
-  "...CCNNGGGGGGNGGGGGNNGNC.",
-  "..CNNNGGGGGGNGGGGGGGGNGNC",
-  ".CNNGGGGNGGNNNGGGGGGGGCGN",
-  "CNNNGGGNGGGGNGGGGCCCNNCCC",
-  "CNNNNNNNGGGNNGGGGCCNCNNN.",
-  "CNCCNNNNNNNNNGGCCCCNCCC..",
-  ".C..CNNNNNNNNGNNNCCNNN...",
-  ".....CGGGCNNNNNCCNCCCN...",
-  "..........CNNNC.CNNNNC...",
-  "...........CNNC...CNC....",
-  "...........GNNC....C.....",
-  "............GN...........",
-  ".............G...........",
-  ".........................",
+  ".....N............N.....",
+  "....NNNN........NNNN....",
+  "....NNNNN......NNNNN....",
+  "....NNNNNNNNNNNNNNNN....",
+  "....NN..NNNNNNNN..NN....",
+  "....NN...NNNNNN...NN....",
+  "....NN............NN....",
+  "...NNN..........G.NNN...",
+  "...NNN.........GGGNNN...",
+  "...NN..........GG..NN...",
+  "...NN..............NNN..",
+  "...NN..............NNN..",
+  "...NN..............NN...",
+  "...NNN............NNN...",
+  "....NNNN.NNNNNNNNNNN....",
+  ".....NNNNNNNNNNNNNN.....",
+  ".....NNNNNNNNNNNN.......",
+  ".....NNN................",
+  ".....NN.................",
+  "........................",
 ];
 
 type Rgb = [number, number, number];

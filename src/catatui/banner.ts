@@ -1,5 +1,5 @@
-// MSU bobcat header.
-// Terminals with the Kitty or iTerm2 image protocol get assets/bobcat-head.png.
+// The logo header.
+// Terminals with the Kitty or iTerm2 image protocol get assets/logo.png.
 // Other terminals get the pixel art in logo.ts, shown from top to bottom: green on dark, MSU colors on light.
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
@@ -10,7 +10,7 @@ import { HEIGHT, logoLines, WIDTH } from "./logo.ts";
 
 const FRAME_MS = 40;
 const ROWS_PER_FRAME = 1;
-const LOGO_PNG = new URL("../../assets/bobcat-head.png", import.meta.url);
+const LOGO_PNG = new URL("../../assets/logo.png", import.meta.url);
 // One example prompt per start, so students learn what catatui can do.
 const TIP = tip();
 
