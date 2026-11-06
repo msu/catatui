@@ -4,6 +4,7 @@
 //   (another app changed it), main.js writes nothing, and a bar asks: Reload, or Keep mine.
 // - While the agent works (busy), the editor saves at once and then is locked. The agent changes the open file
 //   with editor_edit (src/catatui/editor.ts): the change goes into the document, so Cmd+Z can undo it.
+// - While "Changes" is on, the editor is read only. Only the Revert and Keep buttons change it.
 import { useEffect, useRef, useState } from "react";
 import { basicSetup, EditorView } from "codemirror";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
@@ -180,12 +181,14 @@ export function TextEditor({ path, text, busy, onSaved, onFocusInfo, original })
   }, [original]);
 
   // The agent works: save now, then lock. After the agent: unlock.
+  // "Changes" on: also locked. Only Revert and Keep change the text (they dispatch, so readOnly does not stop them).
+  const diffing = original !== undefined;
   useEffect(() => {
     const v = view.current;
     if (!v) return;
-    if (busy && statusRef.current === "dirty") saveRef.current();
-    v.dispatch({ effects: lock.current.reconfigure(busy ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []) });
-  }, [busy]);
+    if ((busy || diffing) && statusRef.current === "dirty") saveRef.current();
+    v.dispatch({ effects: lock.current.reconfigure(busy || diffing ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []) });
+  }, [busy, diffing]);
 
   const reload = () => {
     const v = view.current;
@@ -206,6 +209,7 @@ export function TextEditor({ path, text, busy, onSaved, onFocusInfo, original })
     <div className="editor">
       <div className="editor-bar" role="status" aria-live="polite">
         {busy ? <span className="editor-lock">catai is working. You can edit when it is done.</span>
+          : diffing && status !== "conflict" && status !== "error" ? <span className="editor-state">Read only while Changes is on. Use Revert, or turn off Changes to edit.</span>
           : status === "saved" ? <span className="editor-state">Saved</span>
           : status === "saving" ? <span className="editor-state">Saving...</span>
           : status === "dirty" ? <span className="editor-state">Edited</span>
