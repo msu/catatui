@@ -15,12 +15,13 @@ import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
 import { markdown } from "@codemirror/lang-markdown";
 import { python } from "@codemirror/lang-python";
+import { unifiedMergeView } from "@codemirror/merge";
 
 const api = window.catatui;
 // A change from the disk, not from the student: no autosave.
 const fromDisk = Annotation.define();
 
-// The files that the editor opens. Other text files are read-only in the preview.
+// Syntax highlighting by file type. Other text files open with no highlighting.
 const LANGS = {
   html: () => html(), htm: () => html(), css: () => css(),
   js: () => javascript(), mjs: () => javascript(), cjs: () => javascript(), jsx: () => javascript({ jsx: true }),
@@ -28,7 +29,8 @@ const LANGS = {
   json: () => json(), md: () => markdown(), markdown: () => markdown(), py: () => python(),
   txt: () => [], csv: () => [],
 };
-export const isEditable = (path) => Object.hasOwn(LANGS, path.split(".").pop().toLowerCase());
+// All text files open in the editor (FilePane checks that the file is text). Binary files have their own views.
+export const isEditable = () => true;
 
 // The open editors, by project path. The app gives editor_edit requests to the editor of the file.
 export const editors = new Map();
@@ -49,12 +51,17 @@ function applyEdits(view, spec) {
   return { changes };
 }
 
-export function TextEditor({ path, text, busy, onSaved, onFocusInfo }) {
+// original: the text to compare with ("Changes" on), or undefined. The merge view shows each changed block inline,
+// with "Revert" (back to the original text, then autosave) and "Keep" (hide the block) buttons.
+export function TextEditor({ path, text, busy, onSaved, onFocusInfo, original }) {
   const host = useRef(null);
   const view = useRef(null);
   const base = useRef(text); // the text on disk that the editor knows
   const timer = useRef(undefined);
   const lock = useRef(new Compartment());
+  const merge = useRef(new Compartment());
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
   const [status, setStatus] = useState("saved"); // saved, dirty, saving, conflict, error
   const [conflict, setConflict] = useState(undefined); // the text on disk, in a conflict
   const [error, setError] = useState("");
@@ -105,6 +112,7 @@ export function TextEditor({ path, text, busy, onSaved, onFocusInfo }) {
           keymap.of([indentWithTab]),
           lang,
           lock.current.of([]),
+          merge.current.of([]),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ "aria-label": `Edit ${path}` }),
           EditorView.updateListener.of((u) => {
@@ -153,6 +161,23 @@ export function TextEditor({ path, text, busy, onSaved, onFocusInfo }) {
       setStatus("conflict");
     } else base.current = text;
   }, [text]);
+
+  // "Changes": the merge view against the original text. While the agent works, Revert and Keep do nothing.
+  useEffect(() => {
+    const v = view.current;
+    if (!v) return;
+    const button = (type, action) => {
+      const b = document.createElement("button");
+      b.className = `btn small merge-${type}`;
+      b.textContent = type === "reject" ? "Revert" : "Keep";
+      b.title = type === "reject" ? "Undo this change (back to the original text)" : "Keep this change and hide it";
+      b.onmousedown = (e) => { if (!busyRef.current) action(e); else e.preventDefault(); };
+      return b;
+    };
+    v.dispatch({ effects: merge.current.reconfigure(original === undefined ? [] : unifiedMergeView({
+      original, gutter: true, mergeControls: button, collapseUnchanged: { margin: 3, minSize: 6 },
+    })) });
+  }, [original]);
 
   // The agent works: save now, then lock. After the agent: unlock.
   useEffect(() => {

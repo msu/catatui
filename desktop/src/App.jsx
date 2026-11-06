@@ -1,4 +1,3 @@
-import { structuredPatch } from "diff";
 import { marked } from "marked";
 import { createContext, useContext, useEffect, useReducer, useRef, useState } from "react";
 import logo from "./bobcat.png";
@@ -273,7 +272,8 @@ export function App() {
   // each notice (for example "Undo complete"), so the git status and the changed files stay correct.
   const [tree, setTree] = useState({ files: [], status: {}, agent: [], git: false });
   const [showTree, setShowTree] = useState(true);
-  const [viewing, setViewing] = useState(undefined);
+  // "Changes" (diff): the file opens in the side panel with its changes on (FilePane and the editor merge view).
+  const showChanges = (p) => openSide({ type: "file", path: p, changes: Date.now() });
   const [selectedFile, setSelectedFile] = useState(undefined);
   // The "Select a folder for your project" window.
   const [picking, setPicking] = useState(false);
@@ -307,7 +307,7 @@ export function App() {
     launch: (p) => (/\.html?$/i.test(p) ? previewFile(p) : openSide({ type: "web" })),
     open: (p) => api.openPath(p),
     view: (p) => openSide({ type: "file", path: p }),
-    diff: (p) => setViewing(p),
+    diff: (p) => showChanges(p),
     // "Audit accessibility" in the tree menu. The steps are in the accessible-documents skill.
     audit: (p, folder) => send(
       `Audit the accessibility of the ${folder ? "documents in the folder" : "document"} ${PROJECT.replace(/[\\/]$/, "")}/${p}. ` +
@@ -340,6 +340,8 @@ export function App() {
   const editedSince = useRef(new Set());
   useEffect(() => { if (state.busy) editedSince.current.clear(); }, [state.busy]);
   const onEdited = (p) => {
+    // Each save: read the git status and the changes again, so the tree color and "Changes" show at once.
+    setTreeTick((t) => t + 1);
     if (editedSince.current.has(p)) return;
     editedSince.current.add(p);
     api.command({ type: "prompt", message: `/catai-edited ${JSON.stringify([p])}` });
@@ -432,14 +434,10 @@ export function App() {
   // Escape goes back: from the diff to the tree, from the tree and the chat to the message box.
   const focusComposer = () => document.querySelector(".composer textarea")?.focus();
   const focusTree = () => (document.querySelector(".tree-row.current") ?? document.querySelector(".tree-row"))?.focus();
-  function closeViewer() {
-    setViewing(undefined);
-    setTimeout(() => (document.querySelector(".tree-row") ? focusTree() : focusComposer()), 0);
-  }
   function moveArea(step) {
     const areas = [
       { el: ".tree", focus: focusTree },
-      { el: ".files", focus: () => document.querySelector(".files .diff-view, .files")?.focus() },
+      { el: ".side-panel", focus: () => (document.querySelector(".side-panel .cm-content") ?? document.querySelector(".side-panel .side-tab"))?.focus() },
       { el: "main.chat", focus: () => document.querySelector("main.chat")?.focus() },
       { el: ".composer", focus: focusComposer },
     ].filter((a) => document.querySelector(a.el));
@@ -458,7 +456,7 @@ export function App() {
       const file = selectedRef.current;
       if (!file) return;
       e.preventDefault();
-      setViewing((v) => (v === file ? undefined : file));
+      showChanges(file);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -595,16 +593,15 @@ export function App() {
             onLink={() => setLinking(true)} tick={linkTick} />
         )}
         {info.chat ? null : showTree
-          ? <FileTree tree={tree} selected={selectedFile} onEscape={focusComposer} onSelect={selectFile} onOpen={(p) => openSide({ type: "file", path: p })} onAdd={askAboutFile} onTrash={trashItem} onDiff={setViewing} onRefresh={() => setTreeTick((t) => t + 1)} onCollapse={() => setShowTree(false)}
+          ? <FileTree tree={tree} selected={selectedFile} onEscape={focusComposer} onSelect={selectFile} onOpen={(p) => openSide({ type: "file", path: p })} onAdd={askAboutFile} onTrash={trashItem} onDiff={showChanges} onRefresh={() => setTreeTick((t) => t + 1)} onCollapse={() => setShowTree(false)}
             onPin={(p) => openSide({ type: "file", path: p })} onPreview={previewFile} onMove={moveItem} onImport={importItems} reveal={reveal} />
           : <button className="tree-strip" onClick={() => setShowTree(true)} title="Show the files">»</button>}
-        {viewing && <FileViewer path={viewing} tick={treeTick + state.items.length} onClose={closeViewer} />}
         <div className={`main-col ${dropping ? "dropping" : ""}`}
           onDragOver={(e) => { e.preventDefault(); if (!dropping) setDropping(true); }}
           onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false); }}
           onDrop={onDrop}>
           {dropping && <div className="drop-hint">Drop the file to add it to the chat. A file from outside the project gets a copy in the project.</div>}
-          <Chat items={state.items} busy={state.busy} onShowChanges={setViewing} changed={tree} scrollTick={scrollTick} fileTick={fileTick}
+          <Chat items={state.items} busy={state.busy} onShowChanges={showChanges} changed={tree} scrollTick={scrollTick} fileTick={fileTick}
             widgets={state.widgets} onWidgetAnswer={(req, data) => { api.respond({ id: req.id, value: JSON.stringify(data) }); local((st) => closeDialog(st, req.id)); }}
             resume={info.kind === "chat" ? info.resumeProject : undefined} onResume={openProject} advising={info.kind === "advising"} onAsk={send}
             kind={info.kind} project={info.project} onOpenSession={openAnySession} onRemove={removeFromChat}
@@ -621,7 +618,7 @@ export function App() {
         {side.tabs.length > 0 && (
           <SidePanel side={side} width={sideWidth} setWidth={setSideWidth} onActivate={(id) => setSide((st) => ({ ...st, active: id }))}
             onClose={closeSide} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })} fileTick={fileTick} reloadTick={reloadTick}
-            files={tree.files} webApp={tree.webApp} onReveal={revealFile} busy={state.busy} onEdited={onEdited} onEditorFocus={editorFocus}
+            files={tree.files} webApp={tree.webApp} onReveal={revealFile} markOf={(p) => (tree.git ? tree.status?.[p] : tree.agent?.includes(p) ? "M" : undefined)} busy={state.busy} onEdited={onEdited} onEditorFocus={editorFocus}
             onStartServer={(sv) => send(`Start the web app of this project with the server tool: ${sv.command}. When it runs, show http://localhost:${sv.port} with show_preview.`)} />
         )}
       </div>
@@ -690,9 +687,12 @@ function FileTree({ tree, selected, onSelect, onOpen, onAdd, onTrash, onDiff, on
     const m = mark(p);
     const isText = !/\.(xlsx?|docx?|pptx?|pdf|png|jpe?g|gif|webp|ico|zip|gz)$/i.test(p);
     const canAudit = folder || /\.(pdf|docx|html?)$/i.test(p);
-    const picked = await api.fileMenu(p, { folder, canAudit: canAudit && p !== "", canDiff: !folder && isText && (m === "M" || m === "R"), canRollback: !folder && !!m, canLaunch: !folder && !!actions?.canLaunch(p) });
+    const hasChanges = Object.keys(tree.status ?? {}).length > 0;
+    const picked = await api.fileMenu(p, { folder, git: !!tree.git, hasChanges, canAudit: canAudit && p !== "", canDiff: !folder && isText && (m === "M" || m === "R"), canRollback: !folder && !!m, canLaunch: !folder && !!actions?.canLaunch(p) });
     if (picked === "add") onAdd(p);
     if (picked === "trash") onTrash(p);
+    if (picked === "git-init") initGit();
+    if (picked === "commit") setCommitting(true);
     if (picked === "diff") onDiff(p);
     if (picked === "view") onPin(p);
     if (picked === "launch") actions?.launch(p);
@@ -703,6 +703,10 @@ function FileTree({ tree, selected, onSelect, onOpen, onAdd, onTrash, onDiff, on
   const root = buildTree(paths, words.length || changedOnly ? [] : (tree.emptyDirs ?? []));
   // "New" in the menu: the name dialog for the kind, in the folder (project path, "" is the project folder).
   const [creating, setCreating] = useState(undefined);
+  // Git (only when the student wants it): "Initialize Git..." and "Commit All Changes...".
+  const [committing, setCommitting] = useState(false);
+  const changedCount = Object.keys(tree.status ?? {}).length;
+  const initGit = async () => { const r = await api.gitInit(); if (r.ok) onRefresh(); };
   // The width of the tree: drag the right edge, or use the arrow keys on it (160 px to 50% of the window).
   // undefined: the width from the CSS.
   const [width, setWidth] = useState(() => { try { return Number(localStorage.getItem("treeWidth")) || undefined; } catch { return undefined; } });
@@ -866,6 +870,9 @@ function FileTree({ tree, selected, onSelect, onOpen, onAdd, onTrash, onDiff, on
         {tree.git
           ? <label className="small"><input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} /> Changed only</label>
           : <span className="small muted">Files</span>}
+        {tree.git && changedCount > 0 && (
+          <button className="btn small tree-commit" onClick={() => setCommitting(true)} title={`Commit (save a version of) the ${changedCount} changed file${changedCount === 1 ? "" : "s"}`}>Commit...</button>
+        )}
         <span className="tree-tools">
           <button className="icon-btn" onClick={onRefresh} title="Read the files again" aria-label="Refresh">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 6.5A6.5 6.5 0 1 0 16.5 11" /><path d="M16 2.5v4.3h-4.3" /></svg>
@@ -900,7 +907,40 @@ function FileTree({ tree, selected, onSelect, onOpen, onAdd, onTrash, onDiff, on
         {renderNode(root, "", 0)}
       </div>
       {creating && <NewFileDialog {...creating} onDone={created} onCancel={() => setCreating(undefined)} />}
+      {committing && <CommitDialog count={changedCount} onDone={() => { setCommitting(false); onRefresh(); }} onCancel={() => setCommitting(false)} />}
     </aside>
+  );
+}
+
+// "Commit All Changes...": a message, then git add --all and git commit (main.js "git-commit").
+function CommitDialog({ count, onDone, onCancel }) {
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const commit = async () => {
+    setBusy(true);
+    const r = await api.gitCommit(message);
+    setBusy(false);
+    if (r.error) setError(r.error); else onDone();
+  };
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && !busy && onCancel()}>
+      <div className="window new-file" role="dialog" aria-modal="true" aria-label="Commit all changes">
+        <div className="window-title"><img src={logo} alt="" /><span>Commit All Changes</span></div>
+        <div className="new-file-body">
+          <label htmlFor="commit-msg">A commit saves a version of the {count} changed file{count === 1 ? "" : "s"}. What changed?</label>
+          <input id="commit-msg" className="input-field" autoFocus value={message} disabled={busy} placeholder="For example: Add the quiz page"
+            onChange={(e) => { setMessage(e.target.value); setError(""); }}
+            onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { e.stopPropagation(); onCancel(); } }} />
+          {error && <p className="error">{error}</p>}
+        </div>
+        <div className="window-buttons">
+          <span className="spacer" />
+          <button className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button className="btn primary default" onClick={commit} disabled={busy}>Commit</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -944,76 +984,6 @@ function NewFileDialog({ kind, dir, onDone, onCancel }) {
 
 const STATUS_NAMES = { M: "Modified", A: "Added", D: "Deleted", R: "Renamed", "?": "New file, not in git (untracked)" };
 
-// The right panel: a file and its changes. "Before" is the last commit in git, or the file before the agent changed it.
-function FileViewer({ path, tick, onClose }) {
-  const [file, setFile] = useState(undefined);
-  useEffect(() => { api.fileView(path).then(setFile); }, [path, tick]);
-  return (
-    <aside className="files" tabIndex={-1} onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}>
-      <div className="files-head">
-        <strong className="file-name" title={path}>{path}</strong>
-        <span className="file-viewer-buttons"><FileButtons path={path} except={["diff"]} /></span>
-        <button className="icon-btn" onClick={onClose} title="Close (Escape)" aria-label="Close">×</button>
-      </div>
-      {file?.error && <p className="error pad">{file.error}</p>}
-      {file && !file.error && (
-        <>
-          <div className="muted small pad">
-            {file.status === "same" ? "No changes." : file.status === "added" ? "New file." : file.status === "deleted" ? "The file was deleted." : `Changes since the ${file.base}.`}
-          </div>
-          <FileDiff file={file} />
-        </>
-      )}
-    </aside>
-  );
-}
-
-function FileDiff({ file }) {
-  if (file.binary || file.big) {
-    return (
-      <div className="pad">
-        <p className="muted small">{file.binary ? "This file is not text (for example an Excel or Word file), so there is no diff." : "This file is too large to show a diff."}</p>
-        {file.status !== "deleted" && <button onClick={() => api.openPath(file.path)}>Open the file</button>}
-      </div>
-    );
-  }
-  // No change: show the whole file with line numbers.
-  if (file.status === "same") {
-    return (
-      <div className="diff-view" tabIndex={0}>
-        {file.after.split("\n").map((line, i) => (
-          <div key={i} className="dl ctx"><span className="ln">{i + 1}</span><span className="dt">{line}</span></div>
-        ))}
-      </div>
-    );
-  }
-  const patch = structuredPatch(file.path, file.path, file.before, file.after, "", "", { context: 3 });
-  return (
-    <div className="diff-view" tabIndex={0}>
-      {patch.hunks.map((h, i) => {
-        let oldNo = h.oldStart;
-        let newNo = h.newStart;
-        return (
-          <div key={i} className="hunk">
-            <div className="hunk-head">@@ -{h.oldStart},{h.oldLines} +{h.newStart},{h.newLines} @@</div>
-            {h.lines.map((line, j) => {
-              // "\ No newline at end of file" is not a line of the file.
-              if (line.startsWith("\\")) return null;
-              const kind = line[0] === "+" ? "add" : line[0] === "-" ? "del" : "ctx";
-              const nums = kind === "add" ? ["", newNo++] : kind === "del" ? [oldNo++, ""] : [oldNo++, newNo++];
-              return (
-                <div key={j} className={`dl ${kind}`}>
-                  <span className="ln">{nums[0]}</span><span className="ln">{nums[1]}</span>
-                  <span className="dt">{line}</span>
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 // The project screen: a traditional list of recent projects (from the catatui sessions), and buttons to open one.
 // Click selects a row, double-click or Open opens it.
@@ -1262,7 +1232,7 @@ function MaximizeIcon() {
   );
 }
 
-function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, fileTick, reloadTick, files, webApp, onReveal, onStartServer, busy, onEdited, onEditorFocus }) {
+function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, fileTick, reloadTick, files, webApp, onReveal, onStartServer, busy, onEdited, onEditorFocus, markOf }) {
   // Drag the left edge to change the width (240 px to 75% of the window).
   const drag = (e) => {
     e.preventDefault();
@@ -1290,14 +1260,19 @@ function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, file
           <span key={id(t)} className={`side-tab ${t === active ? "on" : ""}`}>
             <button role="tab" aria-selected={t === active} onClick={() => onActivate(id(t))} title={t.type === "web" ? t.url ?? "Web preview" : t.path}>
               {t.type === "web" ? <GlobeIcon /> : <FileIcon name={t.path} />}
-              <span className="side-tab-name">{t.type === "web" ? "Preview" : t.path.split("/").pop()}</span>
+              {/* A changed file: the same colors as the tree (green new, blue modified), and a dot. */}
+              {(() => {
+                const m = t.type === "file" ? markOf?.(t.path) : undefined;
+                const cls = m ? `git-${m === "?" || m === "A" ? "new" : m === "D" ? "D" : "M"}` : "";
+                return <span className={`side-tab-name ${cls}`} title={m ? STATUS_NAMES[m] ?? "Changed" : undefined}>{t.type === "web" ? "Preview" : t.path.split("/").pop()}{m && <span className="tab-dot" aria-label=" (changed)"> &bull;</span>}</span>;
+              })()}
             </button>
             <button className="side-tab-close" onClick={() => onClose(id(t))} aria-label="Close" title="Close">&times;</button>
           </span>
         ))}
       </div>
       <div className="side-body">
-        {active?.type === "file" && <FilePane key={active.path} path={active.path} tick={fileTick} onReveal={onReveal} onPreview={onOpenWeb} busy={busy} onEdited={onEdited} onEditorFocus={onEditorFocus} />}
+        {active?.type === "file" && <FilePane key={active.path} path={active.path} changesAt={active.changes} tick={fileTick} onReveal={onReveal} onPreview={onOpenWeb} busy={busy} onEdited={onEdited} onEditorFocus={onEditorFocus} />}
         {/* The web preview stays mounted (hidden) when another tab is on, so the page keeps its state. */}
         {side.tabs.some((t) => t.type === "web") && (
           <WebPane hidden={active?.type !== "web"} tab={side.tabs.find((t) => t.type === "web")} reloadTick={reloadTick} webApp={webApp} onOpen={onOpenWeb} onStartServer={onStartServer} />
@@ -1308,11 +1283,23 @@ function SidePanel({ side, width, setWidth, onActivate, onClose, onOpenWeb, file
 }
 
 // A pinned file: the whole text with line numbers, or the image. It reads the file again after each change.
-function FilePane({ path, tick, onReveal, onPreview, busy, onEdited, onEditorFocus }) {
+function FilePane({ path, changesAt, tick, onReveal, onPreview, busy, onEdited, onEditorFocus }) {
   const [f, setF] = useState(undefined);
   useEffect(() => { api.fileRead(path).then(setF); }, [path, tick]);
-  // A text file that the editor knows: edit it here. The agent learns that no file is open when the pane closes.
+  // The changes of the file (git: since the last commit; else since the agent first changed it in this chat).
+  const [diff, setDiff] = useState(undefined);
+  useEffect(() => { api.fileView(path).then(setDiff); }, [path, tick]);
+  const changed = diff && !diff.error && diff.status !== "same";
+  const [showDiff, setShowDiff] = useState(!!changesAt);
+  useEffect(() => { if (changesAt) setShowDiff(true); }, [changesAt]);
+  // No changes are left (for example the student reverted all blocks): leave the Changes mode.
+  useEffect(() => { if (diff && !diff.error && diff.status === "same") setShowDiff(false); }, [diff]);
+  const since = diff?.base === "last commit" ? "since the last commit" : diff?.base === "before the agent" ? "since the agent changed it" : diff?.status === "added" ? "(a new file)" : "";
+  // A text file: edit it here. The agent learns that no file is open when the pane closes.
   const editable = isEditable(path) && f?.text !== undefined;
+  // The editor shows the changes inline, with Revert and Keep for each block (editor.jsx, @codemirror/merge).
+  const original = showDiff && changed && editable && !diff.binary && !diff.big ? (diff.before ?? "") : undefined;
+  const rollBack = async () => { if (await api.rollBack(path)) setShowDiff(false); };
   useEffect(() => () => onEditorFocus?.(null), []);
   // A read-only view: the agent learns which file the student looks at (no editor_edit).
   useEffect(() => { if (f && !editable) onEditorFocus?.({ path, readOnly: true }); }, [path, !!f, editable]);
@@ -1325,14 +1312,25 @@ function FilePane({ path, tick, onReveal, onPreview, busy, onEdited, onEditorFoc
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></svg>
           Read-only
         </span>}
+        {changed && (
+          <button className={`btn small toggle ${showDiff ? "toggle-on" : ""}`} aria-pressed={showDiff} onClick={() => setShowDiff((v) => !v)}
+            title={`Show the changes ${since}`}>Changes</button>
+        )}
         <button className="btn small" onClick={() => onReveal(path)}>Show In Project</button>
-        <FileButtons path={path} except={["view"]} primaryOpen />
+        <FileButtons path={path} except={["view", "diff"]} primaryOpen />
       </div>
       {f?.error && <p className="error pad">{f.error}</p>}
       {f?.image && <div className="pane-image"><img src={f.image} alt={path} /></div>}
       {f?.sheets && <ExcelGrid sheets={f.sheets} />}
       {(f?.binary || f?.big) && <p className="muted pad">{f.big ? "This file is too large to show." : "This file is not text."} Click {OPEN_IN[ext] ? `"Open in ${OPEN_IN[ext]}"` : "\"Open\""}.</p>}
-      {editable && <TextEditor path={path} text={f.text} busy={busy} onSaved={onEdited} onFocusInfo={onEditorFocus} />}
+      {showDiff && changed && (
+        <div className="diff-note">
+          {original !== undefined ? <>Changes {since}.</>
+            : diff.status === "deleted" ? <>The file was deleted.</> : <>This file changed {since}. catai cannot show the changes of this file type.</>}
+          {original === undefined && <button className="btn small" onClick={rollBack}>Roll back...</button>}
+        </div>
+      )}
+      {editable && <TextEditor path={path} text={f.text} busy={busy} onSaved={onEdited} onFocusInfo={onEditorFocus} original={original} />}
       {!editable && f?.text !== undefined && (
         <div className="diff-view pane-text" tabIndex={0}>
           {f.text.split("\n").map((line, i) => <div key={i} className="dl ctx"><span className="ln">{i + 1}</span><span className="dt">{line}</span></div>)}
@@ -2877,7 +2875,8 @@ function serverEntry(server) {
 const launchable = (p, webApp) => /\.html?$/i.test(p) || (!!webApp?.server && p === serverEntry(webApp.server));
 
 // primaryOpen: "Open in Excel" (Word, PowerPoint) is the gold button, because the preview is read-only.
-function FileButtons({ path, except = [], primaryOpen = false }) {
+// compact (file cards): "Open in Default App" is an icon button, so the buttons fit in one row. Office files keep the name.
+function FileButtons({ path, except = [], primaryOpen = false, compact = false }) {
   const a = useContext(FileActions);
   if (!a || !path) return null;
   const ext = path.split(".").pop().toLowerCase();
@@ -2885,8 +2884,12 @@ function FileButtons({ path, except = [], primaryOpen = false }) {
   return <>
     {show("launch") && a.canLaunch(path) && <button className="btn small" onClick={() => a.launch(path)} title="Run the page or app in the preview, next to the chat">Launch</button>}
     {show("view") && <button className="btn small" onClick={() => a.view(path)} title="Open the file in catai, in the side panel">Open</button>}
-    {show("open") && <button className={`btn small ${primaryOpen && OPEN_IN[ext] ? "primary" : ""}`} onClick={() => a.open(path)} title="Open the file in an app outside catai">Open in {OPEN_IN[ext] ?? "Default App"}</button>}
-    {show("diff") && a.canDiff(path) && <button className="btn small" onClick={() => a.diff(path)} title="Show the changes since the last commit">Diff</button>}
+    {show("open") && (compact && !OPEN_IN[ext]
+      ? <button className="btn small icon-only" onClick={() => a.open(path)} title="Open in Default App (outside catai)" aria-label="Open in Default App">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M12 9.5v3.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-8a.5.5 0 0 1 .5-.5H7" /></svg>
+        </button>
+      : <button className={`btn small ${primaryOpen && OPEN_IN[ext] ? "primary" : ""}`} onClick={() => a.open(path)} title="Open the file in an app outside catai">Open in {OPEN_IN[ext] ?? "Default App"}</button>)}
+    {show("diff") && a.canDiff(path) && <button className="btn small" onClick={() => a.diff(path)} title="Show the changes since the last commit">Changes</button>}
   </>;
 }
 
@@ -2922,7 +2925,7 @@ function FileCard({ path, tick, onShowChanges, onPin, onRemove }) {
       <div className="file-card-foot">
         <span className="menu-note">{meta}</span>
         <span className="file-card-buttons">
-          {p && !p.error && <FileButtons path={path} />}
+          {p && !p.error && <FileButtons path={path} compact />}
         </span>
       </div>
     </div>

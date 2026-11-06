@@ -8,7 +8,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, prot
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { REMOVED, redactSession } from "./redact.js";
@@ -279,13 +279,15 @@ ipcMain.handle("file-menu", (e, path, opts) => new Promise((done) => {
       ...(opts?.canLaunch ? [{ label: "Launch", click: () => { picked = "launch"; } }] : []),
       // Drag is the main way to add a file to the chat. This item is for the keyboard and screen readers.
       { label: "Add to Chat", click: () => { picked = "add"; } },
-      ...(opts?.canDiff ? [{ label: "Diff", click: () => { picked = "diff"; } }] : []),
-      ...(opts?.canRollback ? [{ label: "Roll back to last commit...", click: async () => { if (await rollBack(c, rel)) toRenderer(c, "files-changed"); } }] : []),
+      ...(opts?.canDiff ? [{ label: "Show Changes", click: () => { picked = "diff"; } }] : []),
+      ...(opts?.canRollback ? [{ label: "Roll Back to Last Commit...", click: async () => { if (await rollBack(c, rel)) toRenderer(c, "files-changed"); } }] : []),
       { type: "separator" },
     ]),
     ...(rel ? [{ label: `Move to ${process.platform === "win32" ? "Recycle Bin" : "Trash"}...`, click: () => { picked = "trash"; } }, { type: "separator" }] : []),
     { label: reveal, click: () => (rel ? shell.showItemInFolder(full) : shell.openPath(full)) },
     { label: "Open in Terminal", click: () => openTerminal(dir) },
+    { type: "separator" },
+    opts?.git ? { label: "Commit All Changes...", enabled: !!opts.hasChanges, click: () => { picked = "commit"; } } : { label: "Initialize Git...", click: () => { picked = "git-init"; } },
     { label: "Copy path", click: () => clipboard.writeText(full) },
     { label: "Copy relative path", click: () => clipboard.writeText(rel) },
   ];
@@ -370,6 +372,51 @@ ipcMain.handle("file-move", (e, from, toDir) => {
 // Roll back one changed file. A file in the last commit: git puts back that version (also for a deleted file).
 // A new file (not in the last commit): it goes to the trash, so the student can get it back.
 // A native question comes first, because the changes are lost.
+// ---- Git in the tree: "Initialize Git..." (no repository) and "Commit All Changes..." (a repository). ----
+// Git is never required. These items show only when they apply.
+const GITIGNORE = "node_modules/\n.DS_Store\n__pycache__/\n.venv/\nvenv/\n*.pyc\n";
+ipcMain.handle("git-init", async (e) => {
+  const c = ctxOf(e);
+  if (!c?.project) return { error: "No project is open." };
+  if (git(c, ["rev-parse", "--is-inside-work-tree"]) !== undefined) return { error: "This project already uses git." };
+  const r = await dialog.showMessageBox(c.win, {
+    type: "question",
+    message: "Initialize Git in this project?",
+    detail: "Git keeps versions of your files. Then you can see your changes, commit (save a version), and roll back a file. " +
+      "catai adds a hidden .git folder, and a .gitignore file if there is none. Nothing else changes.",
+    buttons: ["Initialize Git", "Cancel"], defaultId: 0, cancelId: 1,
+  });
+  if (r.response !== 0) return { cancelled: true };
+  const out = await gitAsync(c.project, ["init", "-b", "main"]);
+  if (out.code !== 0) return { error: `git could not start: ${out.stderr.trim()}` };
+  const ignore = join(c.project, ".gitignore");
+  if (!existsSync(ignore)) writeFileSync(ignore, GITIGNORE);
+  toRenderer(c, "files-changed");
+  return { ok: true };
+});
+// The name and the email for a commit: the git settings, else the GitHub sign-in, else the computer user (as gittools.ts).
+function commitIdentity(c) {
+  const name = (git(c, ["config", "user.name"]) ?? "").trim();
+  const email = (git(c, ["config", "user.email"]) ?? "").trim();
+  if (name && email) return [];
+  const gh = github.readGitHub();
+  let user = gh?.login;
+  if (!user) { try { user = userInfo().username; } catch { user = "student"; } }
+  return ["-c", `user.name=${name || user}`, "-c", `user.email=${email || (gh ? `${gh.login}@users.noreply.github.com` : `${user}@localhost`)}`];
+}
+ipcMain.handle("git-commit", async (e, message) => {
+  const c = ctxOf(e);
+  if (!c?.project) return { error: "No project is open." };
+  const msg = String(message ?? "").trim();
+  if (!msg) return { error: "Type a short message that says what changed." };
+  const add = await gitAsync(c.project, ["add", "--all"]);
+  if (add.code !== 0) return { error: `git could not add the files: ${add.stderr.trim()}` };
+  const out = await gitAsync(c.project, [...commitIdentity(c), "commit", "-m", msg]);
+  if (out.code !== 0) return { error: /nothing to commit/i.test(out.stdout + out.stderr) ? "There are no changes to commit." : `git could not commit: ${out.stderr.trim() || out.stdout.trim()}` };
+  toRenderer(c, "files-changed");
+  return { ok: true };
+});
+
 async function rollBack(c, rel) {
   const full = resolve(c.project, rel);
   const inHead = git(c, ["cat-file", "-e", `HEAD:${rel}`]) !== undefined;
@@ -433,6 +480,18 @@ ipcMain.handle("file-write", (e, path, text, expected) => {
   if ((disk?.toString("utf8") ?? "") !== expected) return { conflict: true, text: disk?.toString("utf8") };
   try { writeFileSync(full, text); } catch (err) { return { error: `catai could not save ${basename(full)}: ${err.message}` }; }
   return { ok: true };
+});
+
+// "Roll back..." in the side panel (files with no text diff): the same question and action as the tree menu.
+ipcMain.handle("file-rollback", async (e, path) => {
+  const c = ctxOf(e);
+  if (!c?.project) return false;
+  const full = resolve(c.project, path);
+  const rel = relative(c.project, full);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return false;
+  const done = await rollBack(c, rel);
+  if (done) toRenderer(c, "files-changed");
+  return done;
 });
 
 // A project file as a URL for the web preview (file://). Only files in the project.

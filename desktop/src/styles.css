@@ -368,7 +368,9 @@ button.project:hover { color: var(--blue); text-decoration: underline; }
 .file-card-big .ficon { width: 5rem; height: 5rem; }
 .file-card-msg { padding: .5rem; font-size: .75rem; color: var(--muted); border: 0; }
 .file-card-foot { display: flex; flex-direction: column; gap: .3rem; padding: .35rem .5rem; border-top: 1px solid var(--btn-border); background: var(--panel); }
-.file-card-buttons { display: flex; gap: .3rem; justify-content: flex-end; padding: 0; }
+.file-card-buttons { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; padding: 0; }
+.btn.small.icon-only { display: inline-grid; place-items: center; padding: .15rem .35rem; }
+.btn.small.icon-only svg { width: .85rem; height: .85rem; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .btn.small { padding: .15rem .5rem; font-size: .75rem; min-width: 0; }
 
 /* Drag and drop into the chat. */
@@ -1092,3 +1094,24 @@ body.resizing webview { pointer-events: none; }
 .gh-progress-label { display: flex; justify-content: space-between; font-size: .8rem; color: var(--muted); margin-bottom: .25rem; }
 .gh-progress-track { height: .5rem; border-radius: 999px; background: var(--code); overflow: hidden; }
 .gh-progress-fill { height: 100%; background: var(--gold); border-radius: 999px; transition: width .25s ease; }
+
+/* "Changes" in the side panel: the note, and the merge view buttons in the editor (@codemirror/merge). */
+.diff-note { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; padding: .3rem .6rem; font-size: .78rem; color: var(--muted); border-bottom: 1px solid var(--line); background: var(--panel); }
+.editor-host .cm-chunkButtons { display: inline-flex; gap: .3rem; margin: .15rem 0; }
+.editor-host .cm-chunkButtons .btn.small { font-size: .7rem; padding: .05rem .5rem; }
+.editor-host .cm-chunkButtons .btn.small { background: var(--panel); }
+.editor-host .cm-chunkButtons .merge-reject { border-color: var(--err); color: var(--err); }
+.editor-host .cm-chunkButtons .merge-accept { border-color: var(--ok); color: var(--ok); }
+
+/* Side panel tabs of changed files: the tree colors (.git-*) and a dot. */
+.side-tab-name.git-new { color: #1a7f37; }
+.side-tab-name.git-M { color: #1f5fc4; }
+.side-tab-name.git-D { color: #c62828; }
+@media (prefers-color-scheme: dark) { .side-tab-name.git-new { color: #4ac26b; } .side-tab-name.git-M { color: #6ea8ff; } .side-tab-name.git-D { color: #ff7b72; } }
+.tab-dot { font-weight: 700; }
+/* A toggle button (Changes): pressed in while it is on. */
+.btn.toggle-on, .btn.toggle-on:hover:not(:disabled) { background: var(--btn-bottom); border-color: var(--blue); color: var(--blue); font-weight: 700;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, .22); transform: translateY(1px); filter: none; }
+
+/* The tree header: "Commit..." when the git project has changes. */
+.tree-commit { margin-left: auto; margin-right: .3rem; }
