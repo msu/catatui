@@ -19,7 +19,7 @@
 
   $Site = if ($env:CATATUI_SITE) { $env:CATATUI_SITE } else { "https://catatui.cs.montana.edu" }
   # The commit to install. catatui and catai come from the same commit. To release a new version, change it.
-  $Commit = "6ed5c96d8f080603116004bf29355c78201a6087"
+  $Commit = "79245cb5da9c569ffdd1ebed60a55b523db7bf30"
   $Repo = "https://codeload.github.com/msu/catatui/tar.gz/$Commit"
   $App = if ($env:CATATUI_APP) { $env:CATATUI_APP } else { Join-Path $HOME ".catatui\app" }
   $Catai = Join-Path $App "catai"
