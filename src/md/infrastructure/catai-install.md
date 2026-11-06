@@ -27,7 +27,8 @@ The scripts are `docs/catai/install.ps1` and `docs/catai/install.sh`. GitHub Pag
 
 - The script needs downloads from catatui.cs.montana.edu, nodejs.org, codeload.github.com, and github.com (Electron and dugite releases).
 - The app user data (window places, titles) is in Electron's userData folder (`%APPDATA%\catai`), so an update keeps it.
-- Close catai before an update. Windows locks the files of a running app.
-- Not tested on Windows yet. PowerShell was not available to check the script syntax.
+- Windows locks the files of a running app. So the script first stops all programs from `~\.catatui\app` (catai, catatui, git), and then tries 5 times to remove the old catai folder. On 2026-11-06 a student install had no `jiti` in the catatui package, and catai did not start. The probable cause is a running catai during the update (not confirmed).
+- main.js looks for jiti in 3 folders (in catatui, in pi, next to catatui), because npm can put it in each of them.
+- Windows: first used by students on 2026-11-06. The fixes above are not tested on Windows yet. PowerShell was not available to check the script syntax.
 - macOS: unpack Electron with `ditto`, which keeps the links in Electron.app. Quit catai before an update.
 - macOS: tested end to end with an isolated HOME and a local site (CATATUI_SITE).

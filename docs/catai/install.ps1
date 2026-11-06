@@ -2,7 +2,7 @@
 #
 #   irm https://catatui.cs.montana.edu/catai/install.ps1 | iex
 #
-# To update catai, run the same command again. Close catai first.
+# To update catai, run the same command again. The installer closes catai and catatui first.
 #
 # The installer:
 #   1. installs catatui with the catatui installer (Node.js, the catatui package, and git from dugite);
@@ -27,6 +27,15 @@
   function Fail($message) {
     Write-Host "Install failed: $message" -ForegroundColor Red
     throw "Install failed"
+  }
+
+  # 0. Stop catai and other programs from the catatui folder (catatui, its git). Windows does not let the
+  # install replace files that a program uses. If npm cannot replace them, the catatui package is incomplete.
+  $running = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($App, [StringComparison]::OrdinalIgnoreCase) })
+  if ($running.Count -gt 0) {
+    Write-Host "Closing catai and catatui..."
+    foreach ($p in $running) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 2
   }
 
   # 1. catatui. catai starts catatui for each project, and uses its files (root.json below).
@@ -60,9 +69,13 @@
     $src = Get-ChildItem $tmp -Directory | Where-Object { Test-Path (Join-Path $_.FullName "desktop\main.js") } | Select-Object -First 1
     if (-not $src) { Fail "the catai download has no desktop folder." }
 
-    if (Test-Path $Catai) {
+    # Antivirus or Explorer can hold a file for some seconds, so try 5 times.
+    for ($i = 1; (Test-Path $Catai) -and $i -le 5; $i++) {
       try { Remove-Item -Recurse -Force $Catai }
-      catch { Fail "cannot replace the old catai files. Close catai, then run this script again." }
+      catch {
+        if ($i -eq 5) { Fail "cannot replace the old catai files ($($_.Exception.Message)). Close catai and all File Explorer windows in $Catai, then run this script again." }
+        Start-Sleep -Seconds 2
+      }
     }
     New-Item -ItemType Directory -Force -Path $App | Out-Null
     Move-Item (Join-Path $src.FullName "desktop") $Catai

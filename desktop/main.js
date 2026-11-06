@@ -26,7 +26,14 @@ const CATATUI_BIN = join(ROOT, "bin", "catatui.js");
 process.env.PI_CODING_AGENT_DIR ??= join(homedir(), ".catatui");
 
 // Load the TypeScript sign-in code from the CLI.
-const { createJiti } = await import(pathToFileURL(join(ROOT, "node_modules", "jiti", "lib", "jiti.mjs")).href);
+// jiti comes with pi, so npm can put it in different folders: in catatui, in pi, or next to catatui.
+const JITI = [
+  join(ROOT, "node_modules", "jiti"),
+  join(ROOT, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "jiti"),
+  join(ROOT, "..", "jiti"),
+].map((dir) => join(dir, "lib", "jiti.mjs")).find((file) => existsSync(file));
+if (!JITI) throw new Error(`catai cannot find jiti in the catatui package (${ROOT}). Install catai again.`);
+const { createJiti } = await import(pathToFileURL(JITI).href);
 const jiti = createJiti(import.meta.url);
 const auth = await jiti.import(join(ROOT, "src", "catatui", "auth.ts"));
 const store = await jiti.import(join(ROOT, "src", "catatui", "store.ts"));

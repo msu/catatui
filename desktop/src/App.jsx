@@ -514,14 +514,17 @@ export function App() {
     if (fromTree) return addFiles([fromTree]);
     const paths = [];
     const copied = [];
+    const folders = [];
     for (const f of e.dataTransfer.files) {
       const r = await api.importFile(api.pathForFile(f), "");
       if (r.error) local((st) => notice(st, "warning", r.error));
-      else if (r.folder) { copied.push(r.path); local((st) => notice(st, "info", `Copied the folder ${r.path} into the project. Drop files, not folders, to add them to the chat.`)); }
+      else if (r.folder) { copied.push(r.path); folders.push(r.path); local((st) => notice(st, "info", `Copied the folder ${r.path} and all its files into the project. catai tells the agent with your next message.`)); }
       else { paths.push(r.path); if (r.copied) copied.push(r.path); }
     }
     if (copied.length) setTreeTick((t) => t + 1);
     if (copied.some((p) => paths.includes(p))) local((st) => notice(st, "info", `Copied ${copied.filter((p) => paths.includes(p)).join(", ")} into the project folder. The original stays where it was.`));
+    // A folder does not go into the chat as a card, so the agent gets a note (moved.ts).
+    if (folders.length) await api.command({ type: "prompt", message: `/catai-added ${JSON.stringify(folders)}` });
     addFiles(paths);
   }
   // A file dropped anywhere else in the window (the header, the side panel): the same as a drop on the chat.
