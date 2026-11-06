@@ -2200,7 +2200,7 @@ function AgentMenu({ model, busy, onPick, state, onCommand, thinking, onThinking
   return (
     <span className="menu-wrap agent-menu" {...keys}>
       <button className={`btn mode-${perm} ${open ? "pressed" : ""}`} onClick={toggle} title="Permissions, options, and model">
-        <span className="agent-model">{model?.id ?? "No model"}<GreenLeaf id={model?.id} /></span>
+        <span className="agent-model">{model?.id ?? "No model"}</span>
         <span className="agent-perm">{perm}{state?.ta ? " + ta" : ""}{thinking?.level && thinking.levels.length > 1 && thinking.level !== "medium" ? ` \u00b7 ${thinking.level}` : ""}</span> <Caret />
       </button>
       {open && (
@@ -2234,7 +2234,7 @@ function AgentMenu({ model, busy, onPick, state, onCommand, thinking, onThinking
             {models.map((m) => (
               <label key={`${m.provider}/${m.id}`} className={`menu-row ${busy ? "disabled" : ""}`}>
                 <input type="radio" name="model" disabled={busy} checked={m.id === model?.id} onChange={() => onPick(m)} />
-                <span><span className="menu-id">{m.id}<GreenLeaf id={m.id} /></span>{m.name && m.name !== m.id && <span className="menu-note">{m.name}</span>}</span>
+                <span><span className="menu-id">{m.id}</span>{m.name && m.name !== m.id && <span className="menu-note">{m.name}</span>}</span>
               </label>
             ))}
             {models.length === 0 && <div className="menu-empty">No models. Check your sign-in.</div>}
@@ -2368,19 +2368,6 @@ function SignIn({ info, onDone }) {
 }
 
 // The model chip. A click shows the CatChat models with their notes.
-// A green leaf next to models that use less energy for each token. An estimate, not a measurement:
-// gpt-oss:120b is a mixture-of-experts model with few active parameters for each token (check the model card).
-const GREEN_MODELS = ["gpt-oss:120b"];
-function GreenLeaf({ id }) {
-  if (!GREEN_MODELS.includes(id)) return null;
-  return (
-    <svg className="green-leaf" viewBox="0 0 16 16" role="img" aria-label="Uses less energy">
-      <title>Uses less energy for each answer (an estimate: few active parameters for each token)</title>
-      <path d="M13.5 2.5C7 2.5 3 5.5 3 10c0 1.2.4 2.3 1 3.1C5.2 9.8 7.6 7.6 10.5 6.5 8 8 6 10.3 5 13.6c.8.6 1.8.9 2.9.9 4.6 0 6.6-4.4 5.6-12z" />
-    </svg>
-  );
-}
-
 function ModelMenu({ model, busy, onPick }) {
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState([]);
@@ -2394,13 +2381,13 @@ function ModelMenu({ model, busy, onPick }) {
   return (
     <span className="menu-wrap">
       <button className={`btn ${open ? "pressed" : ""}`} onClick={toggle} disabled={busy} title={busy ? "Wait until the agent is done" : "Pick a model"}>
-        {model?.id ?? "No model"}<GreenLeaf id={model?.id} /> <Caret />
+        {model?.id ?? "No model"} <Caret />
       </button>
       {open && (
         <div className="menu up" onMouseLeave={() => setOpen(false)}>
           {models.map((m) => (
             <button key={`${m.provider}/${m.id}`} className={m.id === model?.id ? "current" : ""} onClick={() => { setOpen(false); onPick(m); }}>
-              <span className="menu-id">{m.id}<GreenLeaf id={m.id} /></span>
+              <span className="menu-id">{m.id}</span>
               {m.name && m.name !== m.id && <span className="menu-note">{m.name}</span>}
             </button>
           ))}

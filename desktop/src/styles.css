@@ -799,7 +799,9 @@ button.class-card:hover:not(:disabled) { border-color: var(--gold); background: 
 
 /* "Remove from this conversation" on a message or a tool call. It shows when the pointer is on the item. */
 .removable { position: relative; }
-.removable .remove-btn[data-tip] { position: absolute; top: .2rem; right: -2rem; width: 1.7rem; height: 1.7rem; display: grid; place-items: center; opacity: 0; color: var(--muted); }
+/* The button is inside the item (space on the right), so a narrow chat does not cut it off or scroll sideways. */
+.removable:not(.removable-user) { padding-right: 2rem; }
+.removable .remove-btn[data-tip] { position: absolute; top: .2rem; right: 0; width: 1.7rem; height: 1.7rem; display: grid; place-items: center; opacity: 0; color: var(--muted); }
 .removable-user .remove-btn[data-tip] { right: auto; left: -2rem; top: .4rem; }
 .removable:hover .remove-btn, .remove-btn:focus-visible { opacity: 1; }
 .remove-btn:hover { color: #c62828; background: var(--user); }
@@ -1070,7 +1072,3 @@ body.resizing webview { pointer-events: none; }
 .tree { position: relative; }
 .tree-resize { position: absolute; right: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; }
 .tree-resize:hover, .tree-resize:focus-visible, body.resizing .tree-resize:active { background: var(--gold); opacity: .5; outline: none; }
-
-/* The green leaf next to models that use less energy (GreenLeaf). */
-.green-leaf { width: .95em; height: .95em; margin-left: .3em; vertical-align: -.12em; fill: #2e8540; flex-shrink: 0; }
-@media (prefers-color-scheme: dark) { .green-leaf { fill: #5cc46f; } }
