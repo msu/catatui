@@ -61,7 +61,7 @@ mv "$tmp/src/desktop" "$CATAI"
 # 3. The packages and the build. npm and Vite need node on the PATH. Electron (about 100 MB) comes from GitHub.
 cd "$CATAI"
 say "Installing the catai packages (Electron). This can take some minutes..."
-PATH="$node:$PATH" npm install --no-fund --no-audit --loglevel=error \
+PATH="$node:$PATH" npm install --cache "$APP/npm-cache" --no-fund --no-audit --loglevel=error \
   || fail "npm cannot install the catai packages. Read the npm error above, then run this script again."
 # Electron 44 has no postinstall script: it downloads its program on first use. So download and unpack Electron
 # here, with the checksum from the Electron package. This makes the same files as the Electron install.js: dist/ and path.txt.
@@ -108,5 +108,10 @@ chmod +x "$APP/bin/catai"
 say ""
 say "catai is installed."
 say "To start it, run: catai"
+# This script runs in a child process, so it cannot change the PATH of the student's terminal.
+case ":$PATH:" in
+  *":$APP/bin:"*) ;;
+  *) say "If the terminal cannot find catai, open a new terminal, or run: $(printf '%s' "$APP/bin/catai" | sed "s|^$HOME|~|")" ;;
+esac
 say "To open a project folder, run: catai <folder>"
 say "For the demo (Advising and Classes), run: catai --demo-mode"

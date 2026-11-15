@@ -64,8 +64,9 @@ else
 fi
 
 # 2. The catatui package. npm needs node on the PATH.
+# npm uses a private cache. If an earlier "sudo npm" made root the owner of ~/.npm, npm cannot write there.
 say "Installing catatui..."
-PATH="$APP/node/bin:$PATH" npm install --global --prefix "$APP/npm" --no-fund --no-audit --loglevel=error "$PACKAGE" \
+PATH="$APP/node/bin:$PATH" npm install --global --prefix "$APP/npm" --cache "$APP/npm-cache" --no-fund --no-audit --loglevel=error "$PACKAGE" \
   || fail "npm cannot install catatui. Read the npm error above, then run this script again."
 
 # 3. The catatui command. It always uses the private Node.js.
