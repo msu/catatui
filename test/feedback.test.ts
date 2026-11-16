@@ -9,7 +9,7 @@ import { test } from "node:test";
 
 // A temp agent folder, so the tests never read the real ~/.catatui.
 process.env.PI_CODING_AGENT_DIR = realpathSync(mkdtempSync(join(tmpdir(), "catatui-feedback-")));
-const { buildReport, conversationText, LIMITS, netId, sendReport } = await import("../src/catatui/feedback.ts");
+const { buildReport, cleanTrace, conversationText, LIMITS, netId, sendReport } = await import("../src/catatui/feedback.ts");
 const { registerFeedback } = await import("../src/catatui/feedback-command.ts");
 const { fakeCtx, fakePi } = await import("./fake-pi.ts");
 
@@ -104,10 +104,10 @@ test("sendReport: POST /v1/report gives the id; errors say what failed and the f
 
 function run(answers: (string | undefined)[], opts: { conv?: string; netid?: string; hasUI?: boolean } = {}) {
   const sent: any[] = [];
-  const { pi, commands } = fakePi();
+  const { pi, commands, fire } = fakePi();
   registerFeedback(pi, { send: async (r) => (sent.push(r), { id: "r-1" }), conversation: () => opts.conv ?? "", netId: () => opts.netid });
   const f = fakeCtx("/tmp", { answers, hasUI: opts.hasUI });
-  return { go: () => commands.get("feedback").handler("", f.ctx), sent, ...f };
+  return { go: () => commands.get("feedback").handler("", f.ctx), fire: (name: string, ev: any) => fire(name, ev, f.ctx), sent, ...f };
 }
 
 test("/feedback: asks each question, and sends only what the student allows", async () => {
@@ -138,4 +138,59 @@ test("/feedback: empty text, Escape, or no UI sends nothing", async () => {
     await r.go();
     assert.equal(r.sent.length, 0);
   }
+});
+
+test("cleanTrace: the home folder becomes ~, also in JSON Windows paths; clipped at 64 KB", () => {
+  assert.equal(cleanTrace("at /Users/ann/p/a.js:1 and /Users/ann/q", "/Users/ann"), "at ~/p/a.js:1 and ~/q");
+  assert.equal(cleanTrace('{"path":"C:\\\\Users\\\\ann\\\\x"} C:\\Users\\ann\\y', "C:\\Users\\ann"), '{"path":"~\\\\x"} ~\\y');
+  const big = cleanTrace("E: boom\n" + "x".repeat(LIMITS.error * 2), "/nohome");
+  assert.ok(Buffer.byteLength(big) <= LIMITS.error);
+  assert.match(big, /^E: boom\n/);
+  assert.match(big, /the rest is removed, because the error is larger than 64 KB/);
+});
+
+test("buildReport: kind error needs the error; its text can be empty", () => {
+  const r = buildReport({ app: "catatui", kind: "error", text: "", error: "E: boom" });
+  assert.equal(r.kind, "error");
+  assert.equal(r.text, "");
+  assert.equal(r.error, "E: boom");
+  assert.throws(() => buildReport({ app: "catatui", kind: "error", text: "x" }), /has no error/);
+  assert.throws(() => buildReport({ app: "catatui", kind: "error", text: "", error: "x".repeat(LIMITS.error + 1) }), /64 KB/);
+  assert.throws(() => buildReport({ app: "catatui", kind: "feedback", text: "", error: "E" }), /empty/);
+});
+
+test("/feedback: the last model error is the first question; attached, it makes an error report", async () => {
+  const r = run(["Yes, attach it", "", "No"], { conv: "c" });
+  await r.fire("message_end", { message: { role: "assistant", stopReason: "error", errorMessage: "429 rate limit", provider: "catchat", model: "m1" } });
+  // A good answer does not replace the error.
+  await r.fire("message_end", { message: { role: "assistant", stopReason: "stop" } });
+  await r.go();
+  assert.match(r.asked[0].title, /^Attach the last error \(429 rate limit\)\?\n\n  Model error from catchat\/m1/);
+  assert.match(r.asked[1].title, /^Attach this conversation/);
+  assert.equal(r.sent.length, 1);
+  assert.equal(r.sent[0].kind, "error");
+  assert.equal(r.sent[0].text, "");
+  assert.match(r.sent[0].error, /429 rate limit/);
+  // After the send, the error is gone: the next /feedback does not ask about it.
+  await r.go();
+  assert.ok(r.asked.slice(2).every((q) => !q.title.startsWith("Attach the last error")));
+});
+
+test("/feedback: No to the error makes a normal report, and empty text then sends nothing", async () => {
+  const no = run(["No", "It is slow."]);
+  await no.fire("session_compact_failed", { reason: "threshold", aborted: false, errorMessage: "overflow" });
+  await no.go();
+  assert.match(no.asked[0].title, /Compaction failed \(threshold\)/);
+  assert.equal(no.sent[0].kind, "feedback");
+  assert.equal(no.sent[0].error, undefined);
+
+  const empty = run(["No", ""]);
+  await empty.fire("message_end", { message: { role: "assistant", stopReason: "error", errorMessage: "boom" } });
+  await empty.go();
+  assert.equal(empty.sent.length, 0);
+  // An aborted compaction is not an error.
+  const aborted = run(["ok"]);
+  await aborted.fire("session_compact_failed", { reason: "manual", aborted: true });
+  await aborted.go();
+  assert.equal(aborted.asked.length, 0);
 });

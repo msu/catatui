@@ -3,7 +3,7 @@
 // and src/md/infrastructure/feedback.md (the API).
 
 import { readFileSync } from "node:fs";
-import { arch, platform, release } from "node:os";
+import { arch, homedir, platform, release } from "node:os";
 import { readCredential, type StoredCredential } from "./store.ts";
 
 // The feedback Worker (feedback/, src/md/infrastructure/feedback.md). CATAI_FEEDBACK_URL changes it, for example for a test.
@@ -12,24 +12,28 @@ export const FEEDBACK_URL = process.env.CATAI_FEEDBACK_URL || WORKER_URL;
 
 const MB = 1024 * 1024;
 // The same limits as the Worker (feedback/src/index.ts).
-export const LIMITS = { text: 5000, conversation: MB, screenshot: 4 * MB, contact: 64 };
+export const LIMITS = { text: 5000, conversation: MB, screenshot: 4 * MB, contact: 64, error: 64 * 1024 };
 const TIMEOUT_MS = 30_000;
 const NETID = /^[A-Za-z0-9._-]+$/;
 
 const VERSION = (JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string }).version;
 
 export type App = "catai" | "catatui";
-export type Kind = "feedback" | "thumbs-down";
+export type Kind = "feedback" | "thumbs-down" | "error";
 export interface Report {
   v: 1; app: App; version: string; os: string; model?: string; kind: Kind; text: string;
-  conversation?: string; contact?: string; screenshot?: string;
+  error?: string; conversation?: string; contact?: string; screenshot?: string;
 }
 
 // The report for the Worker. It adds the version and the os, and throws an Error (in STE) if a field is not correct.
 // screenshot: a PNG as base64. contact: the NetID; give it only if the student allowed contact.
-export function buildReport(r: { app: App; kind: Kind; text: string; conversation?: string; contact?: string; screenshot?: string; model?: string }): Report {
+// error: the cleaned trace (cleanTrace). The kind "error" needs it, and its text can be empty.
+export function buildReport(r: { app: App; kind: Kind; text: string; error?: string; conversation?: string; contact?: string; screenshot?: string; model?: string }): Report {
   const text = r.text.trim();
-  if (!text) throw new Error("The feedback is empty. Type your feedback, then send it again.");
+  if (!text && r.kind !== "error") throw new Error("The feedback is empty. Type your feedback, then send it again.");
+  if (r.kind === "error" && !r.error?.trim()) throw new Error("The error report has no error. Close the form, then report the error again.");
+  if (r.error !== undefined && Buffer.byteLength(r.error) > LIMITS.error)
+    throw new Error("The error is larger than 64 KB. Clean it with cleanTrace, then send it again.");
   if (text.length > LIMITS.text) throw new Error(`The feedback has more than ${LIMITS.text} characters. Make it shorter, then send it again.`);
   if (r.conversation !== undefined && Buffer.byteLength(r.conversation) > LIMITS.conversation)
     throw new Error("The conversation is larger than 1 MB. Do not attach the conversation, then send it again.");
@@ -40,6 +44,7 @@ export function buildReport(r: { app: App; kind: Kind; text: string; conversatio
   return {
     v: 1, app: r.app, version: VERSION, os: `${platform()} ${release()} ${arch()}`, kind: r.kind, text,
     ...(r.model ? { model: r.model.slice(0, 128) } : {}),
+    ...(r.error ? { error: r.error } : {}),
     ...(r.conversation ? { conversation: r.conversation } : {}),
     ...(r.contact ? { contact: r.contact } : {}),
     ...(r.screenshot ? { screenshot: r.screenshot } : {}),
@@ -68,6 +73,20 @@ export async function sendReport(report: Report, url = FEEDBACK_URL): Promise<{ 
   if (res.status === 413) return { error: `${failed}: the report is too large (${body.error ?? "413"}). Do not attach the conversation or the screenshot, then try again.` };
   if (res.status === 400) return { error: `${failed}: the server refused the report (${body.error ?? "400"}). Change the report, then try again.` };
   return { error: `${failed}: the feedback server failed (status ${res.status}). Try again later.` };
+}
+
+// An error trace for a report: the home folder in each path becomes "~" (so the user name does not go out),
+// and the text stops at 64 KB. The start (the message and the first frames) is the most useful part.
+export function cleanTrace(text: string, home = homedir()): string {
+  let s = String(text ?? "");
+  if (home && home.length > 1) {
+    // Also the JSON form of a Windows path (each "\" doubled).
+    for (const h of [home, home.replaceAll("\\", "\\\\")]) s = s.split(h).join("~");
+  }
+  if (Buffer.byteLength(s) <= LIMITS.error) return s;
+  const note = "\n[... the rest is removed, because the error is larger than 64 KB ...]";
+  // A cut in a UTF-8 character becomes one U+FFFD (3 bytes), so keep a small margin.
+  return Buffer.from(s).subarray(0, LIMITS.error - Buffer.byteLength(note) - 8).toString("utf8") + note;
 }
 
 // The NetID from the CatChat sign-in: the part of the key alias before the first "_". undefined: no sign-in, or not a NetID.
