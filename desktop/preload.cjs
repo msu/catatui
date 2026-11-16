@@ -75,6 +75,9 @@ contextBridge.exposeInMainWorld("catatui", {
   fileMenu: (path, opts) => ipcRenderer.invoke("file-menu", path, opts),
   // After a roll back from the file menu, the tree and the file cards read the files again.
   onFilesChanged: on("files-changed"),
+  // Feedback: open takes the screenshot and the conversation; send sends only the ticked parts.
+  feedbackOpen: (kind, ts) => ipcRenderer.invoke("feedback-open", kind, ts),
+  feedbackSend: (form) => ipcRenderer.invoke("feedback-send", form),
   onCloneProgress: on("clone-progress"),
   openPath: (path) => ipcRenderer.send("open-path", path),
   // The application menu: the renderer sends its state, and gets the menu actions.

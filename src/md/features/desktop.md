@@ -177,3 +177,8 @@ A desktop app (like Claude Desktop) for students who do not use the command line
 - Queued messages: a message sent while the agent works waits in pi's queue (followUp). The chat shows it at the end, faded with a dashed border, and "Queued: this message waits until the agent is done. Edit". Edit takes the queued messages back into the message box (pi clear_queue). When the agent takes a message, it moves into the chat. Stop takes the queued messages back first, so pi does not send them after the stop.
 - App-only tools: the app starts catatui with `CATAI=1`. Only then catatui loads new_project, show_widget, show_preview, open_view, and the app prompt. The CLI does not load them.
 - GitHub: the account menu shows the GitHub sign-in for the git tools: "Sign in to GitHub..." opens a window that opens the GitHub token form and takes the pasted token (main.js "github-sign-in", github.ts). The renderer never gets the token. Two weeks before the token expires, the menu shows "New token...".
+
+## Feedback
+
+- Help > Send Feedback... and the thumbs-down button on each assistant answer open the feedback form. See [feedback.md](feedback.md).
+- The main process takes the screenshot (`webContents.capturePage()`) and gets the conversation (`get_messages`) before the renderer draws the form. The data stays in the main process. `feedback-send` sends only the ticked parts.

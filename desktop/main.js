@@ -44,6 +44,8 @@ const { gitSync, git: gitAsync } = await jiti.import(join(ROOT, "src", "catatui"
 const github = await jiti.import(join(ROOT, "src", "catatui", "github.ts"));
 // The mock class data (classes.ts), for the Classes panels.
 const classesData = await jiti.import(join(ROOT, "src", "catatui", "classes.ts"));
+// The feedback client (feedback.ts), for Help > Send Feedback and the thumbs-down button.
+const feedback = await jiti.import(join(ROOT, "src", "catatui", "feedback.ts"));
 
 // pi itself, for the session lists. Load it only when the app needs it, because it is large.
 let piModule;
@@ -760,6 +762,56 @@ ipcMain.handle("rpc-command", async (e, cmd) => {
 // The answer to a dialog (extension_ui_request). It has no response.
 ipcMain.on("ui-response", (e, response) => write({ type: "extension_ui_response", ...response }, ctxOf(e)?.child));
 
+// ---- Feedback (src/md/features/feedback.md) ----
+// feedback-open: the form opens. Take the screenshot first, before the renderer draws the form.
+// The data stays in main.js. The renderer gets a preview, and feedback-send sends only the parts that the student ticked.
+// ts: for a thumbs-down, the timestamp of the assistant answer. The conversation stops at that answer.
+ipcMain.handle("feedback-open", async (e, kind, ts) => {
+  const c = ctxOf(e);
+  if (!c) return { error: "catai cannot find this window. Close the window, then try again." };
+  let png;
+  try {
+    let img = await c.win.webContents.capturePage();
+    png = img.toPNG();
+    // The Worker takes at most 4 MB. A large screen can give a larger PNG, so make the image smaller.
+    while (png.length > feedback.LIMITS.screenshot && img.getSize().width > 400) {
+      img = img.resize({ width: Math.round(img.getSize().width / 1.5) });
+      png = img.toPNG();
+    }
+    if (png.length > feedback.LIMITS.screenshot) png = undefined;
+  } catch { png = undefined; }
+  const [m, st] = await Promise.all([command(c, { type: "get_messages" }), command(c, { type: "get_state" })]);
+  let messages = m.success ? m.data?.messages ?? [] : [];
+  if (ts !== undefined) {
+    const i = messages.findIndex((x) => x.role === "assistant" && x.timestamp === ts);
+    if (i >= 0) messages = messages.slice(0, i + 1);
+  }
+  const conversation = feedback.conversationText(messages);
+  const netid = feedback.netId(store.readCredential());
+  c.feedback = { kind: kind === "thumbs-down" ? "thumbs-down" : "feedback", conversation, screenshot: png?.toString("base64"), netid, model: st.data?.model?.id };
+  return { kind: c.feedback.kind, conversation, screenshot: png ? `data:image/png;base64,${c.feedback.screenshot}` : undefined, netid };
+});
+// feedback-send: the form answers. Only the ticked parts go out.
+ipcMain.handle("feedback-send", async (e, form) => {
+  const c = ctxOf(e);
+  const f = c?.feedback;
+  if (!f) return { error: "The feedback did not send: the form data is missing. Close the form, open it again, then send." };
+  let report;
+  try {
+    report = feedback.buildReport({
+      app: "catai", kind: f.kind, text: String(form?.text ?? ""), model: f.model,
+      conversation: form?.conversation && f.conversation ? f.conversation : undefined,
+      screenshot: form?.screenshot ? f.screenshot : undefined,
+      contact: form?.contact ? f.netid : undefined,
+    });
+  } catch (err) {
+    return { error: err.message };
+  }
+  const r = await feedback.sendReport(report);
+  if ("id" in r) c.feedback = undefined;
+  return r;
+});
+
 // The sign-in state and the project, for the first screen.
 ipcMain.handle("info", (e) => {
   const c = ctxOf(e);
@@ -1438,6 +1490,7 @@ async function buildMenu() {
       role: "help",
       submenu: [
         { label: "What catai Can Do", click: act("help") },
+        { label: "Send Feedback...", click: act("feedback") },
         { label: "catai Website", click: () => shell.openExternal(SITE) },
       ],
     },

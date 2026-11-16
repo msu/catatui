@@ -59,7 +59,7 @@ export async function sendReport(report: Report, url = FEEDBACK_URL): Promise<{ 
     });
   } catch (e) {
     if ((e as Error).name === "TimeoutError") return { error: `${failed}: the feedback server did not answer in 30 seconds. Try again later.` };
-    return { error: `${failed}: catatui cannot connect to the feedback server. Check your internet connection, then try again.` };
+    return { error: `${failed}: the app cannot connect to the feedback server. Check your internet connection, then try again.` };
   }
   let body: { id?: string; error?: string } = {};
   try { body = (await res.json()) as typeof body; } catch { /* the error below uses the status */ }
