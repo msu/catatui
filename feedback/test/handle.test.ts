@@ -156,3 +156,33 @@ test("no IP_SALT: 500 with the fix", async () => {
   assert.equal(res.status, 500);
   assert.match((await res.json()).error, /wrangler secret put IP_SALT/);
 });
+
+test("error reports: kind error needs the error field; the text can be empty; 64 KB limit", async () => {
+  const f = fakeEnv();
+  const trace = "TypeError: x is undefined\n    at run (~/app/main.js:10:5)";
+  const res = await handle(post({ ...good, kind: "error", text: "", error: trace }), f.env);
+  assert.equal(res.status, 200);
+  assert.equal(f.reports[0].kind, "error");
+  assert.equal(f.reports[0].text, "");
+  assert.equal(f.reports[0].error, trace);
+  // Other kinds have no error column value unless they send one.
+  await handle(post(good), f.env);
+  assert.equal(f.reports[1].error, null);
+
+  for (const [body, status, re] of [
+    [{ ...good, kind: "error", text: "" }, 400, /error is necessary/],
+    [{ ...good, kind: "error", text: "it broke" }, 400, /error is necessary/],
+    [{ ...good, kind: "error", text: "", error: "  " }, 400, /error is necessary/],
+    [{ ...good, kind: "error", text: "", error: 5 }, 400, /error must be a string/],
+    [{ ...good, kind: "error", text: "", error: "x".repeat(LIMITS.error + 1) }, 413, /64 KB/],
+    [{ ...good, text: "" }, 400, /not empty/],
+  ] as const) {
+    const g = fakeEnv();
+    const r = await handle(post(body), g.env);
+    assert.equal(r.status, status, JSON.stringify(body).slice(0, 80));
+    assert.match((await r.json()).error, re);
+    assert.equal(g.reports.length, 0);
+  }
+  // Exactly 64 KB is accepted.
+  assert.equal((await handle(post({ ...good, kind: "error", text: "", error: "x".repeat(LIMITS.error) }), fakeEnv().env)).status, 200);
+});

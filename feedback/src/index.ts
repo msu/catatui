@@ -18,6 +18,7 @@ const MB = 1024 * 1024;
 export const LIMITS = {
   text: 5000, // characters
   conversation: MB, // bytes (UTF-8)
+  error: 64 * 1024, // bytes (UTF-8): the message, the stack trace, and the last lines of the catatui stderr
   screenshot: 4 * MB, // bytes, after base64 decode
   body: 7 * MB, // bytes: the conversation, the base64 screenshot (4/3 of 4 MB), and the other fields
   contact: 64,
@@ -27,7 +28,7 @@ export const LIMITS = {
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const APPS = ["catai", "catatui"];
-const KINDS = ["feedback", "thumbs-down"];
+const KINDS = ["feedback", "thumbs-down", "error"];
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 const json = (status: number, body: unknown) =>
@@ -81,8 +82,17 @@ function parse(body: unknown) {
   const version = shortString(b, "version")!;
   const os = shortString(b, "os")!;
   const model = shortString(b, "model", true);
-  if (typeof b.text !== "string" || !b.text.trim()) throw new Bad(400, "text must be a string that is not empty");
+  // An error report can have empty text: the student does not have to type.
+  if (typeof b.text !== "string") throw new Bad(400, "text must be a string");
+  if (kind !== "error" && !b.text.trim()) throw new Bad(400, "text must be a string that is not empty");
   if (b.text.length > LIMITS.text) throw new Bad(413, `text has more than ${LIMITS.text} characters`);
+  let error: string | undefined;
+  if (b.error !== undefined) {
+    if (typeof b.error !== "string") throw new Bad(400, "error must be a string");
+    if (new TextEncoder().encode(b.error).length > LIMITS.error) throw new Bad(413, "error is larger than 64 KB");
+    error = b.error;
+  }
+  if (kind === "error" && !error?.trim()) throw new Bad(400, "error is necessary for the kind error");
   let conversation: string | undefined;
   if (b.conversation !== undefined) {
     if (typeof b.conversation !== "string") throw new Bad(400, "conversation must be a string");
@@ -96,7 +106,7 @@ function parse(body: unknown) {
     netid = b.contact;
   }
   const screenshot = b.screenshot === undefined ? undefined : decodePng(b.screenshot);
-  return { app, kind, version, os, model, text: b.text, conversation, netid, screenshot };
+  return { app, kind, version, os, model, text: b.text, error, conversation, netid, screenshot };
 }
 
 async function ipHash(ip: string, salt: string): Promise<string> {
@@ -135,9 +145,9 @@ export async function handle(request: Request, env: Env, now = Date.now()): Prom
     await env.SHOTS.put(key, report.screenshot, { httpMetadata: { contentType: "image/png" } });
   }
   await env.DB.prepare(
-    "INSERT INTO reports (id, created, app, version, os, model, kind, text, conversation, netid, screenshot_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO reports (id, created, app, version, os, model, kind, text, error, conversation, netid, screenshot_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(id, new Date(now).toISOString(), report.app, report.version, report.os, report.model ?? null, report.kind, report.text,
+    .bind(id, new Date(now).toISOString(), report.app, report.version, report.os, report.model ?? null, report.kind, report.text, report.error ?? null,
       report.conversation ?? null, report.netid ?? null, key)
     .run();
   await env.DB.prepare("INSERT INTO hits (ip_hash, at) VALUES (?, ?)").bind(hash, now).run();
