@@ -7,7 +7,7 @@
     "pi-package"
   ],
   "scripts": {
-    "test": "node --test \"test/*.test.ts\""
+    "test": "node --test \"test/*.test.ts\" \"feedback/test/*.test.ts\""
   },
   "bin": {
     "catatui": "bin/catatui.js"

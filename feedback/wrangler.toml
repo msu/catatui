@@ -1,0 +1,17 @@
+# The feedback Worker. See src/md/infrastructure/feedback.md.
+name = "catai-feedback"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+# PLACEHOLDER: run "npx wrangler d1 create catai-feedback" and put its database_id here.
+[[d1_databases]]
+binding = "DB"
+database_name = "catai-feedback"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+# Run "npx wrangler r2 bucket create catai-feedback-shots" first.
+[[r2_buckets]]
+binding = "SHOTS"
+bucket_name = "catai-feedback-shots"
+
+# IP_SALT is a secret: run "npx wrangler secret put IP_SALT". It is not in this file.

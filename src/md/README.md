@@ -73,6 +73,7 @@ catatui is a terminal coding agent for MSU students. I (`@earendil-works/pi-codi
 - [infrastructure/pi-harness.md](infrastructure/pi-harness.md): why pi, the launcher, and changes to pi internals
 - [infrastructure/distribution.md](infrastructure/distribution.md): install scripts and updates
 - [infrastructure/catai-install.md](infrastructure/catai-install.md): the hidden Windows installer for internal tests of catai
+- [infrastructure/feedback.md](infrastructure/feedback.md): the feedback Worker (Cloudflare, D1, R2)
 
 ## Plans
 
