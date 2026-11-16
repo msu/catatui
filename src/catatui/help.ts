@@ -36,6 +36,7 @@ Commands
   /model         pick a CatChat model
   /context       show how full the context window is
   /catchat       sign-in status (/catchat login, /catchat logout)
+  /feedback      send feedback about catatui to the course staff
   /hotkeys       keyboard keys
   /new           start a new conversation
 

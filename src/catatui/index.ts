@@ -13,6 +13,7 @@ import { registerPdfWrite } from "./pdfwrite.ts";
 import { registerA11yCheck } from "./a11y.ts";
 import { registerExcelTools } from "./excel.ts";
 import { registerHelp } from "./help.ts";
+import { registerFeedback } from "./feedback-command.ts";
 import { registerMsu } from "./msu.ts";
 import { registerNewProject } from "./project.ts";
 import { registerWidget } from "./widget.ts";
@@ -84,6 +85,7 @@ export default async function (pi: ExtensionAPI) {
   registerUndo(pi);
   registerContext(pi);
   registerHelp(pi);
+  registerFeedback(pi);
   registerMsu(pi);
   registerAgentsFile(pi);
   // The desktop app (catai) sets CATAI=1. These tools need the app (inline widgets, the side panel, the app areas,

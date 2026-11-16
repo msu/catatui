@@ -58,6 +58,7 @@ catatui is a terminal coding agent for MSU students. I (`@earendil-works/pi-codi
 - [features/accessibility.md](features/accessibility.md): accessible documents, the `a11y_check` tool, and the accessible-documents skill
 - [features/web.md](features/web.md): the `show_page` and `server` tools
 - [features/help.md](features/help.md): the `/help` command and the header tip
+- [features/feedback.md](features/feedback.md): the `/feedback` command and the feedback client
 - [features/desktop.md](features/desktop.md): the Electron desktop app
 - [features/msu.md](features/msu.md): MSU context in the system prompt, and the class schedule question
 - [features/new-project.md](features/new-project.md): the `new_project` tool
