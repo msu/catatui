@@ -5,7 +5,7 @@ Students send feedback about catatui and catai to the course staff. The client i
 ## Client (feedback.ts)
 
 - `feedback.ts` does not import pi, so the desktop app can load it.
-- `FEEDBACK_URL`: the env var `CATAI_FEEDBACK_URL`, or a placeholder. The placeholder uses the `.invalid` domain, so a send fails at once. Card-6 gives the real URL.
+- `FEEDBACK_URL`: the env var `CATAI_FEEDBACK_URL`, or the Worker URL (`https://catai-feedback.tight-wave-3e23.workers.dev`).
 - `buildReport()` adds the catatui version (`package.json`) and the os (`platform release arch`). It checks the same limits as the Worker, and throws an error in STE.
 - `sendReport()` sends `POST /v1/report` with a 30 s timeout. It does not throw. It gives `{ id }` or `{ error }`.
 - `netId()`: the part of the CatChat key alias before the first `_`. If it is not a NetID, it gives undefined.

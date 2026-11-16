@@ -6,9 +6,9 @@ import { readFileSync } from "node:fs";
 import { arch, platform, release } from "node:os";
 import { readCredential, type StoredCredential } from "./store.ts";
 
-// PLACEHOLDER: card-6 deploys the Worker and gives the real URL. ".invalid" never resolves, so a send fails at once.
-const PLACEHOLDER_URL = "https://catai-feedback.invalid";
-export const FEEDBACK_URL = process.env.CATAI_FEEDBACK_URL || PLACEHOLDER_URL;
+// The feedback Worker (feedback/, src/md/infrastructure/feedback.md). CATAI_FEEDBACK_URL changes it, for example for a test.
+const WORKER_URL = "https://catai-feedback.tight-wave-3e23.workers.dev";
+export const FEEDBACK_URL = process.env.CATAI_FEEDBACK_URL || WORKER_URL;
 
 const MB = 1024 * 1024;
 // The same limits as the Worker (feedback/src/index.ts).

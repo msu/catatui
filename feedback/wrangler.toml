@@ -2,12 +2,15 @@
 name = "catai-feedback"
 main = "src/index.ts"
 compatibility_date = "2026-11-01"
+# The URL is https://catai-feedback.tight-wave-3e23.workers.dev. No preview URLs.
+workers_dev = true
+preview_urls = false
 
-# PLACEHOLDER: run "npx wrangler d1 create catai-feedback" and put its database_id here.
+# The D1 database (made with "npx wrangler d1 create catai-feedback").
 [[d1_databases]]
 binding = "DB"
 database_name = "catai-feedback"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "7b77a14b-5bf7-4544-bf09-d0c5234c7487"
 
 # Run "npx wrangler r2 bucket create catai-feedback-shots" first.
 [[r2_buckets]]
