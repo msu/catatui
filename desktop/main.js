@@ -44,7 +44,7 @@ const { gitSync, git: gitAsync } = await jiti.import(join(ROOT, "src", "catatui"
 const github = await jiti.import(join(ROOT, "src", "catatui", "github.ts"));
 // The mock class data (classes.ts), for the Classes panels.
 const classesData = await jiti.import(join(ROOT, "src", "catatui", "classes.ts"));
-// The feedback client (feedback.ts), for Help > Send Feedback and the thumbs-down button.
+// The feedback client (feedback.ts), for Help > Send Feedback and Report this error.
 const feedback = await jiti.import(join(ROOT, "src", "catatui", "feedback.ts"));
 
 // pi itself, for the session lists. Load it only when the app needs it, because it is large.
@@ -787,7 +787,7 @@ process.on("unhandledRejection", (err) => mainError("Unhandled rejection in the 
 // ---- Feedback (src/md/features/feedback.md) ----
 // feedback-open: the form opens. Take the screenshot first, before the renderer draws the form.
 // The data stays in main.js. The renderer gets a preview, and feedback-send sends only the parts that the student ticked.
-// ts: for a thumbs-down, the timestamp of the assistant answer. The conversation stops at that answer.
+// ts: for a model error, the timestamp of the assistant answer. The conversation stops at that answer.
 // err (kind "error" only): { text } from the renderer, { crash: true } for the last catatui crash, or { main: true }
 // for the last error in this main process. The cleaned trace (cleanTrace) always goes with an error report.
 ipcMain.handle("feedback-open", async (e, kind, ts, err) => {
@@ -818,7 +818,7 @@ ipcMain.handle("feedback-open", async (e, kind, ts, err) => {
   }
   const conversation = feedback.conversationText(messages);
   const netid = feedback.netId(store.readCredential());
-  const k = kind === "thumbs-down" || kind === "error" ? kind : "feedback";
+  const k = kind === "error" ? "error" : "feedback";
   c.feedback = { kind: k, conversation, screenshot: png?.toString("base64"), netid, model: st.data?.model?.id, error: trace };
   return { kind: k, conversation, screenshot: png ? `data:image/png;base64,${c.feedback.screenshot}` : undefined, netid, trace };
 });

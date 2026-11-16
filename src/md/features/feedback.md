@@ -41,7 +41,7 @@ The questions:
 The main process (`desktop/main.js`) loads `feedback.ts` with jiti, as it loads `store.ts`.
 
 - Help > Send Feedback... opens the form with the kind `feedback`.
-- The thumbs-down button on an assistant answer opens the form with the kind `thumbs-down`. The conversation stops at that answer (`get_messages`, cut at the assistant message with the same timestamp).
+- catai has no thumbs-down button. The Worker still accepts the kind `thumbs-down`, and the database keeps the old reports.
 - The form has a text box and these boxes. Each box is not ticked when the form opens:
   - "Attach this conversation". It shows only if there is a conversation. A preview shows the first 30 lines, and "Show all" expands it.
   - "Attach a screenshot of this window". The main process takes the screenshot before the form is drawn, so the form is not in the image. If the PNG is larger than 4 MB, the main process makes it smaller.

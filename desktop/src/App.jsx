@@ -476,8 +476,8 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // The feedback form (Help > Send Feedback, and the thumbs-down button on an answer). main.js takes the
-  // screenshot before the form is drawn, and keeps the data. ts: the answer for a thumbs-down.
+  // The feedback form (Help > Send Feedback, and Report this error). main.js takes the screenshot before the form
+  // is drawn, and keeps the data. ts: for a model error, the answer where the conversation stops.
   const [feedbackForm, setFeedbackForm] = useState(undefined);
   async function openFeedback(kind, ts, err) {
     if (feedbackForm) return;
@@ -634,7 +634,6 @@ export function App() {
             kind={info.kind} project={info.project} onOpenSession={openAnySession} onRemove={removeFromChat}
             onPin={(p) => openSide({ type: "file", path: p })} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })}
             onOpenView={(view, course) => (view === "advising" ? goAdvising() : goClasses(course))}
-            onThumbsDown={(ts) => openFeedback("thumbs-down", ts)}
             onReport={(err, ts) => openFeedback("error", ts, err)} model={model?.id}
             onFixA11y={fixA11y} queued={state.queued} onUnqueue={unqueue} />
           <Composer context={lastAssistantText(state.items)} busy={state.busy} onSend={send} onStop={stop} editorText={state.editorText}
@@ -2669,7 +2668,7 @@ function GitHubSignIn({ onDone }) {
   );
 }
 
-function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove, onPin, onOpenWeb, onOpenView, onFixA11y, onThumbsDown, onReport, model, queued, onUnqueue }) {
+function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove, onPin, onOpenWeb, onOpenView, onFixA11y, onReport, model, queued, onUnqueue }) {
   const end = useRef(null);
   const box = useRef(null);
   // Keep the newest text in view, unless the student scrolled up to read.
@@ -2708,7 +2707,7 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
       {items.map((it, i) => {
         const item = <Item key={i} it={it} onShowChanges={onShowChanges} changed={changed} fileTick={fileTick} widgets={widgets} onWidgetAnswer={onWidgetAnswer}
           onPin={onPin} onRemove={busy ? undefined : onRemove} onOpenWeb={onOpenWeb} onOpenView={busy ? undefined : onOpenView}
-          onFixA11y={busy ? undefined : onFixA11y} onThumbsDown={onThumbsDown} onReport={onReport} model={model} live={busy && i === items.length - 1} />;
+          onFixA11y={busy ? undefined : onFixA11y} onReport={onReport} model={model} live={busy && i === items.length - 1} />;
         // File cards have their own buttons. A removed message has nothing to remove.
         if (it.kind === "user" && (it.text.startsWith(FILE_PREFIX) || it.text === "[removed]")) return item;
         // "Remove" on a message or a tool call, when the agent is not working.
@@ -2806,7 +2805,7 @@ function A11yCard({ it, onFix }) {
   );
 }
 
-function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, onPin, onRemove, onOpenWeb, onOpenView, onFixA11y, onThumbsDown, onReport, model, live }) {
+function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, onPin, onRemove, onOpenWeb, onOpenView, onFixA11y, onReport, model, live }) {
   if (it.kind === "tool" && it.name === "a11y_check" && !it.isError && (it.running || it.result?.details?.files)) return <A11yCard it={it} onFix={onFixA11y} />;
   // advising_submit_plan: the plan card. It is live while its request waits. After that, the result has the plan and the status.
   if (it.kind === "tool" && it.name === "advising_submit_plan") {
@@ -2898,13 +2897,6 @@ function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, o
           <ReportButton onClick={() => onReport({ text: `Model or server error${model ? ` (model ${model})` : ""}:\n${it.error}` }, it.ts)} />
         </div>
       ))}
-      {!live && it.ts !== undefined && onThumbsDown && (
-        <div className="msg-actions">
-          <button className="icon-btn thumbs-btn" data-tip="Bad answer: send feedback" aria-label="Bad answer: send feedback" onClick={() => onThumbsDown(it.ts)}>
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 12.5V4h7.2a1.5 1.5 0 0 1 1.5 1.3l.8 5.2a1.5 1.5 0 0 1-1.5 1.7H11.5l.6 3a1.4 1.4 0 0 1-2.6 1L7 12.5ZM7 4H4v8.5h3" /></svg>
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -2925,7 +2917,6 @@ export function FeedbackForm({ data, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(undefined);
-  const thumbs = data.kind === "thumbs-down";
   const isError = data.kind === "error";
   const send = async () => {
     setBusy(true);
@@ -2940,20 +2931,20 @@ export function FeedbackForm({ data, onClose }) {
   return (
     <div className="overlay" onKeyDown={(e) => { if (e.key === "Escape" && !busy) { e.preventDefault(); e.stopPropagation(); onClose(); } }}>
       <div className="window feedback" role="dialog" aria-modal="true" aria-label="Send feedback">
-        <div className="window-title"><img src={logo} alt="" /><span>{isError ? "Report This Error" : thumbs ? "Bad Answer: Send Feedback" : "Send Feedback"}</span></div>
+        <div className="window-title"><img src={logo} alt="" /><span>{isError ? "Report This Error" : "Send Feedback"}</span></div>
         {sent ? (
           <div className="window-body"><p>Thank you. Report {sent} sent.</p></div>
         ) : (
           <div className="feedback-cols">
             <div className="feedback-form">
-              <label htmlFor="feedback-text">{isError ? "What did you do when the error came? (You can leave this empty.)" : thumbs ? "What is wrong with this answer?" : "Your feedback for the course staff (what worked, what did not work):"}</label>
+              <label htmlFor="feedback-text">{isError ? "What did you do when the error came? (You can leave this empty.)" : "Your feedback for the course staff (what worked, what did not work):"}</label>
               <textarea id="feedback-text" className="input-field" autoFocus rows={7} maxLength={5000} value={text} disabled={busy} onChange={(e) => setText(e.target.value)} />
               {isError && (
                 <div className="feedback-check"><span>The error is always in this report.</span> <button type="button" className="btn small" onClick={() => setShow("error")}>Show the error</button></div>
               )}
               {data.conversation && (
                 <div className="feedback-check"><label><input type="checkbox" checked={conv} disabled={busy} onChange={(e) => { setConv(e.target.checked); if (e.target.checked) setShow("conversation"); }} />
-                  Attach this conversation{thumbs ? " (up to this answer)" : ""}</label> <button type="button" className="btn small" onClick={() => setShow("conversation")}>Preview</button></div>
+                  Attach this conversation</label> <button type="button" className="btn small" onClick={() => setShow("conversation")}>Preview</button></div>
               )}
               {data.screenshot && (
                 <div className="feedback-check"><label><input type="checkbox" checked={shot} disabled={busy} onChange={(e) => { setShot(e.target.checked); if (e.target.checked) setShow("screenshot"); }} />

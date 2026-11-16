@@ -1128,10 +1128,6 @@ body.resizing webview { pointer-events: none; }
 .feedback-preview pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: .8rem; }
 .feedback-preview img { max-width: 100%; height: auto; border: 1px solid var(--line); }
 @media (max-width: 760px) { .feedback-cols { flex-direction: column; } }
-.msg-actions { display: flex; justify-content: flex-start; margin-top: .2rem; }
-.thumbs-btn { opacity: 0; color: var(--muted); background: none; border-color: transparent; box-shadow: none; }
-.msg.assistant:hover .thumbs-btn, .thumbs-btn:focus-visible { opacity: 1; }
-.thumbs-btn svg { stroke: currentColor; stroke-width: 1.5; }
 /* "Report this error" next to a red error item. */
 .notice-row { display: flex; align-items: flex-start; gap: .5rem; }
 .notice-row .notice { flex: 1; min-width: 0; }
