@@ -107,6 +107,9 @@ export function git(cwd: string, args: string[], opts: { token?: string; user?: 
       done({ code, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") || (err && !stderr ? err.message : "") });
     });
     if (opts.onStderr) child.stderr?.on("data", (d) => opts.onStderr!(String(d)));
+    // If git exits before it reads stdin, the write fails with EPIPE. Without a handler, Node throws and catatui stops.
+    // Ignore the error: git gives its result with the exit code and the output.
+    child.stdin?.on("error", () => {});
     child.stdin?.end(opts.input ?? "");
   });
 }
