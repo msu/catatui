@@ -132,7 +132,8 @@ export function reduce(state, rec) {
   }
 }
 
-export const notice = (state, level, text) => ({ ...state, items: [...state.items, { kind: "notice", level, text }] });
+// extra: more fields for the item, for example report ({ crash: true }) for "Report this error".
+export const notice = (state, level, text, extra) => ({ ...state, items: [...state.items, { kind: "notice", level, text, ...extra }] });
 
 export const closeDialog = (state, id) => ({ ...state, dialogs: state.dialogs.filter((d) => d.id !== id), widgets: state.widgets.filter((w) => w.id !== id) });
 

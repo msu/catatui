@@ -655,7 +655,13 @@ function spawnEntry(folder) {
     }
   });
   proc.stderr.setEncoding("utf8");
-  proc.stderr.on("data", (t) => toRenderer(ownerOf(proc), "rpc-stderr", t));
+  // The last 100 lines of stderr, for "Report this error" after a crash.
+  const stderrTail = [];
+  proc.stderr.on("data", (t) => {
+    stderrTail.push(...t.split("\n").filter(Boolean));
+    if (stderrTail.length > STDERR_LINES) stderrTail.splice(0, stderrTail.length - STDERR_LINES);
+    toRenderer(ownerOf(proc), "rpc-stderr", t);
+  });
   proc.on("exit", (code, signal) => {
     for (const [id, resolve] of pending) {
       if (id.startsWith(`${proc.pid}:`)) { resolve({ type: "response", success: false, error: "catatui stopped." }); pending.delete(id); }
@@ -665,7 +671,9 @@ function spawnEntry(folder) {
     if (!c) return;
     c.child = undefined;
     // A stop that the app asked for (sign-out, new sign-in) is not an error.
-    if (!entry.stopping) toRenderer(c, "rpc-exit", { code, signal });
+    if (entry.stopping) return;
+    c.lastCrash = `catatui stopped (exit code ${code}, signal ${signal ?? "none"}).\n\nThe last lines of the catatui stderr output:\n${stderrTail.join("\n") || "(none)"}`;
+    toRenderer(c, "rpc-exit", { code, signal });
   });
   entry.ready = commandTo(proc, { type: "get_state" });
   return entry;
@@ -762,13 +770,35 @@ ipcMain.handle("rpc-command", async (e, cmd) => {
 // The answer to a dialog (extension_ui_request). It has no response.
 ipcMain.on("ui-response", (e, response) => write({ type: "extension_ui_response", ...response }, ctxOf(e)?.child));
 
+// ---- Errors in this main process ----
+// Keep the last error, and show a notice with "Report this error" in the focused window. Nothing is sent
+// automatically. With these handlers, Electron does not show its own error dialog.
+const STDERR_LINES = 100;
+let lastMainError;
+function mainError(label, err) {
+  const text = `${label}: ${err?.stack ?? String(err)}`;
+  console.error(`catai: ${text}`);
+  lastMainError = text;
+  toRenderer(focusedCtx(), "app-error", String(err?.message ?? err).split("\n")[0]);
+}
+process.on("uncaughtException", (err) => mainError("Uncaught exception in the main process", err));
+process.on("unhandledRejection", (err) => mainError("Unhandled rejection in the main process", err));
+
 // ---- Feedback (src/md/features/feedback.md) ----
 // feedback-open: the form opens. Take the screenshot first, before the renderer draws the form.
 // The data stays in main.js. The renderer gets a preview, and feedback-send sends only the parts that the student ticked.
 // ts: for a thumbs-down, the timestamp of the assistant answer. The conversation stops at that answer.
-ipcMain.handle("feedback-open", async (e, kind, ts) => {
+// err (kind "error" only): { text } from the renderer, { crash: true } for the last catatui crash, or { main: true }
+// for the last error in this main process. The cleaned trace (cleanTrace) always goes with an error report.
+ipcMain.handle("feedback-open", async (e, kind, ts, err) => {
   const c = ctxOf(e);
   if (!c) return { error: "catai cannot find this window. Close the window, then try again." };
+  let trace;
+  if (kind === "error") {
+    const raw = err?.crash ? c.lastCrash : err?.main ? lastMainError : String(err?.text ?? "");
+    if (!raw?.trim()) return { error: "catai has no text for this error. Use Help > Send Feedback... and describe the error." };
+    trace = feedback.cleanTrace(raw);
+  }
   let png;
   try {
     let img = await c.win.webContents.capturePage();
@@ -788,8 +818,9 @@ ipcMain.handle("feedback-open", async (e, kind, ts) => {
   }
   const conversation = feedback.conversationText(messages);
   const netid = feedback.netId(store.readCredential());
-  c.feedback = { kind: kind === "thumbs-down" ? "thumbs-down" : "feedback", conversation, screenshot: png?.toString("base64"), netid, model: st.data?.model?.id };
-  return { kind: c.feedback.kind, conversation, screenshot: png ? `data:image/png;base64,${c.feedback.screenshot}` : undefined, netid };
+  const k = kind === "thumbs-down" || kind === "error" ? kind : "feedback";
+  c.feedback = { kind: k, conversation, screenshot: png?.toString("base64"), netid, model: st.data?.model?.id, error: trace };
+  return { kind: k, conversation, screenshot: png ? `data:image/png;base64,${c.feedback.screenshot}` : undefined, netid, trace };
 });
 // feedback-send: the form answers. Only the ticked parts go out.
 ipcMain.handle("feedback-send", async (e, form) => {
@@ -799,7 +830,7 @@ ipcMain.handle("feedback-send", async (e, form) => {
   let report;
   try {
     report = feedback.buildReport({
-      app: "catai", kind: f.kind, text: String(form?.text ?? ""), model: f.model,
+      app: "catai", kind: f.kind, text: String(form?.text ?? ""), model: f.model, error: f.error,
       conversation: form?.conversation && f.conversation ? f.conversation : undefined,
       screenshot: form?.screenshot ? f.screenshot : undefined,
       contact: form?.contact ? f.netid : undefined,

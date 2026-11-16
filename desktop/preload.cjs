@@ -76,7 +76,10 @@ contextBridge.exposeInMainWorld("catatui", {
   // After a roll back from the file menu, the tree and the file cards read the files again.
   onFilesChanged: on("files-changed"),
   // Feedback: open takes the screenshot and the conversation; send sends only the ticked parts.
-  feedbackOpen: (kind, ts) => ipcRenderer.invoke("feedback-open", kind, ts),
+  // err (kind "error"): { text }, { crash: true }, or { main: true }. See main.js.
+  feedbackOpen: (kind, ts, err) => ipcRenderer.invoke("feedback-open", kind, ts, err),
+  // An error in the main process: show a notice with "Report this error".
+  onAppError: on("app-error"),
   feedbackSend: (form) => ipcRenderer.invoke("feedback-send", form),
   onCloneProgress: on("clone-progress"),
   openPath: (path) => ipcRenderer.send("open-path", path),

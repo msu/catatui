@@ -182,3 +182,8 @@ A desktop app (like Claude Desktop) for students who do not use the command line
 
 - Help > Send Feedback... and the thumbs-down button on each assistant answer open the feedback form. See [feedback.md](feedback.md).
 - The main process takes the screenshot (`webContents.capturePage()`) and gets the conversation (`get_messages`) before the renderer draws the form. The data stays in the main process. `feedback-send` sends only the ticked parts.
+- "Report this error": each red error item in the chat has this button. It opens the form with the kind `error`. A model or server error (the error of an assistant answer) also cuts the conversation at that answer.
+- catatui crash: main.js keeps the last 100 lines of the catatui stderr output. The "catatui stopped" notice has "Report this error", and the report has these lines.
+- App errors: `uncaughtException` and `unhandledRejection` in main.js, and `error` and `unhandledrejection` in the window, show a notice with "Report this error". The same error again within 10 seconds gets no new notice. With the main.js handlers, Electron does not show its own error dialog.
+- A render error shows the error screen with "Report this error" and "Reload".
+- Nothing opens and nothing is sent automatically.

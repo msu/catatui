@@ -28,13 +28,27 @@ export function App() {
   const [model, setModel] = useState(undefined);
   const [log, setLog] = useState("");
   const local = (fn) => dispatch({ type: "local", fn });
+  // The same app error again within 10 seconds gets no new notice, so a loop does not fill the chat.
+  const lastAppError = useRef({ text: "", at: 0 });
+  const appError = (text, report) => {
+    if (lastAppError.current.text === text && Date.now() - lastAppError.current.at < 10_000) return;
+    lastAppError.current = { text, at: Date.now() };
+    local((s) => notice(s, "error", text, { report }));
+  };
 
   useEffect(() => {
     const offs = [
       api.onEvent((rec) => dispatch({ type: "event", rec })),
       api.onStderr((t) => setLog((l) => (l + t).slice(-20_000))),
-      api.onExit(({ code }) => local((s) => notice({ ...s, busy: false }, "error", `catatui stopped (exit code ${code}). Close the app and open it again.`))),
+      api.onExit(({ code }) => local((s) => notice({ ...s, busy: false }, "error", `catatui stopped (exit code ${code}). Close the app and open it again.`, { report: { crash: true } }))),
+      // App errors: a notice with "Report this error". Nothing opens and nothing is sent automatically.
+      api.onAppError((msg) => appError(`catai had an error: ${msg}`, { main: true })),
     ];
+    const onError = (e) => appError(`catai had an error: ${e.message}`, { text: `Error in the window: ${e.error?.stack ?? e.message} (${e.filename}:${e.lineno})` });
+    const onRejection = (e) => appError(`catai had an error: ${e.reason?.message ?? String(e.reason)}`, { text: `Unhandled rejection in the window: ${e.reason?.stack ?? String(e.reason)}` });
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    offs.push(() => window.removeEventListener("error", onError), () => window.removeEventListener("unhandledrejection", onRejection));
     boot();
     return () => offs.forEach((off) => off());
   }, []);
@@ -465,9 +479,9 @@ export function App() {
   // The feedback form (Help > Send Feedback, and the thumbs-down button on an answer). main.js takes the
   // screenshot before the form is drawn, and keeps the data. ts: the answer for a thumbs-down.
   const [feedbackForm, setFeedbackForm] = useState(undefined);
-  async function openFeedback(kind, ts) {
+  async function openFeedback(kind, ts, err) {
     if (feedbackForm) return;
-    const d = await api.feedbackOpen(kind, ts);
+    const d = await api.feedbackOpen(kind, ts, err);
     if (d.error) return local((st) => notice(st, "error", d.error));
     setFeedbackForm(d);
   }
@@ -621,6 +635,7 @@ export function App() {
             onPin={(p) => openSide({ type: "file", path: p })} onOpenWeb={(url) => openSide({ type: "web", url, at: Date.now() })}
             onOpenView={(view, course) => (view === "advising" ? goAdvising() : goClasses(course))}
             onThumbsDown={(ts) => openFeedback("thumbs-down", ts)}
+            onReport={(err, ts) => openFeedback("error", ts, err)} model={model?.id}
             onFixA11y={fixA11y} queued={state.queued} onUnqueue={unqueue} />
           <Composer context={lastAssistantText(state.items)} busy={state.busy} onSend={send} onStop={stop} editorText={state.editorText}
             clearEditorText={() => local((s) => ({ ...s, editorText: undefined }))}
@@ -2654,7 +2669,7 @@ function GitHubSignIn({ onDone }) {
   );
 }
 
-function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove, onPin, onOpenWeb, onOpenView, onFixA11y, onThumbsDown, queued, onUnqueue }) {
+function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resume, onResume, widgets, onWidgetAnswer, advising, onAsk, kind, project, onOpenSession, onRemove, onPin, onOpenWeb, onOpenView, onFixA11y, onThumbsDown, onReport, model, queued, onUnqueue }) {
   const end = useRef(null);
   const box = useRef(null);
   // Keep the newest text in view, unless the student scrolled up to read.
@@ -2693,7 +2708,7 @@ function Chat({ items, busy, onShowChanges, changed, scrollTick, fileTick, resum
       {items.map((it, i) => {
         const item = <Item key={i} it={it} onShowChanges={onShowChanges} changed={changed} fileTick={fileTick} widgets={widgets} onWidgetAnswer={onWidgetAnswer}
           onPin={onPin} onRemove={busy ? undefined : onRemove} onOpenWeb={onOpenWeb} onOpenView={busy ? undefined : onOpenView}
-          onFixA11y={busy ? undefined : onFixA11y} onThumbsDown={onThumbsDown} live={busy && i === items.length - 1} />;
+          onFixA11y={busy ? undefined : onFixA11y} onThumbsDown={onThumbsDown} onReport={onReport} model={model} live={busy && i === items.length - 1} />;
         // File cards have their own buttons. A removed message has nothing to remove.
         if (it.kind === "user" && (it.text.startsWith(FILE_PREFIX) || it.text === "[removed]")) return item;
         // "Remove" on a message or a tool call, when the agent is not working.
@@ -2791,7 +2806,7 @@ function A11yCard({ it, onFix }) {
   );
 }
 
-function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, onPin, onRemove, onOpenWeb, onOpenView, onFixA11y, onThumbsDown, live }) {
+function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, onPin, onRemove, onOpenWeb, onOpenView, onFixA11y, onThumbsDown, onReport, model, live }) {
   if (it.kind === "tool" && it.name === "a11y_check" && !it.isError && (it.running || it.result?.details?.files)) return <A11yCard it={it} onFix={onFixA11y} />;
   // advising_submit_plan: the plan card. It is live while its request waits. After that, the result has the plan and the status.
   if (it.kind === "tool" && it.name === "advising_submit_plan") {
@@ -2858,6 +2873,14 @@ function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, o
     return <div className={`msg removed ${it.kind}`}>Removed</div>;
   }
   if (it.kind === "user") return <div className="msg user">{it.text}</div>;
+  if (it.kind === "notice" && it.level === "error" && onReport) {
+    return (
+      <div className="notice-row">
+        <pre className="notice error">{plain(it.text)}</pre>
+        <ReportButton onClick={() => onReport(it.report ?? { text: plain(it.text) })} />
+      </div>
+    );
+  }
   if (it.kind === "notice") return <pre className={`notice ${it.level}`}>{plain(it.text)}</pre>;
   if (it.kind === "tool") return <Tool it={it} />;
   return (
@@ -2869,7 +2892,12 @@ function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, o
           <div key={i} className="md" dangerouslySetInnerHTML={{ __html: marked.parse(b.text) }} />
         ),
       )}
-      {it.error && <div className="notice error">{it.error}</div>}
+      {it.error && (it.error === "Stopped." || !onReport ? <div className="notice error">{it.error}</div> : (
+        <div className="notice-row">
+          <div className="notice error">{it.error}</div>
+          <ReportButton onClick={() => onReport({ text: `Model or server error${model ? ` (model ${model})` : ""}:\n${it.error}` }, it.ts)} />
+        </div>
+      ))}
       {!live && it.ts !== undefined && onThumbsDown && (
         <div className="msg-actions">
           <button className="icon-btn thumbs-btn" data-tip="Bad answer: send feedback" aria-label="Bad answer: send feedback" onClick={() => onThumbsDown(it.ts)}>
@@ -2883,17 +2911,22 @@ function Item({ it, onShowChanges, changed, fileTick, widgets, onWidgetAnswer, o
 
 // The feedback form. Nothing goes out before Send. Each attachment is off until the student ticks it.
 // The preview (the conversation or the screenshot) is beside the form, not below it.
-function FeedbackForm({ data, onClose }) {
+export function ReportButton({ onClick }) {
+  return <button className="btn small report-btn" onClick={onClick} title="Send this error to the course staff. You see the report before it goes.">Report this error</button>;
+}
+
+export function FeedbackForm({ data, onClose }) {
   const [text, setText] = useState("");
   const [conv, setConv] = useState(false);
   const [shot, setShot] = useState(false);
   const [contact, setContact] = useState(false);
-  const [show, setShow] = useState(data.conversation ? "conversation" : data.screenshot ? "screenshot" : undefined);
+  const [show, setShow] = useState(data.trace ? "error" : data.conversation ? "conversation" : data.screenshot ? "screenshot" : undefined);
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(undefined);
   const thumbs = data.kind === "thumbs-down";
+  const isError = data.kind === "error";
   const send = async () => {
     setBusy(true);
     setError("");
@@ -2907,14 +2940,17 @@ function FeedbackForm({ data, onClose }) {
   return (
     <div className="overlay" onKeyDown={(e) => { if (e.key === "Escape" && !busy) { e.preventDefault(); e.stopPropagation(); onClose(); } }}>
       <div className="window feedback" role="dialog" aria-modal="true" aria-label="Send feedback">
-        <div className="window-title"><img src={logo} alt="" /><span>{thumbs ? "Bad Answer: Send Feedback" : "Send Feedback"}</span></div>
+        <div className="window-title"><img src={logo} alt="" /><span>{isError ? "Report This Error" : thumbs ? "Bad Answer: Send Feedback" : "Send Feedback"}</span></div>
         {sent ? (
           <div className="window-body"><p>Thank you. Report {sent} sent.</p></div>
         ) : (
           <div className="feedback-cols">
             <div className="feedback-form">
-              <label htmlFor="feedback-text">{thumbs ? "What is wrong with this answer?" : "Your feedback for the course staff (what worked, what did not work):"}</label>
+              <label htmlFor="feedback-text">{isError ? "What did you do when the error came? (You can leave this empty.)" : thumbs ? "What is wrong with this answer?" : "Your feedback for the course staff (what worked, what did not work):"}</label>
               <textarea id="feedback-text" className="input-field" autoFocus rows={7} maxLength={5000} value={text} disabled={busy} onChange={(e) => setText(e.target.value)} />
+              {isError && (
+                <div className="feedback-check"><span>The error is always in this report.</span> <button type="button" className="btn small" onClick={() => setShow("error")}>Show the error</button></div>
+              )}
               {data.conversation && (
                 <div className="feedback-check"><label><input type="checkbox" checked={conv} disabled={busy} onChange={(e) => { setConv(e.target.checked); if (e.target.checked) setShow("conversation"); }} />
                   Attach this conversation{thumbs ? " (up to this answer)" : ""}</label> <button type="button" className="btn small" onClick={() => setShow("conversation")}>Preview</button></div>
@@ -2927,12 +2963,12 @@ function FeedbackForm({ data, onClose }) {
                 <div className="feedback-check"><label><input type="checkbox" checked={contact} disabled={busy} onChange={(e) => setContact(e.target.checked)} />
                   You can contact me (NetID: {data.netid})</label></div>
               )}
-              <p className="muted small">Only the parts that you tick go to the course staff, with the catai version, your system, and the model.</p>
+              <p className="muted small">Only the parts that you tick go to the course staff, with {isError ? "the error, " : ""}the catai version, your system, and the model.</p>
               {error && <p className="error">{error}</p>}
             </div>
             {show && (
-              <div className="feedback-preview" aria-label={show === "conversation" ? "Conversation preview" : "Screenshot preview"}>
-                {show === "conversation" ? <>
+              <div className="feedback-preview" aria-label={show === "error" ? "Error preview" : show === "conversation" ? "Conversation preview" : "Screenshot preview"}>
+                {show === "error" ? <pre className="feedback-trace">{data.trace}</pre> : show === "conversation" ? <>
                   <pre>{preview}</pre>
                   {lines.length > 30 && <button type="button" className="btn small" onClick={() => setExpanded((v) => !v)}>{expanded ? "Show less" : `Show all (${lines.length} lines)`}</button>}
                 </> : <img src={data.screenshot} alt="Screenshot of this window" />}
@@ -2944,7 +2980,7 @@ function FeedbackForm({ data, onClose }) {
           <span className="spacer" />
           {sent ? <button className="btn primary default" autoFocus onClick={onClose}>Close</button> : <>
             <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
-            <button className="btn primary default" onClick={send} disabled={busy || !text.trim()}>{busy ? "Sending..." : "Send"}</button>
+            <button className="btn primary default" onClick={send} disabled={busy || (!isError && !text.trim())}>{busy ? "Sending..." : "Send"}</button>
           </>}
         </div>
       </div>
