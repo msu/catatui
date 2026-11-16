@@ -24,6 +24,7 @@ import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { isAbsolute, relative, resolve } from "node:path";
 import { CHANGE_TOOLS, GIT_CHANGE_TOOLS, GIT_REMOTE_TOOLS, toolPaths } from "./config.ts";
 import { type JudgeInput, type Judgment, judge as defaultJudge, logJudgment } from "./judge.ts";
+import { commitPreview } from "./gittools.ts";
 import { programName } from "./run.ts";
 import { sandboxOn, setSandbox } from "./sandbox.ts";
 import { setSte, steOn } from "./ste.ts";
@@ -324,7 +325,10 @@ export function registerPermissions(pi: ExtensionAPI) {
       }
       // A commit or a new repository loses no work.
       if (commitsAllowed || mode === "auto") return;
-      const what = event.toolName === "git_init" ? "Make the project folder a git repository?" : `Commit the changes?\n\n  ${event.input.message ?? ""}`;
+      // The commit question shows the files and the diff, so the student can check what the commit saves.
+      const preview = event.toolName === "git_commit" ? await commitPreview(ctx.cwd, Array.isArray(event.input.paths) ? event.input.paths : []) : undefined;
+      const what = event.toolName === "git_init" ? "Make the project folder a git repository?"
+        : `Commit the changes?\n\n  ${event.input.message ?? ""}${preview ? `\n\n${preview}` : ""}`;
       const choice = await ask(ctx, what, event.toolName === "git_commit" ? ["Yes", ALLOW_COMMITS, "No"] : ["Yes", "No"]);
       if (choice === ALLOW_COMMITS) commitsAllowed = true;
       return choice?.startsWith("Yes") ? undefined : { block: true, reason: "The student did not allow this git command." };

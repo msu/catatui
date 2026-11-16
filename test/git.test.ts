@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { git, GitRefused, gitSync, repoRisk } from "../src/catatui/git.ts";
 import { clearGitHub, readGitHub, signInGitHub } from "../src/catatui/github.ts";
-import { registerGitTools } from "../src/catatui/gittools.ts";
+import { commitPreview, registerGitTools } from "../src/catatui/gittools.ts";
 import { fakeCtx, fakePi } from "./fake-pi.ts";
 
 const tmp = (name: string) => realpathSync(mkdtempSync(join(tmpdir(), `catatui-${name}-`)));
@@ -152,4 +152,29 @@ test("git_push: no remote asks for a url; with no sign-in the student must sign 
   const out = await t("git_push", { url: "https://127.0.0.1:1/none.git" });
   assert.match(out, /git failed/);
   assert.equal((await git(dir, ["remote", "get-url", "origin"])).stdout.trim(), "https://127.0.0.1:1/none.git");
+});
+
+test("commitPreview: the files and the diff that git_commit will commit, new files too; the index does not change", async () => {
+  const dir = await repo();
+  // First commit: no HEAD.
+  writeFileSync(join(dir, "a.txt"), "one\n");
+  assert.match(await commitPreview(dir) ?? "", /Files:\n  A a.txt\n\nnew file: a.txt\n\+one/);
+  await git(dir, ["add", "a.txt"]);
+  await git(dir, ["commit", "-q", "-m", "first"]);
+  assert.equal(await commitPreview(dir), "No changes to commit.");
+
+  writeFileSync(join(dir, "a.txt"), "two\n");
+  writeFileSync(join(dir, "b.txt"), "new\n");
+  const p = await commitPreview(dir) ?? "";
+  assert.match(p, /  M a.txt\n  A b.txt/);
+  assert.match(p, /-one\n\+two/);
+  assert.match(p, /new file: b.txt\n\+new/);
+  assert.equal((await git(dir, ["diff", "--cached", "--name-only"])).stdout, "");
+  // paths: only those files.
+  assert.doesNotMatch(await commitPreview(dir, ["a.txt"]) ?? "", /b.txt/);
+  // A long diff is cut.
+  writeFileSync(join(dir, "c.txt"), "x\n".repeat(200));
+  assert.match(await commitPreview(dir) ?? "", /more lines\. To see all, choose No and ask for git_diff/);
+  // No repository.
+  assert.equal(await commitPreview(tmp("none")), undefined);
 });

@@ -8,15 +8,19 @@
 // See src/md/features/git.md.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { userInfo } from "node:os";
-import { isAbsolute, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { Type } from "typebox";
 import { git, GitRefused, type GitResult } from "./git.ts";
 import { clearGitHub, gitHubExpiryDays, readGitHub, signInGitHub, TOKEN_URL } from "./github.ts";
 import { sandboxOn } from "./sandbox.ts";
 
 const MAX_CHARS = 30_000;
+// The commit question shows at most this many lines of the diff.
+const PREVIEW_LINES = 60;
+// git's empty tree: the base for the first commit, when there is no HEAD.
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
 
 function clip(s: string): string {
@@ -67,6 +71,40 @@ async function identity(cwd: string): Promise<string[]> {
   const gh = readGitHub();
   const user = gh?.login ?? (() => { try { return userInfo().username; } catch { return "student"; } })();
   return ["-c", `user.name=${name || user}`, "-c", `user.email=${email || (gh ? `${gh.login}@users.noreply.github.com` : `${user}@localhost`)}`];
+}
+
+// The changes that git_commit will commit, for the commit question: the files, then the diff (at most PREVIEW_LINES).
+// git_commit adds all changes in paths, so this compares the files with the last commit, and adds the new files.
+// It does not change the index. undefined: no repository, a risky repository, or a git error.
+export async function commitPreview(cwd: string, paths: string[] = [], signal?: AbortSignal): Promise<string | undefined> {
+  try {
+    const ps = paths.length ? paths : ["."];
+    const base = (await git(cwd, ["rev-parse", "--verify", "-q", "HEAD"], { signal })).code === 0 ? "HEAD" : EMPTY_TREE;
+    const names = await git(cwd, ["diff", "--name-status", "--no-renames", base, "--", ...ps], { signal });
+    const diff = await git(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", base, "--", ...ps], { signal });
+    const others = await git(cwd, ["ls-files", "--others", "--exclude-standard", "--", ...ps], { signal });
+    if (names.code !== 0 || diff.code !== 0 || others.code !== 0) return undefined;
+    const added = others.stdout.split("\n").filter(Boolean);
+    const files = [...names.stdout.split("\n").filter(Boolean).map((l) => l.replace("\t", " ")), ...added.map((f) => `A ${f}`)];
+    if (!files.length) return "No changes to commit.";
+    // New files: git diff does not show them, because they are not in the index. Show their lines with "+".
+    const fresh = added.map((f) => {
+      let body: string;
+      try {
+        const buf = readFileSync(join(cwd, f));
+        body = buf.includes(0) ? "(binary file)" : buf.toString("utf8").split("\n").map((l) => `+${l}`).join("\n");
+      } catch {
+        body = "(cannot read the file)";
+      }
+      return `new file: ${f}\n${body}`;
+    });
+    const lines = [diff.stdout.trimEnd(), ...fresh].filter(Boolean).join("\n").split("\n");
+    const shown = lines.slice(0, PREVIEW_LINES);
+    if (lines.length > PREVIEW_LINES) shown.push(`[... ${lines.length - PREVIEW_LINES} more lines. To see all, choose No and ask for git_diff.]`);
+    return `Files:\n${files.map((f) => `  ${f}`).join("\n")}\n\n${shown.join("\n")}`;
+  } catch {
+    return undefined;
+  }
 }
 
 const auth = () => { const gh = readGitHub(); return { token: gh?.token, user: gh?.login }; };

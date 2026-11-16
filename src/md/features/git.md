@@ -10,6 +10,7 @@ The agent has git tools that work with no git installed. The code is in `src/cat
   - Remote: `git_clone`, `git_pull`, `git_push`. `git_push` with `url` adds the remote `origin` if there is none.
 - Permissions (permissions.ts):
   - `git_commit` and `git_init` ask like a file change. The student can allow commits for the session.
+  - The `git_commit` question shows the files and the diff that the commit saves (`commitPreview` in gittools.ts): the changes since the last commit, and the new files. It shows at most 60 lines of the diff. It does not change the index. This replaces a staging step (`git_add`): the student checks the commit before it happens.
   - `git_restore` always asks, because it loses changes.
   - The remote tools always ask, also in yolo mode.
   - ta and plan mode block the change tools, `git_clone`, and `git_pull`. `git_push` only asks.
