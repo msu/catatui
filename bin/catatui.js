@@ -20,7 +20,7 @@ if (args.includes("--version") || args.includes("-v")) {
 }
 
 // "pi update" updates pi itself, which does not work for catatui. Use the catatui update for both words.
-if (args.includes("--update") || args[0] === "update") process.exit(update());
+if (args.includes("--update") || args[0] === "update") process.exit(await update());
 
 process.env.CATATUI = "1";
 process.env.PI_CODING_AGENT_DIR ??= join(homedir(), ".catatui");

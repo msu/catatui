@@ -21,6 +21,7 @@ catatui is on GitHub (`msu/catatui`). It is not on the npm registry. The install
 
 - `catatui --version` compares the local version with `package.json` on GitHub. If you do not increase the version, students do not see the update.
 - `catatui --update` runs the install script again on macOS and Linux.
+- If npm installed catatui, `catatui --update` shows the npm command and asks "Run it now?". With no terminal, it shows the command only.
 - There is no automatic update.
 
 ## Subtleties

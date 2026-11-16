@@ -2,6 +2,7 @@
 // The installer (install.sh, install.ps1) sets CATATUI_APP in the catatui command. Without it, npm or npx installed catatui.
 
 import { spawnSync } from "node:child_process";
+import { createInterface } from "node:readline/promises";
 
 const REPO = "https://raw.githubusercontent.com/msu/catatui/master";
 const SITE = "https://catatui.cs.montana.edu";
@@ -35,10 +36,21 @@ export async function printVersion(version, piVersion) {
   }
 }
 
-export function update() {
+// Ask a yes or no question in the terminal. The default is no.
+async function confirm(question) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await rl.question(`${question} [y/N] `);
+  rl.close();
+  return /^y(es)?$/i.test(answer.trim());
+}
+
+export async function update() {
   if (!process.env.CATATUI_APP) {
     console.log(`npm or npx installed catatui. To update, run: ${INSTALL_NPM}`);
-    return 0;
+    // With no terminal (a script or a pipe), only show the command.
+    if (!process.stdin.isTTY || !(await confirm("Run it now?"))) return 0;
+    // shell: on Windows, npm is npm.cmd.
+    return spawnSync(INSTALL_NPM, { stdio: "inherit", shell: true }).status ?? 1;
   }
   // On Windows, the installer cannot replace node.exe while this node.exe runs. The student must run it.
   if (process.platform === "win32") {
