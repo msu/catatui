@@ -75,3 +75,51 @@ test("pptx_write: an image outside the project or a missing image is refused", a
 test("pptx_write is a change tool", () => {
   assert.ok(CHANGE_TOOLS.includes("pptx_write"));
 });
+
+async function read(dir: string, path: string) {
+  const { pi, tools } = fakePi();
+  registerPptxTools(pi);
+  return (await tools.get("pptx_read").execute("1", { path }, undefined, undefined, { cwd: dir })).content[0].text as string;
+}
+
+test("pptx_read: the pptx_write deck in order, with titles, levels, the table, the image, the chart, and the notes", async () => {
+  const dir = tmp();
+  await writeTestDeck(dir);
+  const text = await read(dir, "deck.pptx");
+  assert.match(text, /^6 slides\n\n## Slide 1: Budget Review\n- BMGT 205\nNotes: Welcome everyone\./);
+  assert.match(text, /## Slide 2: Goals\n- Cut costs\n {2}- Rent\n- Save more\nNotes: Say the goals\./);
+  assert.match(text, /## Slide 3: Pros and Cons\n- Cheap\n- Slow/);
+  assert.match(text, /## Slide 4: Costs\nTable:\nItem\tCost\nRent\t800\nFood\t250/);
+  assert.match(text, /## Slide 5: Trend\nCharts: 1/);
+  assert.match(text, /## Slide 6: Campus\n- The new building\nImages: Campus/);
+  // The footer and the slide number are in the master, not on the slides.
+  assert.doesNotMatch(text, /Montana State University/);
+});
+
+test("pptx_read: a deck with title placeholders, entities, a hidden slide, and the slide order from presentation.xml", async () => {
+  const dir = tmp();
+  const zip = new JSZip();
+  const NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"';
+  const sp = (ph: string, paras: string) => `<p:sp><p:nvSpPr><p:cNvPr id="2" name="x"/><p:cNvSpPr/><p:nvPr>${ph}</p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/>${paras}</p:txBody></p:sp>`;
+  const slide = (body: string, extra = "") => `<?xml version="1.0"?><p:sld ${NS}${extra}><p:cSld><p:spTree>${body}</p:spTree></p:cSld></p:sld>`;
+  zip.file("ppt/presentation.xml", `<?xml version="1.0"?><p:presentation ${NS}><p:sldIdLst><p:sldId id="257" r:id="rId9"/><p:sldId id="256" r:id="rId8"/></p:sldIdLst></p:presentation>`);
+  zip.file("ppt/_rels/presentation.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/><Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/></Relationships>`);
+  zip.file("ppt/slides/slide1.xml", slide(sp('<p:ph type="title"/>', "<a:p><a:r><a:t>Q&amp;A</a:t></a:r></a:p>") + sp('<p:ph idx="1"/>', '<a:p><a:r><a:t>Ask &lt;anything&gt;</a:t></a:r></a:p><a:p><a:pPr lvl="2"/><a:r><a:t>deep</a:t></a:r></a:p>'), ' show="0"'));
+  zip.file("ppt/slides/slide2.xml", slide(sp('<p:ph type="ctrTitle"/>', "<a:p><a:r><a:t>First</a:t></a:r></a:p>")));
+  zip.file("ppt/slides/_rels/slide1.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide1.xml"/></Relationships>`);
+  zip.file("ppt/notesSlides/notesSlide1.xml", `<?xml version="1.0"?><p:notes ${NS}><p:cSld><p:spTree>${sp('<p:ph type="sldImg"/>', "")}${sp('<p:ph type="body" idx="1"/>', "<a:p><a:r><a:t>Line one</a:t></a:r></a:p><a:p><a:r><a:t>Line &#x2013; two</a:t></a:r></a:p>")}</p:spTree></p:cSld></p:notes>`);
+  writeFileSync(join(dir, "made.pptx"), await zip.generateAsync({ type: "nodebuffer" }));
+  const text = await read(dir, "made.pptx");
+  assert.equal(text, "2 slides\n\n## Slide 1: First\n\n## Slide 2 (hidden): Q&A\n- Ask <anything>\n    - deep\nNotes: Line one / Line \u2013 two");
+});
+
+test("pptx_read: not a deck gives a clear error; pptx_read is a read tool", async () => {
+  const dir = tmp();
+  const zip = new JSZip();
+  zip.file("word/document.xml", "<x/>");
+  writeFileSync(join(dir, "doc.pptx"), await zip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(read(dir, "doc.pptx"), /not a PowerPoint \.pptx file/);
+  const { READ_TOOLS } = await import("../src/catatui/config.ts");
+  assert.ok(READ_TOOLS.includes("pptx_read"));
+});
+

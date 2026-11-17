@@ -1,6 +1,6 @@
 # Feature: PowerPoint Files
 
-The `pptx_write` tool writes `.pptx` files. The code is in `src/catatui/pptx.ts`.
+The `pptx_read` and `pptx_write` tools read and write `.pptx` files. The code is in `src/catatui/pptx.ts`.
 
 ## Decisions
 
@@ -17,8 +17,13 @@ The `pptx_write` tool writes `.pptx` files. The code is in `src/catatui/pptx.ts`
 - The theme is one object at the top of `pptx.ts` (`THEMES`).
 - The MSU logo is not in the deck, because it is a trademark.
 - The deck is 16:9 (13.33 x 7.5 inches). Text boxes shrink the text if it is too long.
+- `pptx_read` returns each slide in the order of `presentation.xml`: the number, the title, the text with bullet levels, the tables (tab-separated rows), the image names, the number of charts, and the speaker notes. A hidden slide has "(hidden)". The limit is 50,000 characters.
+- `pptx_read` opens the zip with jszip (a direct dependency, 3.10.2) and reads the XML with small regular expressions. It needs no Python, no LibreOffice, and no XML library.
+- The title is the `title` or `ctrTitle` placeholder. If a slide has no title placeholder (for example a `pptx_write` deck), the first text shape is the title.
+- `pptx_read` skips the slide number, date, and footer placeholders, and the master and layout text. The MSU footer is in the master, so `pptx_read` does not show it.
+- `pptx_read` is in `READ_TOOLS`.
 - `pptx_write` is a file change. `CHANGE_TOOLS` in `config.ts` has it, so the sandbox, the ask prompt, plan mode, the `ta` option, and `/undo` treat it like `write`.
-- The tool has `promptGuidelines` that tell the model to use it and not Python.
+- Each tool has `promptGuidelines` that tell the model to use it and not Python.
 
 ## Subtleties
 
@@ -27,4 +32,5 @@ The `pptx_write` tool writes `.pptx` files. The code is in `src/catatui/pptx.ts`
 - The tool checks the first bytes of an image. Only PNG, JPEG, and GIF images go to pptxgenjs. Its dependency image-size 1.2.1 has `npm audit` findings (high): its JXL, HEIF, and ICNS parsers can loop forever. This check keeps those parsers from running.
 - TODO: verify the MSU blue and gold with the MSU brand guide. The hex values in `THEMES` are placeholders.
 - pptxgenjs depends on the npm package `https` 1.0.0. That package has only a `package.json` (no code and no install script), and Node loads its own `https` module first.
+- `pptx_read` does not read the text in SmartArt or in charts. It shows only the number of charts.
 - macOS Quick Look shows the title, bullet, and table slides. It does not show the chart. The chart parts are in the file. Check charts in PowerPoint.

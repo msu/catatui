@@ -1,11 +1,12 @@
-// PowerPoint tools: the model can write .pptx files with no Python (python-pptx). Students often have no Python.
-// pptx_write is a file change, so sandbox.ts, permissions.ts, and undo.ts treat it like "write".
+// PowerPoint tools: the model can read and write .pptx files with no Python (python-pptx). Students often have no Python.
+// pptx_write is a file change, so sandbox.ts, permissions.ts, and undo.ts treat it like "write". pptx_read is a read tool.
+// pptx_read opens the zip with jszip and reads the slide XML with small regular expressions (no XML library).
 // See src/md/features/pptx.md.
 // pptxgenjs loads when a tool runs first, not at catatui start. This keeps the start fast.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, relative, resolve, isAbsolute } from "node:path";
+import { dirname, relative, resolve, isAbsolute, posix } from "node:path";
 import { Type } from "typebox";
 
 // The deck themes. "msu" is the default. The student can ask for "plain".
@@ -190,7 +191,132 @@ export async function writeDeck(path: string, slides: Slide[], themeName: "msu" 
   writeFileSync(path, buf);
 }
 
+// ---- pptx_read ----
+
+const MAX_CHARS = 50_000;
+
+const READ_PARAMS = Type.Object({
+  path: Type.String({ description: "Path to the .pptx file" }),
+});
+
+const ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+export const xmlText = (s: string) =>
+  s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (_m, e: string) =>
+    e[0] === "#" ? String.fromCodePoint(e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : ENTITY[e.toLowerCase()]);
+const attr = (tag: string, name: string) => new RegExp(`\\b${name}="([^"]*)"`).exec(tag)?.[1];
+
+// The relationships of a part: id -> the full path in the zip.
+async function rels(zip: JSZipLike, part: string): Promise<Map<string, { type: string; target: string }>> {
+  const relPath = posix.join(posix.dirname(part), "_rels", `${posix.basename(part)}.rels`);
+  const xml = await zip.file(relPath)?.async("string");
+  const out = new Map<string, { type: string; target: string }>();
+  for (const m of xml?.matchAll(/<Relationship\b[^>]*>/g) ?? []) {
+    const id = attr(m[0], "Id");
+    const target = attr(m[0], "Target");
+    if (!id || !target || attr(m[0], "TargetMode") === "External") continue;
+    const full = target.startsWith("/") ? target.slice(1) : posix.normalize(posix.join(posix.dirname(part), target));
+    out.set(id, { type: (attr(m[0], "Type") ?? "").split("/").pop()!, target: full });
+  }
+  return out;
+}
+
+// The paragraphs of a text body: the level and the text.
+function paragraphs(xml: string): { level: number; text: string }[] {
+  const out: { level: number; text: string }[] = [];
+  for (const p of xml.matchAll(/<a:p>([\s\S]*?)<\/a:p>|<a:p\b[^>]*>([\s\S]*?)<\/a:p>/g)) {
+    const body = p[1] ?? p[2] ?? "";
+    const pPr = /<a:pPr\b[^>]*>/.exec(body)?.[0] ?? "";
+    const level = Number(attr(pPr, "lvl") ?? 0);
+    const text = [...body.matchAll(/<a:t>([\s\S]*?)<\/a:t>|<a:br\/>/g)].map((t) => (t[1] === undefined ? "\n" : xmlText(t[1]))).join("");
+    if (text.trim()) out.push({ level, text });
+  }
+  return out;
+}
+
+interface JSZipLike { file(path: string): { async(type: "string"): Promise<string> } | null; files: Record<string, unknown> }
+
+export interface SlideInfo { n: number; hidden: boolean; title: string; texts: { level: number; text: string }[][]; tables: string[][][]; images: string[]; charts: number; notes: string }
+
+// The slides of a deck in order (presentation.xml), with the text, the tables, the images, and the notes.
+export async function readSlides(data: Buffer): Promise<SlideInfo[]> {
+  const JSZip = (await import("jszip")).default;
+  const zip = (await JSZip.loadAsync(data)) as unknown as JSZipLike;
+  const pres = await zip.file("ppt/presentation.xml")?.async("string");
+  if (!pres) throw new Error("The file is not a PowerPoint .pptx file (no ppt/presentation.xml). Check the file.");
+  const presRels = await rels(zip, "ppt/presentation.xml");
+  const ids = [...(/<p:sldIdLst>([\s\S]*?)<\/p:sldIdLst>/.exec(pres)?.[1] ?? "").matchAll(/<p:sldId\b[^>]*>/g)].map((m) => attr(m[0], "r:id"));
+  const slides: SlideInfo[] = [];
+  for (const [i, id] of ids.entries()) {
+    const part = id ? presRels.get(id)?.target : undefined;
+    const xml = part ? await zip.file(part)?.async("string") : undefined;
+    if (!part || !xml) continue;
+    const slideRels = await rels(zip, part);
+    const info: SlideInfo = { n: i + 1, hidden: /<p:sld\b[^>]*\bshow="0"/.test(xml), title: "", texts: [], tables: [], images: [], charts: 0, notes: "" };
+    // Shapes, pictures, and graphic frames (tables, charts) in document order.
+    for (const m of xml.matchAll(/<p:(sp|pic|graphicFrame)\b[\s\S]*?<\/p:\1>/g)) {
+      const el = m[0];
+      if (m[1] === "sp") {
+        const paras = paragraphs(/<p:txBody>([\s\S]*?)<\/p:txBody>/.exec(el)?.[1] ?? "");
+        if (!paras.length) continue;
+        const ph = attr(/<p:ph\b[^>]*>/.exec(el)?.[0] ?? "", "type");
+        // The slide number, the date, and the footer are not slide content.
+        if (ph === "sldNum" || ph === "dt" || ph === "ftr") continue;
+        if (!info.title && (ph === "title" || ph === "ctrTitle")) info.title = paras.map((p) => p.text).join(" ");
+        else info.texts.push(paras);
+      } else if (m[1] === "pic") {
+        const nv = /<p:cNvPr\b[^>]*>/.exec(el)?.[0] ?? "";
+        info.images.push(xmlText(attr(nv, "descr") || attr(nv, "name") || "image"));
+      } else if (/<a:tbl>/.test(el)) {
+        info.tables.push([...el.matchAll(/<a:tr\b[\s\S]*?<\/a:tr>/g)].map((tr) =>
+          [...tr[0].matchAll(/<a:tc\b[\s\S]*?<\/a:tc>/g)].map((tc) => paragraphs(tc[0]).map((p) => p.text).join(" "))));
+      } else if (/\/chart"/.test(el)) {
+        info.charts++;
+      }
+    }
+    // No title placeholder (for example a pptx_write deck): the first text shape is the title.
+    if (!info.title && info.texts.length) info.title = info.texts.shift()!.map((p) => p.text).join(" ");
+    const notesPart = [...slideRels.values()].find((r) => r.type === "notesSlide")?.target;
+    const notesXml = notesPart ? await zip.file(notesPart)?.async("string") : undefined;
+    if (notesXml) {
+      const body = [...notesXml.matchAll(/<p:sp\b[\s\S]*?<\/p:sp>/g)].find((s) => attr(/<p:ph\b[^>]*>/.exec(s[0])?.[0] ?? "", "type") === "body");
+      if (body) info.notes = paragraphs(body[0]).map((p) => p.text).join("\n");
+    }
+    slides.push(info);
+  }
+  return slides;
+}
+
+export function slidesText(slides: SlideInfo[]): string {
+  const out: string[] = [`${slides.length} slides`];
+  for (const s of slides) {
+    out.push("", `## Slide ${s.n}${s.hidden ? " (hidden)" : ""}: ${s.title || "(no title)"}`);
+    for (const shape of s.texts) for (const p of shape) out.push(`${"  ".repeat(p.level)}- ${p.text.replace(/\n/g, " / ")}`);
+    for (const t of s.tables) {
+      out.push("Table:");
+      for (const row of t) out.push(row.join("\t"));
+    }
+    if (s.images.length) out.push(`Images: ${s.images.join(", ")}`);
+    if (s.charts) out.push(`Charts: ${s.charts}`);
+    if (s.notes) out.push(`Notes: ${s.notes.replace(/\n/g, " / ")}`);
+  }
+  const text = out.join("\n");
+  return text.length > MAX_CHARS ? `${text.slice(0, MAX_CHARS)}\n[Output cut at ${MAX_CHARS} characters.]` : text;
+}
+
 export function registerPptxTools(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "pptx_read",
+    label: "PowerPoint read",
+    description: `Read a PowerPoint .pptx file. Returns each slide in order: the number, the title, the text (with bullet levels), the tables, the image names, the number of charts, and the speaker notes. At most ${MAX_CHARS} characters.`,
+    promptSnippet: "Read PowerPoint .pptx files (use this, not Python)",
+    promptGuidelines: ["For .pptx files, use pptx_read to read them. Do not use read, bash, or Python (python-pptx) for them."],
+    parameters: READ_PARAMS,
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const slides = await readSlides(readFileSync(fullPath(ctx.cwd, params.path)));
+      return { content: [{ type: "text", text: slidesText(slides) }], details: { slides: slides.length } };
+    },
+  });
+
   pi.registerTool({
     name: "pptx_write",
     label: "PowerPoint write",
