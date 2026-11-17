@@ -12,6 +12,7 @@ import { registerDocumentTools } from "./documents.ts";
 import { registerPdfWrite } from "./pdfwrite.ts";
 import { registerA11yCheck } from "./a11y.ts";
 import { registerExcelTools } from "./excel.ts";
+import { registerPptxTools } from "./pptx.ts";
 import { registerHelp } from "./help.ts";
 import { registerFeedback } from "./feedback-command.ts";
 import { registerMsu } from "./msu.ts";
@@ -66,6 +67,7 @@ export default async function (pi: ExtensionAPI) {
   // The sandbox comes first, so a blocked call does not ask the student. Undo comes last, so it sees only allowed calls.
   registerHttpTool(pi);
   registerExcelTools(pi);
+  registerPptxTools(pi);
   registerDocumentTools(pi);
   registerPdfWrite(pi);
   registerA11yCheck(pi);
