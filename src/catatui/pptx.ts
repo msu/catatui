@@ -8,6 +8,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve, isAbsolute, posix } from "node:path";
 import { Type } from "typebox";
+import { EDIT_PARAMS, editDeck, type Edit } from "./pptx-edit.ts";
 
 // The deck themes. "msu" is the default. The student can ask for "plain".
 // TODO: verify the MSU colors with the MSU brand guide. These hex values are placeholders, not confirmed.
@@ -304,6 +305,23 @@ export function slidesText(slides: SlideInfo[]): string {
 }
 
 export function registerPptxTools(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "pptx_edit",
+    label: "PowerPoint edit",
+    description:
+      "Change a PowerPoint .pptx file that exists, and keep its formatting. Edits: replace_text (on one slide; keeps the text format), " +
+      "set_notes, delete_slide, move_slide, and add_slide (a copy of a template slide with a new title and bullets; charts are not copied). " +
+      "Read the deck with pptx_read first. Slide numbers are the numbers after the edits before them. If one edit fails, the file does not change. " +
+      "It cannot change layouts, images, charts, or SmartArt. For a new deck, use pptx_write.",
+    promptSnippet: "Change an existing PowerPoint .pptx deck and keep its formatting",
+    promptGuidelines: ["To change a .pptx that the student already has, use pptx_edit, not pptx_write: pptx_write replaces the whole deck and its formatting."],
+    parameters: EDIT_PARAMS,
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const done = await editDeck(fullPath(ctx.cwd, params.path), params.edits as Edit[]);
+      return { content: [{ type: "text", text: `Changed ${params.path}:\n${done.map((d) => `- ${d}`).join("\n")}` }], details: { edits: done.length } };
+    },
+  });
+
   pi.registerTool({
     name: "pptx_read",
     label: "PowerPoint read",
