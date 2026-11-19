@@ -1,5 +1,10 @@
 // The sign-in screen: MSU SSO in a web view, or a pasted key. See src/md/features/mobile.md.
 
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+
 // flutter_markdown_plus uses the old material library, so the app uses it too. See src/md/features/mobile.md.
 // ignore: deprecated_member_use
 import 'package:flutter/material.dart';
@@ -111,9 +116,14 @@ class SsoPage extends StatefulWidget {
 }
 
 class _SsoPageState extends State<SsoPage> {
+  // If the page does not start to show in this time, the phone is probably not on the MSU network.
+  static const _timeout = Duration(seconds: 20);
+
   late final WebViewController _web;
+  Timer? _timer;
   bool _loading = true;
   bool _done = false;
+  String? _error;
 
   @override
   void initState() {
@@ -125,21 +135,56 @@ class _SsoPageState extends State<SsoPage> {
           onNavigationRequest: (req) => _redirect(req.url) ? NavigationDecision.prevent : NavigationDecision.navigate,
           // Some web views do not ask about a server redirect. Then the load of the redirect address starts (and fails).
           onPageStarted: (url) {
-            _redirect(url);
+            if (_redirect(url)) return;
+            _timer?.cancel();
             if (mounted) setState(() => _loading = true);
           },
           onPageFinished: (_) {
+            _timer?.cancel();
             if (mounted) setState(() => _loading = false);
+          },
+          onWebResourceError: (e) {
+            // An error of an image or a script on the page is not a problem. The redirect address always fails.
+            if (e.isForMainFrame == false || _done || (e.url != null && _redirect(e.url!))) return;
+            _fail('The page did not load (${e.description}).');
           },
         ),
       );
     _start();
   }
 
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
   // Remove the cookies first, so a different student can sign in on the same phone.
+  // The page load does not wait for this: a slow or failed removal must not stop the sign-in.
   Future<void> _start() async {
-    await WebViewCookieManager().clearCookies();
-    await _web.loadRequest(widget.request.url);
+    setState(() {
+      _error = null;
+      _loading = true;
+    });
+    _timer?.cancel();
+    _timer = Timer(_timeout, () => _fail('The page did not load in ${_timeout.inSeconds} seconds.'));
+    try {
+      await WebViewCookieManager().clearCookies().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+    try {
+      await _web.loadRequest(widget.request.url);
+    } catch (e) {
+      _fail('The page did not load ($e).');
+    }
+  }
+
+  void _fail(String message) {
+    _timer?.cancel();
+    if (!mounted || _done) return;
+    setState(() {
+      _loading = false;
+      _error = '$message $networkNote';
+    });
   }
 
   bool _redirect(String url) {
@@ -147,7 +192,8 @@ class _SsoPageState extends State<SsoPage> {
     if (uri == null || !widget.request.isRedirect(uri)) return false;
     if (!_done && mounted) {
       _done = true;
-      WebViewCookieManager().clearCookies();
+      _timer?.cancel();
+      WebViewCookieManager().clearCookies().catchError((_) => false);
       Navigator.of(context).pop(uri);
     }
     return true;
@@ -155,21 +201,39 @@ class _SsoPageState extends State<SsoPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('MSU Sign-In')),
       body: Column(
         children: [
           if (_loading) const LinearProgressIndicator(),
-          Expanded(child: WebViewWidget(controller: _web)),
+          Expanded(
+            child: _error == null
+                // The web view gets all gestures. With the default, a long press can go to Flutter, and the Paste menu does not open.
+                ? WebViewWidget(controller: _web, gestureRecognizers: {Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer())})
+                : Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: theme.colorScheme.error),
+                          ),
+                          const SizedBox(height: 16),
+                          FilledButton(onPressed: _start, child: const Text('Try Again')),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
           SafeArea(
             top: false,
             child: Padding(
               padding: const EdgeInsets.all(8),
-              child: Text(
-                'Sign in with your MSU account, then tap "Create key". $networkNote',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              child: Text('Sign in with your MSU account, then tap "Create key". $networkNote', textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
             ),
           ),
         ],

@@ -17,6 +17,10 @@ A phone app for iOS and Android. The code is in `mobile/`. It is a Flutter proje
 - The app sends the key name `catai-mobile` to App Connect, so the key is `<username>_catai-mobile`.
 - The chats are JSON files in the app documents folder, one file for each chat. The chat name is the start of the first message.
 - The answer shows as markdown. The app shows HTML in the answer as text.
+- Tables: a wide table scrolls to the side. Before the app shows an answer, `fixTables` (`mobile/lib/markdown.dart`) repairs tables that the markdown package refuses: a divider row with a different number of columns than the header, and empty lines between the rows. Models write such tables, and they showed as raw text with `|`.
+- Code blocks: a monospace font (Menlo on iOS, `monospace` on Android), the language name, and a Copy button. A long line scrolls to the side.
+- Each complete answer has a Copy button below it. It copies the markdown text.
+- The answer text is selectable with a long press (`SelectionArea`). The app does not use selectable text widgets in the answer: they take the drag, and then a wide table or a long code line does not scroll to the side.
 - The thinking of the model is hidden. The app shows "Thinking..." until the answer starts.
 - The system prompt is short: the assistant is CatChat for Montana State University students, and it gives the date.
 - The app has the MSU light and dark themes (MSU blue and gold). It follows the phone setting.
@@ -27,8 +31,12 @@ A phone app for iOS and Android. The code is in `mobile/`. It is a Flutter proje
 ## Screens
 
 - Sign-in: the logo, "Sign in with your MSU account", and "Paste a key".
-- Chat: the messages, the message box, Send (Stop while the answer comes), and the model name in the top bar. A tap on the model name opens the model menu with the notes.
-- Drawer: New Chat, the saved chats (swipe left to delete), and Sign Out. Sign Out asks first, then removes the key, the saved model, and all chats from the phone, so a different student starts clean.
+- Chat: the messages, the message box, Send (Stop while the answer comes), and the model name in the top bar. A tap on the model name opens the model menu.
+- A new chat shows three starter prompts. A tap puts the start of a question in the message box, and the student completes it.
+- Model menu: a sheet that the student can drag up. The drag handle is in the list of the sheet. The handle of `showModalBottomSheet` is not a part of the sheet that changes size, so a drag up on it did nothing. Each row has a name for students (`modelNames` in `config.dart`), the note, and the CatChat id. The current model has a check mark and a highlight. The order is: the preferred models, then the other models, then the models for one special task (`specialistModels`).
+- On iOS, Return on a hardware keyboard sends the message, and Shift+Return makes a new line. The screen keyboard is not changed: its Return key makes a new line. On Android the hardware Return key is not changed, because some screen keyboards send the same key event.
+- Send and Stop give a light haptic tap.
+- Drawer: New Chat, the saved chats, and Sign Out. Each chat has a menu button with Delete. A swipe to the left also deletes the chat. Sign Out asks first, then removes the key, the saved model, and all chats from the phone, so a different student starts clean.
 
 ## Subtleties
 
@@ -38,7 +46,17 @@ A phone app for iOS and Android. The code is in `mobile/`. It is a Flutter proje
 - Stop closes the HTTP connection at once. The app keeps the part of the answer that came. The stream is not an `async*` function, because such a stream stops only at its next `yield`.
 - The app saves a chat after each complete answer, and after Stop.
 - The SSO web view does not keep cookies after the sign-in, so a different student can sign in on the same phone.
-- It is not confirmed that the Microsoft sign-in page works in a web view for all MSU accounts. The pasted key is the second option.
+- If the SSO page gives an error, or does not start to show in 20 seconds, the app shows the error with the network note and a "Try Again" button. Before this, the page showed only the progress bar when the phone was not on the MSU network.
+- The page load does not wait for the cookie removal for more than 2 seconds.
+- The SSO web view gets all gestures (`EagerGestureRecognizer`). With the default, a long press can go to Flutter, and the Paste menu does not open in the password field.
+- The MSU sign-in page loads in the web view in the iPhone simulator (`integration_test/sso_test.dart`). It is not confirmed that the full sign-in with MFA works in a web view for all MSU accounts. The pasted key is the second option.
+
+## Not Done
+
+From the on-device review of 2026-11-18 (`tmp/ui-review-mirror-2026-11-18.md`):
+
+- Rename of a chat. The chat name is the start of the first message.
+- The model name with each old answer. The chat file does not keep the model.
 
 ## Not Tested
 
@@ -50,6 +68,7 @@ A phone app for iOS and Android. The code is in `mobile/`. It is a Flutter proje
 
 - To get the packages, run `flutter pub get` in `mobile/`.
 - To run the tests, run `flutter test` in `mobile/`. The tests use no model and no network.
+- `flutter test integration_test/sso_test.dart -d <device>` opens the real App Connect page in the SSO web view. It needs a phone or a simulator on the MSU network.
 - `CATAI_SHOTS=<folder> flutter test --update-goldens test/screens_test.dart` saves a picture of each screen in the folder.
 - The Dart line length is 160 (`analysis_options.yaml`). To format, run `dart format .`.
 - The Android build needs JDK 17 or 21. Java 27 is too new for Gradle 9.5. To set the JDK, run `flutter config --jdk-dir <folder>`.
