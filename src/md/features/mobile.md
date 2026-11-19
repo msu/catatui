@@ -49,7 +49,7 @@ A phone app for iOS and Android. The code is in `mobile/`. It is a Flutter proje
 - If the SSO page gives an error, or does not start to show in 20 seconds, the app shows the error with the network note and a "Try Again" button. Before this, the page showed only the progress bar when the phone was not on the MSU network.
 - The page load does not wait for the cookie removal for more than 2 seconds.
 - The SSO web view gets all gestures (`EagerGestureRecognizer`). With the default, a long press can go to Flutter, and the Paste menu does not open in the password field.
-- The MSU sign-in page loads in the web view in the iPhone simulator (`integration_test/sso_test.dart`). It is not confirmed that the full sign-in with MFA works in a web view for all MSU accounts. The pasted key is the second option.
+- The MSU sign-in page loads in the web view in the iPhone simulator (`integration_test/sso_test.dart`). The full sign-in works on one iPhone with one MSU account. It is not confirmed for all MSU accounts. The pasted key is the second option.
 
 ## Not Done
 
@@ -58,11 +58,22 @@ From the on-device review of 2026-11-18 (`tmp/ui-review-mirror-2026-11-18.md`):
 - Rename of a chat. The chat name is the start of the first message.
 - The model name with each old answer. The chat file does not keep the model.
 
+## Tested
+
+On an iPhone 14 Pro Max (iOS 27.0.1) on the MSU network, 2026-11-18:
+
+- The MSU SSO sign-in in the web view, with "Create key": the chat screen opens.
+- Chat with streaming, the model list, Stop (the part of the answer stays), and "Thinking...".
+- Tables, code blocks with Copy (the clipboard has the code), the model menu content, Return and Shift+Return on a hardware keyboard.
+
+In the iPhone simulator (iOS 27.2) and the Android emulator (API 36): the app starts, and the sign-in screen shows.
+
 ## Not Tested
 
-- The app starts in the iPhone simulator (iOS 27.2) and in the Android emulator (API 36): the sign-in screen shows. It has not run on a real phone yet.
-- The sign-in and the chat have not run with the real CatChat. The tests run the screens with a stand-in for CatChat.
-- The SSO web view and the secure storage work only on a phone or a simulator, so the tests do not cover them.
+- On the iPhone: Paste with a long press in the password field, sign-out and a new sign-in, the light theme, the side scroll of a wide table and a long code line, and a drag up on the model menu.
+- On Android: the sign-in and the chat with the real CatChat. There is no release build (it needs a signing key).
+- The pasted key sign-in with a real key.
+- The automatic tests use a stand-in for CatChat. The SSO web view and the secure storage work only on a phone or a simulator, so those tests do not cover them.
 
 ## Run
 
