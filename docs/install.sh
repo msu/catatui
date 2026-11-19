@@ -16,7 +16,7 @@ set -eu
 
 NODE_LINE="latest-v24.x" # Node.js LTS line
 # CATATUI_PACKAGE can set a different package tarball. The catai installer uses it to pin a commit.
-PACKAGE="${CATATUI_PACKAGE:-https://codeload.github.com/msu/catatui/tar.gz/refs/heads/master}"
+PACKAGE="${CATATUI_PACKAGE:-https://codeload.github.com/msu/catatui/tar.gz/refs/heads/fall-2026}"
 APP="${CATATUI_APP:-$HOME/.catatui/app}"
 
 say() { printf '%s\n' "$*"; }

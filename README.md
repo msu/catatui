@@ -66,8 +66,8 @@ If you use the fish shell, add `~/.catatui/app/bin` to your PATH yourself.
 
 If you have Node.js 22 or later and git, you can use npm:
 
-- To run catatui without an install, run `npx github:msu/catatui`.
-- To install the `catatui` command, run `npm install -g github:msu/catatui`.
+- To run catatui without an install, run `npx github:msu/catatui#fall-2026`.
+- To install the `catatui` command, run `npm install -g github:msu/catatui#fall-2026`.
 
 ## First use
 

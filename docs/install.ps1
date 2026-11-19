@@ -20,7 +20,7 @@
 
   $NodeLine = "latest-v24.x" # Node.js LTS line
   # CATATUI_PACKAGE can set a different package tarball. The catai installer uses it to pin a commit.
-  $Package = if ($env:CATATUI_PACKAGE) { $env:CATATUI_PACKAGE } else { "https://codeload.github.com/msu/catatui/tar.gz/refs/heads/master" }
+  $Package = if ($env:CATATUI_PACKAGE) { $env:CATATUI_PACKAGE } else { "https://codeload.github.com/msu/catatui/tar.gz/refs/heads/fall-2026" }
   $App = if ($env:CATATUI_APP) { $env:CATATUI_APP } else { Join-Path $HOME ".catatui\app" }
 
   function Fail($message) {

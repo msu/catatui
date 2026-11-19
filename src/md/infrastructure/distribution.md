@@ -2,6 +2,14 @@
 
 catatui is on GitHub (`msu/catatui`). It is not on the npm registry. The install scripts are on https://catatui.cs.montana.edu.
 
+## Branches
+
+- `fall-2026` is the live branch for the fall 2026 semester. Make the fixes for students on it.
+- `master` has the CatTalk work (CatTalk CLI, Desktop, and Mobile). Students do not get it.
+- GitHub Pages serves `docs/` from `fall-2026`. The install scripts install the `fall-2026` tarball, and `catatui --update` reads the version from `fall-2026`.
+- catatui 0.9.0 and older read the version from `master`. They update to `fall-2026` through the site installer.
+- After each fix on `fall-2026`, merge `fall-2026` into `master`.
+
 ## Install Scripts
 
 - The scripts install a private Node.js 24 LTS in `~/.catatui/app/node`, so the student does not need Node.js. The scripts do not change the student's own Node.js.

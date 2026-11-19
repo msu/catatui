@@ -4,11 +4,11 @@
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 
-const REPO = "https://raw.githubusercontent.com/msu/catatui/master";
+const REPO = "https://raw.githubusercontent.com/msu/catatui/fall-2026";
 const SITE = "https://catatui.cs.montana.edu";
 const INSTALL_SH = `curl -fsSL ${SITE}/install.sh | sh`;
 const INSTALL_PS1 = `irm ${SITE}/install.ps1 | iex`;
-const INSTALL_NPM = "npm install -g github:msu/catatui";
+const INSTALL_NPM = "npm install -g github:msu/catatui#fall-2026";
 
 // The version in package.json on GitHub. The check compares only this number, so increase it for each release.
 async function latestVersion() {

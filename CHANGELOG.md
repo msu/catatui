@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1 - 2026-11-19
+
+### Changed
+
+- `catatui --update` and the install scripts use the `fall-2026` branch.
+
 ## 0.9.0 - 2026-11-16
 
 ### Added
