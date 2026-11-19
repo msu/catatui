@@ -20,6 +20,7 @@ catatui is a terminal coding agent for MSU students. I (`@earendil-works/pi-codi
 - `bin/update.js`: `catatui --version` update check and `catatui --update`
 - `src/catatui/`: the pi extension. `index.ts` is the entry point.
 - `src/md/`: the intent of this project
+- `mobile/`: the Flutter phone app for iOS and Android (see [features/mobile.md](features/mobile.md))
 - `skills/`: the `simplified-technical-english` skill
 - `themes/`: the `msu` and `msu-light` themes
 - `assets/`: the logo (`logo.svg` is the source; `logo.png` is 256x256)
@@ -61,6 +62,7 @@ catatui is a terminal coding agent for MSU students. I (`@earendil-works/pi-codi
 - [features/help.md](features/help.md): the `/help` command and the header tip
 - [features/feedback.md](features/feedback.md): the `/feedback` command and the feedback client
 - [features/desktop.md](features/desktop.md): the Electron desktop app
+- [features/mobile.md](features/mobile.md): the Flutter phone app for iOS and Android (a CatChat chat client)
 - [features/msu.md](features/msu.md): MSU context in the system prompt, and the class schedule question
 - [features/new-project.md](features/new-project.md): the `new_project` tool
 - [features/widgets.md](features/widgets.md): the `show_widget` tool and the inline widgets
