@@ -15,7 +15,7 @@ import { WIDGET_PREFIX } from "./widget.ts";
 type Grade = "A" | "A-" | "B+" | "B" | "B-" | "C+" | "C" | "C-" | "D+" | "D" | "F" | "IP";
 type Taken = { term: string; course: string; title: string; credits: number; grade: Grade; core?: string };
 
-const STUDENT = {
+export const STUDENT = {
   name: `${fullName()} (mock student)`,
   id: PROFILE.student_id,
   major: PROFILE.major,
@@ -26,7 +26,7 @@ const STUDENT = {
   registration_opens: "November 10, 2026 (mock date)",
 };
 
-const TRANSCRIPT: Taken[] = [
+export const TRANSCRIPT: Taken[] = [
   { term: "Fall 2024", course: "CSCI 127", title: "Joy and Beauty of Data", credits: 4, grade: "A" },
   { term: "Fall 2024", course: "M 171", title: "Calculus I", credits: 4, grade: "B+" },
   { term: "Fall 2024", course: "WRIT 101", title: "College Writing I", credits: 3, grade: "A-", core: "W" },
@@ -65,11 +65,11 @@ const REQUIREMENTS: Req[] = [
     ["IS", "Inquiry Social Sciences"], ["D", "Diversity"], ["CS", "Contemporary Issues in Science"], ["R", "Research and Creative Experience"]]
     .map(([code, name]) => ({ group: "Core 2.0", name: `${name} (${code})`, any: [`core:${code}`] })),
 ];
-const TOTAL_CREDITS = 120;
-const UPPER_DIVISION_CREDITS = 42;
+export const TOTAL_CREDITS = 120;
+export const UPPER_DIVISION_CREDITS = 42;
 
 type Section = { course: string; title: string; credits: number; days: string; time: string; seats: number; prereq: string[]; core?: string };
-const SPRING_2027: Section[] = [
+export const SPRING_2027: Section[] = [
   { course: "CSCI 460", title: "Operating Systems", credits: 3, days: "MWF", time: "10:00-10:50", seats: 18, prereq: ["CSCI 366"] },
   { course: "CSCI 468", title: "Compilers", credits: 3, days: "TR", time: "12:15-13:30", seats: 22, prereq: ["CSCI 305", "CSCI 338"] },
   { course: "CSCI 440", title: "Database Systems", credits: 3, days: "TR", time: "09:25-10:40", seats: 6, prereq: ["CSCI 232"] },
@@ -83,16 +83,16 @@ const SPRING_2027: Section[] = [
 ];
 
 // Course titles for the plan card: next term's classes, the transcript, and the other requirement courses.
-const TITLES: Record<string, string> = {
+export const TITLES: Record<string, string> = {
   "CSCI 483R": "Senior Capstone II", "CSCI 447": "Machine Learning", "CSCI 451": "Computer Graphics", "CSCI 466": "Networks",
   ...Object.fromEntries(TRANSCRIPT.map((t) => [t.course, t.title.replace(/ \(repeat\)$/, "")])),
   ...Object.fromEntries(SPRING_2027.map((s) => [s.course, s.title])),
 };
 
-const passed = (course: string) => TRANSCRIPT.some((t) => t.course === course && PASS(t.grade));
-const inProgress = (course: string) => TRANSCRIPT.some((t) => t.course === course && t.grade === "IP");
+export const passed = (course: string) => TRANSCRIPT.some((t) => t.course === course && PASS(t.grade));
+export const inProgress = (course: string) => TRANSCRIPT.some((t) => t.course === course && t.grade === "IP");
 
-function gpa() {
+export function gpa() {
   // A repeated course: only the last grade counts (mock rule).
   const last = new Map<string, Taken>();
   for (const t of TRANSCRIPT) if (t.grade !== "IP") last.set(t.course, t);
@@ -102,7 +102,7 @@ function gpa() {
   return { gpa: Math.round((pts / cr) * 100) / 100, graded_credits: cr };
 }
 
-function earnedCredits() {
+export function earnedCredits() {
   const done = new Map<string, Taken>();
   for (const t of TRANSCRIPT) if (t.grade !== "IP" && t.grade !== "F") done.set(t.course, t);
   const all = [...done.values()];
@@ -110,7 +110,7 @@ function earnedCredits() {
   return { earned: all.reduce((a, t) => a + t.credits, 0), upper_division: upper.reduce((a, t) => a + t.credits, 0) };
 }
 
-function requirementStatus() {
+export function requirementStatus() {
   return REQUIREMENTS.map((r) => {
     if (r.any[0].startsWith("core:")) {
       const code = r.any[0].slice(5);
@@ -131,7 +131,7 @@ function requirementStatus() {
   });
 }
 
-const MOCK_NOTE = "MOCK DATA for a demo. It is not the student's real record and not the official MSU catalog.";
+export const MOCK_NOTE = "MOCK DATA for a demo. It is not the student's real record and not the official MSU catalog.";
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: `${MOCK_NOTE}\n${JSON.stringify(data, null, 1)}` }], details: {} });
 
 const ADVISOR_PROMPT = `# Academic advising

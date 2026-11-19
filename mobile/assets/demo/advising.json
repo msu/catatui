@@ -1,0 +1,592 @@
+{
+  "mock_note": "MOCK DATA for a demo. It is not the student's real record and not the official MSU catalog.",
+  "transcript": {
+    "student": {
+      "name": "Alex Rivera (mock student)",
+      "id": "-12345678",
+      "major": "Computer Science, BS",
+      "catalog": "2024-2025",
+      "advisor": "Dr. Sam Lee (mock)",
+      "current_term": "Fall 2026",
+      "next_term": "Spring 2027",
+      "registration_opens": "November 10, 2026 (mock date)",
+      "standing": "Junior",
+      "academic_standing": "Good standing",
+      "contacts": [
+        {
+          "role": "Advisor",
+          "name": "Dr. Sam Lee",
+          "email": "sam.lee@example.montana.edu",
+          "office": "Barnard Hall 357",
+          "hours": "Office hours Mon and Wed 10-11:30 AM, Thu 2-3 PM"
+        },
+        {
+          "role": "Department chair",
+          "name": "Dr. Jordan Park",
+          "email": "jordan.park@example.montana.edu",
+          "office": "Barnard Hall 359",
+          "hours": "Office hours Tue 1-3 PM, or by appointment"
+        },
+        {
+          "role": "Dean",
+          "name": "Dr. Morgan Ellis",
+          "email": "morgan.ellis@example.montana.edu",
+          "office": "Roberts Hall 212",
+          "hours": "Office hours Fri 9-10 AM, by appointment"
+        }
+      ]
+    },
+    "gpa": 3.13,
+    "graded_credits": 55,
+    "earned": 55,
+    "upper_division": 7,
+    "courses": [
+      {
+        "term": "Fall 2024",
+        "course": "CSCI 127",
+        "title": "Joy and Beauty of Data",
+        "credits": 4,
+        "grade": "A"
+      },
+      {
+        "term": "Fall 2024",
+        "course": "M 171",
+        "title": "Calculus I",
+        "credits": 4,
+        "grade": "B+"
+      },
+      {
+        "term": "Fall 2024",
+        "course": "WRIT 101",
+        "title": "College Writing I",
+        "credits": 3,
+        "grade": "A-",
+        "core": "W"
+      },
+      {
+        "term": "Fall 2024",
+        "course": "COMX 111",
+        "title": "Introduction to Public Communication",
+        "credits": 3,
+        "grade": "B",
+        "core": "US"
+      },
+      {
+        "term": "Spring 2025",
+        "course": "CSCI 132",
+        "title": "Basic Data Structures and Algorithms",
+        "credits": 4,
+        "grade": "A-"
+      },
+      {
+        "term": "Spring 2025",
+        "course": "M 172",
+        "title": "Calculus II",
+        "credits": 4,
+        "grade": "C+"
+      },
+      {
+        "term": "Spring 2025",
+        "course": "CSCI 112",
+        "title": "Programming with C",
+        "credits": 3,
+        "grade": "B+"
+      },
+      {
+        "term": "Spring 2025",
+        "course": "PSYX 100",
+        "title": "Introduction to Psychology",
+        "credits": 3,
+        "grade": "A",
+        "core": "IS"
+      },
+      {
+        "term": "Fall 2025",
+        "course": "CSCI 232",
+        "title": "Data Structures and Algorithms",
+        "credits": 4,
+        "grade": "B"
+      },
+      {
+        "term": "Fall 2025",
+        "course": "CSCI 246",
+        "title": "Discrete Structures",
+        "credits": 3,
+        "grade": "B+"
+      },
+      {
+        "term": "Fall 2025",
+        "course": "PHSX 220",
+        "title": "Physics I",
+        "credits": 4,
+        "grade": "C"
+      },
+      {
+        "term": "Fall 2025",
+        "course": "ARTZ 105",
+        "title": "Visual Language: Drawing",
+        "credits": 3,
+        "grade": "A",
+        "core": "IA"
+      },
+      {
+        "term": "Spring 2026",
+        "course": "CSCI 215",
+        "title": "Social and Ethical Issues in Computer Science",
+        "credits": 3,
+        "grade": "A",
+        "core": "CS"
+      },
+      {
+        "term": "Spring 2026",
+        "course": "CSCI 366",
+        "title": "Computer Systems",
+        "credits": 4,
+        "grade": "B-"
+      },
+      {
+        "term": "Spring 2026",
+        "course": "M 221",
+        "title": "Introduction to Linear Algebra",
+        "credits": 3,
+        "grade": "D"
+      },
+      {
+        "term": "Spring 2026",
+        "course": "STAT 332",
+        "title": "Statistics for Scientists and Engineers",
+        "credits": 3,
+        "grade": "B"
+      },
+      {
+        "term": "Fall 2026",
+        "course": "CSCI 305",
+        "title": "Concepts of Programming Languages",
+        "credits": 3,
+        "grade": "IP"
+      },
+      {
+        "term": "Fall 2026",
+        "course": "CSCI 338",
+        "title": "Computer Science Theory",
+        "credits": 3,
+        "grade": "IP"
+      },
+      {
+        "term": "Fall 2026",
+        "course": "M 221",
+        "title": "Introduction to Linear Algebra (repeat)",
+        "credits": 3,
+        "grade": "IP"
+      },
+      {
+        "term": "Fall 2026",
+        "course": "PHSX 222",
+        "title": "Physics II",
+        "credits": 4,
+        "grade": "IP"
+      }
+    ]
+  },
+  "requirements": {
+    "major": "Computer Science, BS",
+    "catalog": "2024-2025",
+    "grade_rule": "Major and math courses need C- or better.",
+    "total_credits_required": 120,
+    "upper_division_credits_required": 42,
+    "earned": 55,
+    "upper_division": 7,
+    "requirements": [
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 127",
+        "status": "complete"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 132",
+        "status": "complete"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 112",
+        "status": "complete"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 215",
+        "status": "complete"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 232",
+        "status": "complete"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 246",
+        "status": "complete"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 305",
+        "status": "in progress"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 338",
+        "status": "in progress"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 366",
+        "status": "complete"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 460",
+        "status": "needed"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 468",
+        "status": "needed"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 482R",
+        "status": "needed"
+      },
+      {
+        "group": "Computer Science core",
+        "name": "CSCI 483R",
+        "status": "needed"
+      },
+      {
+        "group": "Computer Science electives",
+        "name": "12 credits of CSCI 4xx electives",
+        "credits": 12,
+        "status": "needed",
+        "credits_done": 0,
+        "options": [
+          "CSCI 440",
+          "CSCI 446",
+          "CSCI 447",
+          "CSCI 451",
+          "CSCI 466",
+          "CSCI 476"
+        ]
+      },
+      {
+        "group": "Mathematics",
+        "name": "M 171",
+        "status": "complete"
+      },
+      {
+        "group": "Mathematics",
+        "name": "M 172",
+        "status": "complete"
+      },
+      {
+        "group": "Mathematics",
+        "name": "M 221",
+        "status": "in progress",
+        "note": "Earlier grade D is below C-. The repeat is in progress now. Do not plan it again."
+      },
+      {
+        "group": "Mathematics",
+        "name": "STAT 332",
+        "status": "complete"
+      },
+      {
+        "group": "Science",
+        "name": "Physics sequence",
+        "credits": 8,
+        "status": "in progress",
+        "by": "PHSX 220, PHSX 222",
+        "credits_done": 4,
+        "options": [
+          "PHSX 220",
+          "PHSX 222"
+        ]
+      },
+      {
+        "group": "Core 2.0",
+        "name": "College Writing (W)",
+        "status": "complete",
+        "by": "WRIT 101"
+      },
+      {
+        "group": "Core 2.0",
+        "name": "University Seminar or Public Communication (US)",
+        "status": "complete",
+        "by": "COMX 111"
+      },
+      {
+        "group": "Core 2.0",
+        "name": "Inquiry Arts (IA)",
+        "status": "complete",
+        "by": "ARTZ 105"
+      },
+      {
+        "group": "Core 2.0",
+        "name": "Inquiry Humanities (IH)",
+        "status": "needed"
+      },
+      {
+        "group": "Core 2.0",
+        "name": "Inquiry Social Sciences (IS)",
+        "status": "complete",
+        "by": "PSYX 100"
+      },
+      {
+        "group": "Core 2.0",
+        "name": "Diversity (D)",
+        "status": "needed"
+      },
+      {
+        "group": "Core 2.0",
+        "name": "Contemporary Issues in Science (CS)",
+        "status": "complete",
+        "by": "CSCI 215"
+      },
+      {
+        "group": "Core 2.0",
+        "name": "Research and Creative Experience (R)",
+        "status": "needed"
+      }
+    ]
+  },
+  "next_term": {
+    "term": "Spring 2027",
+    "registration_opens": "November 10, 2026 (mock date)",
+    "classes": [
+      {
+        "course": "CSCI 460",
+        "title": "Operating Systems",
+        "credits": 3,
+        "days": "MWF",
+        "time": "10:00-10:50",
+        "seats": 18,
+        "prereq": [
+          "CSCI 366"
+        ],
+        "full": false,
+        "already_done": false,
+        "prereq_status": [
+          {
+            "course": "CSCI 366",
+            "status": "done"
+          }
+        ]
+      },
+      {
+        "course": "CSCI 468",
+        "title": "Compilers",
+        "credits": 3,
+        "days": "TR",
+        "time": "12:15-13:30",
+        "seats": 22,
+        "prereq": [
+          "CSCI 305",
+          "CSCI 338"
+        ],
+        "full": false,
+        "already_done": false,
+        "prereq_status": [
+          {
+            "course": "CSCI 305",
+            "status": "in progress now"
+          },
+          {
+            "course": "CSCI 338",
+            "status": "in progress now"
+          }
+        ]
+      },
+      {
+        "course": "CSCI 440",
+        "title": "Database Systems",
+        "credits": 3,
+        "days": "TR",
+        "time": "09:25-10:40",
+        "seats": 6,
+        "prereq": [
+          "CSCI 232"
+        ],
+        "full": false,
+        "already_done": false,
+        "prereq_status": [
+          {
+            "course": "CSCI 232",
+            "status": "done"
+          }
+        ]
+      },
+      {
+        "course": "CSCI 446",
+        "title": "Artificial Intelligence",
+        "credits": 3,
+        "days": "MWF",
+        "time": "13:10-14:00",
+        "seats": 30,
+        "prereq": [
+          "CSCI 232",
+          "STAT 332"
+        ],
+        "full": false,
+        "already_done": false,
+        "prereq_status": [
+          {
+            "course": "CSCI 232",
+            "status": "done"
+          },
+          {
+            "course": "STAT 332",
+            "status": "done"
+          }
+        ]
+      },
+      {
+        "course": "CSCI 476",
+        "title": "Computer Security",
+        "credits": 3,
+        "days": "TR",
+        "time": "15:05-16:20",
+        "seats": 0,
+        "prereq": [
+          "CSCI 366"
+        ],
+        "full": true,
+        "already_done": false,
+        "prereq_status": [
+          {
+            "course": "CSCI 366",
+            "status": "done"
+          }
+        ]
+      },
+      {
+        "course": "CSCI 482R",
+        "title": "Senior Capstone I",
+        "credits": 3,
+        "days": "MW",
+        "time": "14:10-15:25",
+        "seats": 25,
+        "prereq": [
+          "CSCI 305",
+          "CSCI 338",
+          "CSCI 366"
+        ],
+        "full": false,
+        "already_done": false,
+        "prereq_status": [
+          {
+            "course": "CSCI 305",
+            "status": "in progress now"
+          },
+          {
+            "course": "CSCI 338",
+            "status": "in progress now"
+          },
+          {
+            "course": "CSCI 366",
+            "status": "done"
+          }
+        ]
+      },
+      {
+        "course": "M 221",
+        "title": "Introduction to Linear Algebra",
+        "credits": 3,
+        "days": "MWF",
+        "time": "08:00-08:50",
+        "seats": 40,
+        "prereq": [
+          "M 172"
+        ],
+        "full": false,
+        "already_done": false,
+        "prereq_status": [
+          {
+            "course": "M 172",
+            "status": "done"
+          }
+        ]
+      },
+      {
+        "course": "HSTA 101",
+        "title": "American History I",
+        "credits": 3,
+        "days": "TR",
+        "time": "10:50-12:05",
+        "seats": 55,
+        "prereq": [],
+        "core": "IH, D",
+        "full": false,
+        "already_done": false,
+        "prereq_status": []
+      },
+      {
+        "course": "NASX 105",
+        "title": "Introduction to Native American Studies",
+        "credits": 3,
+        "days": "MWF",
+        "time": "11:00-11:50",
+        "seats": 12,
+        "prereq": [],
+        "core": "IS, D",
+        "full": false,
+        "already_done": false,
+        "prereq_status": []
+      },
+      {
+        "course": "PHL 101",
+        "title": "Introduction to Philosophy",
+        "credits": 3,
+        "days": "TR",
+        "time": "13:40-14:55",
+        "seats": 35,
+        "prereq": [],
+        "core": "IH",
+        "full": false,
+        "already_done": false,
+        "prereq_status": []
+      }
+    ]
+  },
+  "course_titles": {
+    "CSCI 483R": "Senior Capstone II",
+    "CSCI 447": "Machine Learning",
+    "CSCI 451": "Computer Graphics",
+    "CSCI 466": "Networks",
+    "CSCI 127": "Joy and Beauty of Data",
+    "M 171": "Calculus I",
+    "WRIT 101": "College Writing I",
+    "COMX 111": "Introduction to Public Communication",
+    "CSCI 132": "Basic Data Structures and Algorithms",
+    "M 172": "Calculus II",
+    "CSCI 112": "Programming with C",
+    "PSYX 100": "Introduction to Psychology",
+    "CSCI 232": "Data Structures and Algorithms",
+    "CSCI 246": "Discrete Structures",
+    "PHSX 220": "Physics I",
+    "ARTZ 105": "Visual Language: Drawing",
+    "CSCI 215": "Social and Ethical Issues in Computer Science",
+    "CSCI 366": "Computer Systems",
+    "M 221": "Introduction to Linear Algebra",
+    "STAT 332": "Statistics for Scientists and Engineers",
+    "CSCI 305": "Concepts of Programming Languages",
+    "CSCI 338": "Computer Science Theory",
+    "PHSX 222": "Physics II",
+    "CSCI 460": "Operating Systems",
+    "CSCI 468": "Compilers",
+    "CSCI 440": "Database Systems",
+    "CSCI 446": "Artificial Intelligence",
+    "CSCI 476": "Computer Security",
+    "CSCI 482R": "Senior Capstone I",
+    "HSTA 101": "American History I",
+    "NASX 105": "Introduction to Native American Studies",
+    "PHL 101": "Introduction to Philosophy"
+  }
+}

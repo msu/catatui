@@ -157,7 +157,7 @@ export const CLASSES: Class[] = [
   },
 ];
 
-const LETTERS: [number, string][] = [[93, "A"], [90, "A-"], [87, "B+"], [83, "B"], [80, "B-"], [77, "C+"], [73, "C"], [70, "C-"], [67, "D+"], [60, "D"], [0, "F"]];
+export const LETTERS: [number, string][] = [[93, "A"], [90, "A-"], [87, "B+"], [83, "B"], [80, "B-"], [77, "C+"], [73, "C"], [70, "C-"], [67, "D+"], [60, "D"], [0, "F"]];
 const letter = (pct: number) => LETTERS.find(([min]) => pct >= min)?.[1] ?? "F";
 
 // The grade so far: each category's average of the graded work, weighted by the categories that have grades.
@@ -174,7 +174,7 @@ export function grade(c: Class) {
   return { percent: pct, letter: pct === undefined ? undefined : letter(pct), categories: cats, note: "Only the graded work counts so far." };
 }
 
-const daysFrom = (date: string) => Math.round((Date.parse(date) - Date.parse(TERM.today)) / 86_400_000);
+export const daysFrom = (date: string) => Math.round((Date.parse(date) - Date.parse(TERM.today)) / 86_400_000);
 
 // The next work that is not done, for each class (for the app panels and the overview tool).
 export function summaries() {
@@ -196,7 +196,7 @@ export function upcoming(days = 14) {
   return { today: TERM.today, work: list.sort((a, b) => a.due.localeCompare(b.due)), term_dates: dates };
 }
 
-const MOCK_NOTE = "MOCK DATA for a demo. It is not the student's real class data.";
+export const MOCK_NOTE = "MOCK DATA for a demo. It is not the student's real class data.";
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: `${MOCK_NOTE}\n${JSON.stringify(data, null, 1)}` }], details: {} });
 const find = (code?: string) => CLASSES.find((c) => c.code.replace(/\s+/g, "").toLowerCase() === String(code ?? "").replace(/\s+/g, "").toLowerCase());
 
