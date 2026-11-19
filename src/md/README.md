@@ -64,6 +64,7 @@ catatui is a terminal coding agent for MSU students. I (`@earendil-works/pi-codi
 - [features/desktop.md](features/desktop.md): the Electron desktop app
 - [features/mobile.md](features/mobile.md): the Flutter phone app for iOS and Android (a CatChat chat client)
 - [features/mobile-demo.md](features/mobile-demo.md): the plan for the phone app demo with mock data, and the demo video
+- [features/mobile-demo-video.md](features/mobile-demo-video.md): the shot list, the voice script, the setup, and how to record the iPhone screen for the demo video
 - [features/msu.md](features/msu.md): MSU context in the system prompt, and the class schedule question
 - [features/new-project.md](features/new-project.md): the `new_project` tool
 - [features/widgets.md](features/widgets.md): the `show_widget` tool and the inline widgets
