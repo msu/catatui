@@ -17,7 +17,7 @@
 set -eu
 
 # The commit to install. Keep it the same as in install.sh and install.ps1.
-COMMIT="e438ffdd734a2b078f37442215ea70d2e99de350"
+COMMIT="f645b1f9712ca24785e09bf1370e214abe36189e"
 REPO="https://codeload.github.com/msu/catatui/tar.gz/$COMMIT"
 SITE="${CATATUI_SITE:-https://catatui.cs.montana.edu}"
 APP="${CATATUI_APP:-$HOME/.catatui/app}"
