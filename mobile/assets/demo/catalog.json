@@ -1,0 +1,348 @@
+{
+  "mock_note": "MOCK DATA for a demo. The people, sections, numbers, and dates are made up. This is not official MSU data.",
+  "today": "2026-11-03",
+  "terms": [
+    {
+      "term": "Fall 2026",
+      "status": "current term",
+      "sections": [
+        {
+          "course": "CSCI 305",
+          "title": "Concepts of Programming Languages",
+          "credits": 3,
+          "instructor": "Dr. Morgan Hale (mock)",
+          "days": "MWF",
+          "time": "10:00-10:50",
+          "room": "Barnard Hall 108"
+        },
+        {
+          "course": "CSCI 338",
+          "title": "Computer Science Theory",
+          "credits": 3,
+          "instructor": "Dr. Priya Raman (mock)",
+          "days": "TR",
+          "time": "13:40-14:55",
+          "room": "Roberts Hall 101"
+        },
+        {
+          "course": "M 221",
+          "title": "Introduction to Linear Algebra",
+          "credits": 3,
+          "instructor": "Dr. Leah Ortiz (mock)",
+          "days": "MWF",
+          "time": "08:00-08:50",
+          "room": "Wilson Hall 1-144"
+        },
+        {
+          "course": "PHSX 222",
+          "title": "Physics II: Electricity and Magnetism",
+          "credits": 4,
+          "instructor": "Dr. Chen Wu (mock)",
+          "days": "MWF",
+          "time": "11:00-11:50, lab R 14:10-16:00",
+          "room": "Barnard Hall 103"
+        },
+        {
+          "course": "CSCI 127",
+          "title": "Joy and Beauty of Data",
+          "credits": 4,
+          "instructor": "Dr. Dana Whitfield (mock)",
+          "days": "MWF",
+          "time": "09:00-09:50",
+          "room": "Reid Hall 108"
+        },
+        {
+          "course": "CSCI 232",
+          "title": "Data Structures and Algorithms",
+          "credits": 4,
+          "instructor": "Dr. Omar Haddad (mock)",
+          "days": "MWF",
+          "time": "13:10-14:00",
+          "room": "Barnard Hall 126"
+        },
+        {
+          "course": "CSCI 246",
+          "title": "Discrete Structures",
+          "credits": 3,
+          "instructor": "Dr. Priya Raman (mock)",
+          "days": "TR",
+          "time": "09:25-10:40",
+          "room": "Roberts Hall 101"
+        },
+        {
+          "course": "CSCI 366",
+          "title": "Computer Systems",
+          "credits": 4,
+          "instructor": "Dr. Ines Castillo (mock)",
+          "days": "MWF",
+          "time": "12:00-12:50",
+          "room": "Barnard Hall 108"
+        },
+        {
+          "course": "CSCI 447",
+          "title": "Machine Learning",
+          "credits": 3,
+          "instructor": "Dr. Tobias Lindgren (mock)",
+          "days": "TR",
+          "time": "10:50-12:05",
+          "room": "Barnard Hall 126"
+        },
+        {
+          "course": "M 242",
+          "title": "Methods of Proof",
+          "credits": 3,
+          "instructor": "Dr. Leah Ortiz (mock)",
+          "days": "TR",
+          "time": "12:15-13:30",
+          "room": "Wilson Hall 1-130"
+        },
+        {
+          "course": "BIOB 160",
+          "title": "Principles of Living Systems",
+          "credits": 4,
+          "instructor": "Dr. Hannah Brandt (mock)",
+          "days": "MWF",
+          "time": "10:00-10:50, lab T 14:10-16:00",
+          "room": "Lewis Hall 304"
+        },
+        {
+          "course": "CHMY 141",
+          "title": "College Chemistry I",
+          "credits": 4,
+          "instructor": "Dr. Marcus Oyelaran (mock)",
+          "days": "MWF",
+          "time": "09:00-09:50, lab W 14:10-17:00",
+          "room": "Gaines Hall 101"
+        },
+        {
+          "course": "ANSC 100",
+          "title": "Introduction to Animal Science",
+          "credits": 3,
+          "instructor": "Dr. Kelly Navarro (mock)",
+          "days": "TR",
+          "time": "08:00-09:15",
+          "room": "Animal Bioscience Building 138"
+        }
+      ]
+    },
+    {
+      "term": "Spring 2027",
+      "status": "next term, registration opens 2026-11-10",
+      "sections": [
+        {
+          "course": "CSCI 460",
+          "title": "Operating Systems",
+          "credits": 3,
+          "instructor": "Dr. Ines Castillo (mock)",
+          "days": "MWF",
+          "time": "10:00-10:50",
+          "room": "Barnard Hall 108",
+          "seats": 18,
+          "prereq": [
+            "CSCI 366"
+          ]
+        },
+        {
+          "course": "CSCI 468",
+          "title": "Compilers",
+          "credits": 3,
+          "instructor": "Dr. Morgan Hale (mock)",
+          "days": "TR",
+          "time": "12:15-13:30",
+          "room": "Barnard Hall 126",
+          "seats": 22,
+          "prereq": [
+            "CSCI 305",
+            "CSCI 338"
+          ]
+        },
+        {
+          "course": "CSCI 440",
+          "title": "Database Systems",
+          "credits": 3,
+          "instructor": "Dr. Omar Haddad (mock)",
+          "days": "TR",
+          "time": "09:25-10:40",
+          "room": "Reid Hall 201",
+          "seats": 6,
+          "prereq": [
+            "CSCI 232"
+          ]
+        },
+        {
+          "course": "CSCI 446",
+          "title": "Artificial Intelligence",
+          "credits": 3,
+          "instructor": "Dr. Tobias Lindgren (mock)",
+          "days": "MWF",
+          "time": "13:10-14:00",
+          "room": "Barnard Hall 126",
+          "seats": 30,
+          "prereq": [
+            "CSCI 232",
+            "STAT 332"
+          ]
+        },
+        {
+          "course": "CSCI 476",
+          "title": "Computer Security",
+          "credits": 3,
+          "instructor": "Dr. Ravi Menon (mock)",
+          "days": "TR",
+          "time": "15:05-16:20",
+          "room": "Roberts Hall 101",
+          "seats": 0,
+          "prereq": [
+            "CSCI 366"
+          ]
+        },
+        {
+          "course": "CSCI 482R",
+          "title": "Senior Capstone I",
+          "credits": 3,
+          "instructor": "Dr. Dana Whitfield (mock)",
+          "days": "MW",
+          "time": "14:10-15:25",
+          "room": "Barnard Hall 254",
+          "seats": 25,
+          "prereq": [
+            "CSCI 305",
+            "CSCI 338",
+            "CSCI 366"
+          ]
+        },
+        {
+          "course": "PHL 236",
+          "title": "Logic",
+          "credits": 3,
+          "instructor": "Dr. Elena Markovic (mock)",
+          "days": "MWF",
+          "time": "11:00-11:50",
+          "room": "Wilson Hall 1-121",
+          "seats": 28,
+          "prereq": []
+        },
+        {
+          "course": "BIOB 170",
+          "title": "Principles of Biological Diversity",
+          "credits": 4,
+          "instructor": "Dr. Hannah Brandt (mock)",
+          "days": "MWF",
+          "time": "10:00-10:50, lab R 14:10-16:00",
+          "room": "Lewis Hall 304",
+          "seats": 40,
+          "prereq": []
+        },
+        {
+          "course": "CHMY 143",
+          "title": "College Chemistry II",
+          "credits": 4,
+          "instructor": "Dr. Marcus Oyelaran (mock)",
+          "days": "MWF",
+          "time": "09:00-09:50, lab W 14:10-17:00",
+          "room": "Gaines Hall 101",
+          "seats": 35,
+          "prereq": [
+            "CHMY 141"
+          ]
+        }
+      ]
+    },
+    {
+      "term": "Fall 2027",
+      "status": "planned, not final",
+      "sections": [
+        {
+          "course": "CSCI 305",
+          "title": "Concepts of Programming Languages",
+          "credits": 3,
+          "instructor": "Dr. Morgan Hale (mock)",
+          "days": "MWF",
+          "time": "10:00-10:50",
+          "room": "Barnard Hall 108"
+        },
+        {
+          "course": "CSCI 338",
+          "title": "Computer Science Theory",
+          "credits": 3,
+          "instructor": "Dr. Priya Raman (mock)",
+          "days": "TR",
+          "time": "13:40-14:55",
+          "room": "Roberts Hall 101"
+        },
+        {
+          "course": "CSCI 483R",
+          "title": "Senior Capstone II",
+          "credits": 3,
+          "instructor": "Dr. Dana Whitfield (mock)",
+          "days": "MW",
+          "time": "14:10-15:25",
+          "room": "Barnard Hall 254"
+        },
+        {
+          "course": "CSCI 491",
+          "title": "Special Topics: Program Verification",
+          "credits": 3,
+          "instructor": "Dr. Morgan Hale (mock)",
+          "days": "TR",
+          "time": "10:50-12:05",
+          "room": "Barnard Hall 254",
+          "prereq": [
+            "CSCI 246",
+            "CSCI 305"
+          ]
+        },
+        {
+          "course": "CSCI 466",
+          "title": "Networks",
+          "credits": 3,
+          "instructor": "Dr. Ravi Menon (mock)",
+          "days": "MWF",
+          "time": "12:00-12:50",
+          "room": "Barnard Hall 126"
+        },
+        {
+          "course": "CHMY 321",
+          "title": "Organic Chemistry I",
+          "credits": 4,
+          "instructor": "Dr. Sofia Albrecht (mock)",
+          "days": "MWF",
+          "time": "08:00-08:50, lab T 14:10-17:00",
+          "room": "Gaines Hall 043"
+        }
+      ]
+    }
+  ],
+  "outlines": {
+    "CSCI 246": "Logic, proof methods, sets, relations, induction, counting, and graphs.",
+    "CSCI 305": "Syntax and semantics, types, scope, functional and logic programming, and how interpreters work.",
+    "CSCI 338": "Finite automata, regular and context-free languages, Turing machines, decidability, and complexity.",
+    "CSCI 366": "Machine-level programs, memory, processes, and how the operating system runs code.",
+    "CSCI 440": "The relational model, SQL, schema design, transactions, and indexes.",
+    "CSCI 446": "Search, logic and knowledge representation, planning, probability, and learning.",
+    "CSCI 447": "Supervised and unsupervised learning, model selection, and neural networks.",
+    "CSCI 460": "Processes, threads, scheduling, memory management, file systems, and concurrency.",
+    "CSCI 468": "Lexing, parsing, type checking, intermediate code, and code generation. The class builds a compiler.",
+    "CSCI 476": "Threat models, software and network attacks, cryptography in practice, and secure design.",
+    "CSCI 491": "Specifications, Hoare logic, model checking, SMT solvers, and a proof assistant. Students verify small programs.",
+    "M 242": "How to read and write proofs: logic, sets, functions, induction, and relations.",
+    "PHL 236": "Propositional and predicate logic, formal proofs, and the limits of formal systems.",
+    "BIOB 160": "Cells, energy, genetics, and molecular biology, with a lab.",
+    "BIOB 170": "Evolution, the diversity of life, and ecology, with a lab.",
+    "BIOB 375": "Inheritance, gene structure and function, and population genetics.",
+    "BIOM 360": "Bacteria, viruses, and the immune response, with a lab.",
+    "BCH 380": "Proteins, enzymes, metabolism, and nucleic acids.",
+    "CHMY 141": "Atoms, bonding, reactions, stoichiometry, and thermochemistry, with a lab.",
+    "CHMY 143": "Kinetics, equilibrium, acids and bases, and electrochemistry, with a lab.",
+    "CHMY 321": "Structure, reactions, and mechanisms of carbon compounds, with a lab.",
+    "CHMY 323": "More reactions and mechanisms, spectroscopy, and biomolecules, with a lab.",
+    "PHSX 220": "Mechanics: motion, forces, energy, and momentum, with a lab.",
+    "PHSX 222": "Electric and magnetic fields, circuits, and waves, with a lab.",
+    "STAT 216": "Data, probability, estimation, and tests of hypotheses.",
+    "STAT 332": "Probability and statistics for scientists and engineers.",
+    "ANSC 100": "Livestock and companion animals: breeds, nutrition, health, and the animal industry.",
+    "ANSC 320": "Feeds, digestion, and nutrient requirements of animals.",
+    "WRIT 101": "College writing: argument, research, and revision.",
+    "COMX 111": "Public speaking and communication."
+  }
+}

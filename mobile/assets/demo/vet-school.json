@@ -1,0 +1,142 @@
+{
+  "mock_note": "MOCK DATA for a demo. The people, sections, numbers, and dates are made up. This is not official MSU data. The vet school is a made-up school. For a real application, read the requirements of the real school and talk to the MSU pre-veterinary advisor.",
+  "school": {
+    "name": "Cascade Ridge College of Veterinary Medicine (mock school)",
+    "location": "Not in Montana, and not an MSU school",
+    "degree": "Doctor of Veterinary Medicine (DVM), 4 years",
+    "class_size": 120,
+    "application": {
+      "system": "One common application for vet schools (mock)",
+      "opens": "2027-05-12",
+      "deadline": "2027-09-15",
+      "interviews": "2027-12 to 2028-02"
+    }
+  },
+  "requirements": {
+    "minimum_gpa": {
+      "overall": 3.2,
+      "science": 3.0,
+      "last_45_credits": 3.2,
+      "note": "The mean GPA of admitted students was 3.6 (mock)."
+    },
+    "grade_rule": "A grade of C or better in each required course. No pass/fail grades.",
+    "courses": [
+      {
+        "area": "General biology with lab",
+        "semester_credits": 8,
+        "msu_courses": [
+          "BIOB 160",
+          "BIOB 170"
+        ]
+      },
+      {
+        "area": "General chemistry with lab",
+        "semester_credits": 8,
+        "msu_courses": [
+          "CHMY 141",
+          "CHMY 143"
+        ]
+      },
+      {
+        "area": "Organic chemistry with lab",
+        "semester_credits": 8,
+        "msu_courses": [
+          "CHMY 321",
+          "CHMY 323"
+        ]
+      },
+      {
+        "area": "Biochemistry",
+        "semester_credits": 3,
+        "msu_courses": [
+          "BCH 380"
+        ]
+      },
+      {
+        "area": "Physics with lab",
+        "semester_credits": 8,
+        "msu_courses": [
+          "PHSX 220",
+          "PHSX 222"
+        ]
+      },
+      {
+        "area": "Genetics",
+        "semester_credits": 3,
+        "msu_courses": [
+          "BIOB 375"
+        ]
+      },
+      {
+        "area": "Microbiology with lab",
+        "semester_credits": 4,
+        "msu_courses": [
+          "BIOM 360"
+        ]
+      },
+      {
+        "area": "Statistics",
+        "semester_credits": 3,
+        "msu_courses": [
+          "STAT 216",
+          "STAT 332"
+        ]
+      },
+      {
+        "area": "English composition and communication",
+        "semester_credits": 6,
+        "msu_courses": [
+          "WRIT 101",
+          "COMX 111"
+        ]
+      },
+      {
+        "area": "Animal nutrition (recommended, not required)",
+        "semester_credits": 3,
+        "msu_courses": [
+          "ANSC 320"
+        ]
+      }
+    ],
+    "experience": [
+      {
+        "kind": "Hours with a veterinarian",
+        "minimum_hours": 300,
+        "note": "In two or more kinds of practice, for example small animal and large animal."
+      },
+      {
+        "kind": "Hours with animals",
+        "minimum_hours": 200,
+        "note": "Ranch, shelter, clinic, or research work with animals."
+      }
+    ],
+    "tests": "No GRE. A situational judgment test is required (mock).",
+    "letters": "Three letters. One or more from a veterinarian."
+  },
+  "at_msu": {
+    "advisor": {
+      "role": "Pre-veterinary advisor",
+      "name": "Dr. Kelly Navarro (mock)",
+      "email": "kelly.navarro@example.montana.edu",
+      "office": "Animal Bioscience Building 221"
+    },
+    "ways_to_get_hours": [
+      {
+        "name": "Pre-Vet Club (mock)",
+        "what": "Clinic visits, shadowing lists, and application workshops.",
+        "meets": "Second Tuesday of each month, 18:00, Animal Bioscience Building 138"
+      },
+      {
+        "name": "Teaching farm volunteer shifts (mock)",
+        "what": "Animal care hours with the livestock units.",
+        "meets": "Sign up each term"
+      },
+      {
+        "name": "Animal shelter volunteer program (mock)",
+        "what": "Animal hours in the Bozeman area.",
+        "meets": "Weekly shifts"
+      }
+    ],
+    "note": "The student's record is in the advising data. Compare the required courses with the transcript to find the courses that are done and the courses that are missing."
+  }
+}

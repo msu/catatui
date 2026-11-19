@@ -1,0 +1,91 @@
+{
+  "mock_note": "MOCK DATA for a demo. The people, sections, numbers, and dates are made up. This is not official MSU data.",
+  "field": "Formal verification: mathematical proof that software or hardware does what its specification says.",
+  "classes": [
+    {
+      "course": "CSCI 246",
+      "why": "Logic and proof by induction. The base for all verification work.",
+      "when": "Each fall and spring"
+    },
+    {
+      "course": "M 242",
+      "why": "Practice with rigorous proofs.",
+      "when": "Each fall and spring"
+    },
+    {
+      "course": "PHL 236",
+      "why": "Propositional and predicate logic, the language of specifications.",
+      "when": "Spring 2027"
+    },
+    {
+      "course": "CSCI 305",
+      "why": "Semantics and type systems. Proofs about programs start here.",
+      "when": "Each fall"
+    },
+    {
+      "course": "CSCI 338",
+      "why": "Automata and decidability: what a tool can and cannot decide.",
+      "when": "Each fall"
+    },
+    {
+      "course": "CSCI 468",
+      "why": "Compilers: program analysis, and a common target of verification.",
+      "when": "Spring 2027"
+    },
+    {
+      "course": "CSCI 476",
+      "why": "Security: many verification jobs are in secure systems.",
+      "when": "Spring 2027 (full, wait list)"
+    },
+    {
+      "course": "CSCI 491",
+      "why": "Special Topics: Program Verification. Hoare logic, model checking, SMT solvers, and a proof assistant.",
+      "when": "Fall 2027 (planned)"
+    }
+  ],
+  "labs": [
+    {
+      "name": "Software Assurance Lab (mock)",
+      "lead": "Dr. Morgan Hale (mock)",
+      "email": "morgan.hale@example.montana.edu",
+      "room": "Barnard Hall 259",
+      "work": "Verified compilers and static analysis for embedded software.",
+      "undergraduates": "Takes 2 to 3 undergraduate researchers each year. Ask after CSCI 305.",
+      "meets": "Lab meeting Fridays 14:00"
+    },
+    {
+      "name": "Logic and Automated Reasoning Group (mock)",
+      "lead": "Dr. Priya Raman (mock)",
+      "email": "priya.raman@example.montana.edu",
+      "room": "Roberts Hall 412",
+      "work": "SAT and SMT solving, and model checking of protocols.",
+      "undergraduates": "Open reading group. Research credit (CSCI 490R) with the lead's approval.",
+      "meets": "Reading group Wednesdays 16:10"
+    },
+    {
+      "name": "Secure Systems Lab (mock)",
+      "lead": "Dr. Ravi Menon (mock)",
+      "email": "ravi.menon@example.montana.edu",
+      "room": "Barnard Hall 361",
+      "work": "Formal models of operating system kernels and cryptographic protocols.",
+      "undergraduates": "Summer research positions. Applications are due March 1.",
+      "meets": "By appointment"
+    }
+  ],
+  "other": [
+    {
+      "name": "Undergraduate research credit (CSCI 490R)",
+      "what": "1 to 3 credits for research with a faculty member. It can count for the Research (R) core requirement."
+    },
+    {
+      "name": "Proof Assistant Study Group (mock club)",
+      "what": "Students work through a proof assistant textbook together.",
+      "meets": "Mondays 17:00, Barnard Hall 254"
+    },
+    {
+      "name": "Summer research program for undergraduates (mock)",
+      "what": "A paid 10-week summer project. Applications open in January."
+    }
+  ],
+  "careers": "Jobs are in aerospace, chip design, operating systems, compilers, blockchain, and security. Most ask for proofs, logic, a functional language, and a project with a verification tool."
+}

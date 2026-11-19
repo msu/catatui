@@ -1,0 +1,168 @@
+{
+  "mock_note": "MOCK DATA for a demo. The people, sections, numbers, and dates are made up. This is not official MSU data.",
+  "today": "2026-11-03",
+  "events": [
+    {
+      "date": "2026-11-04",
+      "time": "19:00",
+      "title": "Trivia night",
+      "place": "Strand Union Building, Procrastinator Theatre",
+      "cost": "Free",
+      "category": "Social"
+    },
+    {
+      "date": "2026-11-05",
+      "time": "12:00",
+      "title": "Resume review drop-in",
+      "place": "Career center, Strand Union Building 177",
+      "cost": "Free",
+      "category": "Career"
+    },
+    {
+      "date": "2026-11-06",
+      "time": "18:30",
+      "title": "Volleyball: Bobcats home match",
+      "place": "Shroyer Gym",
+      "cost": "Free with student ID",
+      "category": "Athletics"
+    },
+    {
+      "date": "2026-11-07",
+      "time": "09:00",
+      "title": "Hyalite Canyon day hike",
+      "place": "Meet at the Outdoor Recreation Center",
+      "cost": "$15",
+      "category": "Outdoors"
+    },
+    {
+      "date": "2026-11-10",
+      "time": "All day",
+      "title": "Spring 2027 registration opens",
+      "place": "MyInfo",
+      "cost": "",
+      "category": "Academic"
+    },
+    {
+      "date": "2026-11-11",
+      "time": "11:00",
+      "title": "Veterans Day ceremony",
+      "place": "Centennial Mall",
+      "cost": "Free",
+      "category": "Campus"
+    },
+    {
+      "date": "2026-11-12",
+      "time": "17:00",
+      "title": "Hackathon kickoff and team mixer",
+      "place": "Barnard Hall atrium",
+      "cost": "Free",
+      "category": "Clubs"
+    },
+    {
+      "date": "2026-11-14",
+      "time": "13:00",
+      "title": "Football: Bobcats home game",
+      "place": "Bobcat Stadium",
+      "cost": "Free with student ID",
+      "category": "Athletics"
+    },
+    {
+      "date": "2026-11-17",
+      "time": "16:00",
+      "title": "Undergraduate research information session",
+      "place": "Jabs Hall 111",
+      "cost": "Free",
+      "category": "Academic"
+    },
+    {
+      "date": "2026-11-18",
+      "time": "10:00",
+      "title": "Fall career fair",
+      "place": "Strand Union Building ballrooms",
+      "cost": "Free",
+      "category": "Career"
+    },
+    {
+      "date": "2026-11-19",
+      "time": "19:30",
+      "title": "Symphony orchestra concert",
+      "place": "Reynolds Recital Hall",
+      "cost": "$5 students",
+      "category": "Arts"
+    },
+    {
+      "date": "2026-11-21",
+      "time": "10:00",
+      "title": "Intro to climbing clinic",
+      "place": "Hosaeus Fitness Center climbing wall",
+      "cost": "$10",
+      "category": "Recreation"
+    },
+    {
+      "date": "2026-11-25",
+      "time": "",
+      "title": "Thanksgiving break starts (no classes Nov 25-27)",
+      "place": "All campus",
+      "cost": "",
+      "category": "Academic"
+    },
+    {
+      "date": "2026-12-04",
+      "time": "18:00",
+      "title": "Winter lights and cocoa on the mall",
+      "place": "Centennial Mall",
+      "cost": "Free",
+      "category": "Social"
+    },
+    {
+      "date": "2026-12-14",
+      "time": "",
+      "title": "Final exams (Dec 14-18)",
+      "place": "All campus",
+      "cost": "",
+      "category": "Academic"
+    }
+  ],
+  "clubs": [
+    {
+      "name": "Computer science student club (mock)",
+      "meets": "Thursdays 17:10, Barnard Hall 108",
+      "what": "Talks, hack nights, and interview practice."
+    },
+    {
+      "name": "Pre-Vet Club (mock)",
+      "meets": "Second Tuesday of each month, 18:00, Animal Bioscience Building 138",
+      "what": "Shadowing, clinic visits, and application help."
+    },
+    {
+      "name": "Outdoor club (mock)",
+      "meets": "Wednesdays 18:00, Outdoor Recreation Center",
+      "what": "Hikes, ski trips, and gear rental."
+    },
+    {
+      "name": "Robotics club (mock)",
+      "meets": "Mondays 18:00, Roberts Hall 121",
+      "what": "Builds a robot for a spring competition."
+    },
+    {
+      "name": "Proof Assistant Study Group (mock club)",
+      "meets": "Mondays 17:00, Barnard Hall 254",
+      "what": "Formal proofs with a proof assistant."
+    }
+  ],
+  "recreation": [
+    {
+      "name": "Hosaeus Fitness Center",
+      "what": "Gym, pool, climbing wall, and group fitness classes. Included in student fees.",
+      "hours": "Mon-Fri 06:00-23:00, Sat-Sun 09:00-21:00 (mock hours)"
+    },
+    {
+      "name": "Intramural sports",
+      "what": "Winter leagues: basketball, volleyball, and indoor soccer. Sign up by 2026-11-20 (mock date)."
+    },
+    {
+      "name": "Outdoor Recreation Center",
+      "what": "Trips, gear rental, and a bike and ski shop."
+    }
+  ]
+}
