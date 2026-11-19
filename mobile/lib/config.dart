@@ -14,6 +14,9 @@ const keyLifetime = Duration(days: 180);
 // The chat screen shows a warning when the key expires in this time or less.
 const expiryWarning = Duration(days: 14);
 
+// Demo mode: the demo with mock data. A build setting: --dart-define=CATAI_DEMO=true. See src/md/features/mobile.md.
+const demoBuild = bool.fromEnvironment('CATAI_DEMO');
+
 const defaultModel = 'Qwen3.8-27B';
 
 // The first match in this list becomes the model, if the student did not select one.

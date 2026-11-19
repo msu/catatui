@@ -23,7 +23,10 @@ String systemPrompt(DateTime now) =>
     'The date is ${now.toIso8601String().substring(0, 10)}.';
 
 class AppState extends ChangeNotifier {
-  AppState({required this.secrets, required this.store, required this.client}) : api = CatChat(client);
+  AppState({required this.secrets, required this.store, required this.client, this.demo = demoBuild}) : api = CatChat(client);
+
+  // Demo mode: the app shows mock data, with a "DEMO" badge. The tests set it.
+  final bool demo;
 
   final Secrets secrets;
   final ChatStore store;

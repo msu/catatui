@@ -38,6 +38,13 @@ A phone app for iOS and Android. The code is in `mobile/`. It is a Flutter proje
 - Send and Stop give a light haptic tap.
 - Drawer: New Chat, the saved chats, and Sign Out. Each chat has a menu button with Delete. A swipe to the left also deletes the chat. Sign Out asks first, then removes the key, the saved model, and all chats from the phone, so a different student starts clean.
 
+## Demo mode
+
+- Demo mode is for the demo with mock data (see [mobile-demo.md](mobile-demo.md)). It is off by default.
+- It is a build setting, like `--demo-mode` on the desktop: `flutter run --dart-define=CATAI_DEMO=true` (the same option for `flutter build`). A student cannot turn it on in a normal build.
+- In demo mode, the top bar and the drawer show a "DEMO" badge, and a new chat shows the note "Demo: the student data is mock data."
+- `demoBuild` in `config.dart` reads the setting. `AppState.demo` has the value, so the tests can set it.
+
 ## Subtleties
 
 - The catchat access pages work only on the MSU network or the MSU VPN. The sign-in screen says this.
@@ -84,4 +91,5 @@ In the iPhone simulator (iOS 27.2) and the Android emulator (API 36): the app st
 - The Dart line length is 160 (`analysis_options.yaml`). To format, run `dart format .`.
 - The Android build needs JDK 17 or 21. Java 27 is too new for Gradle 9.5. To set the JDK, run `flutter config --jdk-dir <folder>`.
 - The first Android build takes about 10 minutes, because Gradle gets the NDK and CMake.
+- To run the demo, add `--dart-define=CATAI_DEMO=true` to `flutter run` or `flutter build`.
 - To run on a phone or a simulator, run `flutter run` in `mobile/`. An iPhone needs Xcode and a signing team (open `mobile/ios/Runner.xcworkspace`, target Runner, Signing & Capabilities).

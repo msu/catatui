@@ -137,7 +137,10 @@ class _ChatScreenState extends State<ChatScreen> {
           iconAlignment: IconAlignment.end,
           label: Text(app.model == null ? 'No model' : modelName(app.model!), overflow: TextOverflow.ellipsis),
         ),
-        actions: [IconButton(onPressed: app.newChat, tooltip: 'New Chat', icon: const Icon(Icons.add_comment_outlined))],
+        actions: [
+          if (app.demo) const Center(child: DemoBadge()),
+          IconButton(onPressed: app.newChat, tooltip: 'New Chat', icon: const Icon(Icons.add_comment_outlined)),
+        ],
       ),
       drawer: ChatDrawer(app: app),
       body: SafeArea(
@@ -159,6 +162,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             Image.asset('assets/logo.png', height: 96, semanticLabel: 'catai logo'),
                             const SizedBox(height: 12),
                             Text('Ask CatChat a question.', style: theme.textTheme.titleMedium),
+                            if (app.demo) ...[const SizedBox(height: 6), Text('Demo: the student data is mock data.', style: theme.textTheme.bodySmall)],
                             const SizedBox(height: 16),
                             Wrap(
                               alignment: WrapAlignment.center,
@@ -228,6 +232,28 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// The mark of demo mode: the data on the screen is mock data.
+class DemoBadge extends StatelessWidget {
+  const DemoBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      label: 'Demo mode: mock data',
+      excludeSemantics: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(color: scheme.secondary, borderRadius: BorderRadius.circular(4)),
+        child: Text(
+          'DEMO',
+          style: TextStyle(color: scheme.onSecondary, fontSize: 12, fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -343,6 +369,7 @@ class ChatDrawer extends StatelessWidget {
               leading: Image.asset('assets/logo.png', height: 40, semanticLabel: 'catai logo'),
               title: Text('catai', style: theme.textTheme.titleLarge),
               subtitle: app.credential?.user == null ? null : Text(app.credential!.user!),
+              trailing: app.demo ? const DemoBadge() : null,
             ),
             ListTile(
               leading: const Icon(Icons.add_comment_outlined),

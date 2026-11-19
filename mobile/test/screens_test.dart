@@ -297,4 +297,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Model'), findsNothing);
   });
+
+  testWidgets('demo mode shows the DEMO badge and the mock data note; a normal build does not', (tester) async {
+    await start(tester);
+    expect(find.text('DEMO'), findsNothing);
+    expect(find.textContaining('mock data'), findsNothing);
+
+    app = AppState(secrets: MemorySecrets(), store: ChatStore(dir), client: app.client, demo: true);
+    await start(tester);
+    expect(find.text('DEMO'), findsOneWidget);
+    expect(find.text('Demo: the student data is mock data.'), findsOneWidget);
+    await shot(tester, 'demo-empty');
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+    expect(find.text('DEMO'), findsNWidgets(2));
+  });
 }
