@@ -33,6 +33,37 @@ const modelNotes = <String, String>{
   'Goedel-Prover-V2': 'Theorem prover (Lean). Not for general use.',
 };
 
+// Names for students in the model menu. Keys are CatChat model ids. A model with no name shows its id.
+const modelNames = <String, String>{
+  'Qwen3.8-27B': 'Qwen 3.8',
+  'gpt-oss:120b': 'GPT-OSS 120B',
+  'gemma4-31B-it': 'Gemma 4',
+  'muse-glimmer:30b': 'Muse Glimmer',
+  'nimble:9b': 'Nimble',
+  'mistral-small:24b': 'Mistral Small',
+  'llama3.1:8b': 'Llama 3.1',
+  'codegemma:7b': 'CodeGemma',
+  'medgemma:4b': 'MedGemma',
+  'Goedel-Prover-V2': 'Goedel Prover',
+};
+
+String modelName(String id) => modelNames[id] ?? id;
+
+// Models for one special task. The model menu shows them last.
+final specialistModels = [RegExp('medgemma', caseSensitive: false), RegExp('goedel', caseSensitive: false), RegExp('codegemma', caseSensitive: false)];
+
+// The order of the model menu: the preferred models, then the other models, then the specialist models.
+List<String> menuOrder(List<String> ids) {
+  int rank(String id) {
+    final preferred = preferredModels.indexWhere((re) => re.hasMatch(id));
+    if (preferred >= 0) return preferred;
+    return specialistModels.any((re) => re.hasMatch(id)) ? preferredModels.length + 1 : preferredModels.length;
+  }
+
+  final order = [for (var i = 0; i < ids.length; i++) i]..sort((a, b) => rank(ids[a]) != rank(ids[b]) ? rank(ids[a]).compareTo(rank(ids[b])) : a.compareTo(b));
+  return [for (final i in order) ids[i]];
+}
+
 // CatChat lists alias names (for example "opus") that are not the real model, and embedding models that cannot chat.
 final hiddenModels = [
   RegExp('claude', caseSensitive: false),
