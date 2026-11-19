@@ -3,12 +3,14 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 
 import 'api.dart';
 import 'auth.dart';
 import 'chats.dart';
 import 'config.dart';
+import 'demo_tools.dart';
 
 // Secret values on the phone (Keychain on iOS, Keystore on Android). The tests use a map.
 abstract class Secrets {
@@ -23,7 +25,15 @@ String systemPrompt(DateTime now) =>
     'The date is ${now.toIso8601String().substring(0, 10)}.';
 
 class AppState extends ChangeNotifier {
-  AppState({required this.secrets, required this.store, required this.client, this.demo = demoBuild}) : api = CatChat(client);
+  AppState({required this.secrets, required this.store, required this.client, this.demo = demoBuild, AssetLoader? assets})
+    : api = CatChat(client),
+      demoTools = demo ? DemoTools(assets ?? rootBundle.loadString) : null;
+
+  // The model can ask for tools this number of times for one question.
+  static const maxToolRounds = 5;
+
+  // The mock tools of demo mode. Null in a normal build.
+  final DemoTools? demoTools;
 
   // Demo mode: the app shows mock data, with a "DEMO" badge. The tests set it.
   final bool demo;
@@ -42,7 +52,7 @@ class AppState extends ChangeNotifier {
   bool busy = false;
   String? error;
 
-  StreamSubscription<String>? _answer;
+  StreamSubscription<ChatEvent>? _answer;
   Message? _answerMessage;
 
   Future<void> load() async {
@@ -135,8 +145,8 @@ class AppState extends ChangeNotifier {
       return;
     }
     error = null;
-    final messages = [
-      {'role': 'system', 'content': systemPrompt(DateTime.now())},
+    final messages = <Map<String, dynamic>>[
+      {'role': 'system', 'content': demo ? demoSystemPrompt : systemPrompt(DateTime.now())},
       for (final old in chat.messages) old.toJson(),
       {'role': 'user', 'content': text},
     ];
@@ -147,16 +157,49 @@ class AppState extends ChangeNotifier {
     _answerMessage = answer;
     busy = true;
     notifyListeners();
+    _ask(c.key, m, messages, answer, 1);
+  }
 
+  // One request to CatChat. In demo mode the model can answer with tool calls:
+  // then the app runs the mock tools, adds the results to the messages, and asks again.
+  void _ask(String key, String model, List<Map<String, dynamic>> messages, Message answer, int round) {
+    final tools = demoTools;
+    final start = answer.text.length;
+    var calls = <ToolCall>[];
     _answer = api
-        .chat(key: c.key, model: m, messages: messages)
+        .chat(key: key, model: model, messages: messages, tools: tools == null ? null : DemoTools.specs)
         .listen(
-          (part) {
-            answer.text += part;
-            notifyListeners();
+          (event) {
+            switch (event) {
+              case TextEvent(:final text):
+                answer.text += text;
+                notifyListeners();
+              case ToolCallsEvent(calls: final asked):
+                calls = asked;
+            }
           },
           onError: (Object e) => _finish(e),
-          onDone: () => _finish(null),
+          onDone: () async {
+            if (calls.isEmpty || tools == null) return _finish(null);
+            if (round >= maxToolRounds) return _finish(ApiError('CatChat asked for data too many times. Try the question again.'));
+            final said = answer.text.substring(start);
+            messages.add({
+              'role': 'assistant',
+              'content': said.isEmpty ? null : said,
+              'tool_calls': [for (final call in calls) call.toJson()],
+            });
+            for (final call in calls) {
+              final result = await tools.run(call.name, call.args);
+              // Stop, a new chat, or sign-out came while the tool ran.
+              if (!identical(_answerMessage, answer)) return;
+              answer.lookups.add(result.label);
+              messages.add({'role': 'tool', 'tool_call_id': call.id, 'content': result.text});
+              notifyListeners();
+            }
+            // Text that the model wrote before the tool call stays, on its own lines.
+            if (answer.text.isNotEmpty && !answer.text.endsWith('\n')) answer.text += '\n\n';
+            _ask(key, model, messages, answer, round + 1);
+          },
           cancelOnError: true,
         );
   }

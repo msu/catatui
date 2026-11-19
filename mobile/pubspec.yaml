@@ -33,6 +33,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+    - assets/demo/
 
 # The app icon. After a change of the image, run: dart run flutter_launcher_icons
 flutter_launcher_icons:

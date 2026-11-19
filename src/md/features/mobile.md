@@ -45,6 +45,28 @@ A phone app for iOS and Android. The code is in `mobile/`. It is a Flutter proje
 - In demo mode, the top bar and the drawer show a "DEMO" badge, and a new chat shows the note "Demo: the student data is mock data."
 - `demoBuild` in `config.dart` reads the setting. `AppState.demo` has the value, so the tests can set it.
 
+## Mock tools (demo mode)
+
+The fake end points of the demo. Only in demo mode. See [mobile-demo.md](mobile-demo.md) for the decision.
+
+- The app sends a `tools` list with each chat request (OpenAI function tools). The model answers with tool calls, the app runs each tool on the phone, sends the results back as `tool` messages, and asks again. At most 5 rounds for one question.
+- The tools are in `mobile/lib/demo_tools.dart`. They read the JSON files in `mobile/assets/demo/`:
+  - `catalog_search`: the sections of a term with instructors, seats, and course outlines. Filters: term, subject, course.
+  - `vet_school_requirements`: the mock vet school, and the MSU courses for each requirement.
+  - `formal_verification_paths`: classes, research labs, and other ways in.
+  - `campus_activities`: events, clubs, and recreation. Filter: category.
+  - `my_classes`: the student's classes with the grade so far, the work due soon, and the term dates.
+  - `class_grades`: one class: the grade by category, the scale, and all assignments with scores.
+  - `grade_needed`: the score on one open assignment that gives a target letter grade. The app does the arithmetic, not the model. It uses the desktop grade rule: the mean of the category percents by weight, for the categories with graded work.
+  - `class_syllabus`: one class: instructor, weights, policies, schedule, and lecture notes.
+  - `my_transcript`, `degree_requirements`, `student_profile`: the student's record, the status of each major requirement, and the contacts and balance.
+- `profile.json`, `advising.json`, and `classes.json` come from the desktop mock data. To make them again, run `node scripts/demo-data.ts` in the repository folder. Do not change them by hand.
+- Each tool result starts with a "MOCK DATA" line. The demo system prompt tells the model to use the tools, to say one time that the data is mock data, and that "today" is the mock date 2026-11-03.
+- The chat shows one small row for each tool call above the answer, for example "Looked up: catalog (Spring 2027, CSCI)". The rows are saved with the chat.
+- The app does not save the tool results. A later question in the same chat makes the model call the tools again.
+- The stream parser accepts tool call arguments in parts (OpenAI) or as one object, and a call with no id.
+- The mock student has no A in a class now (B, C+, B+, C). For the question "what do I need to keep an A", the tool answers for the target grade that the student names, and says if the target is not possible.
+
 ## Subtleties
 
 - The catchat access pages work only on the MSU network or the MSU VPN. The sign-in screen says this.

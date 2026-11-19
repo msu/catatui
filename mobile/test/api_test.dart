@@ -90,7 +90,7 @@ void main() {
           ],
         )
         .toList();
-    expect(parts, ['Hel', 'lo']);
+    expect([for (final p in parts) (p as TextEvent).text], ['Hel', 'lo']);
     expect(sent, {
       'model': 'm',
       'messages': [
@@ -108,5 +108,114 @@ void main() {
       failed.chat(key: 'k', model: 'm', messages: []).toList(),
       throwsA(isA<ApiError>().having((e) => e.message, 'message', 'CatChat error (HTTP 429): Budget exceeded')),
     );
+  });
+
+  String toolDelta(List<Map<String, dynamic>> calls) =>
+      'data: ${jsonEncode({
+        'choices': [
+          {
+            'delta': {'tool_calls': calls},
+          },
+        ],
+      })}';
+
+  test('ToolCallParts joins the parts of a call, as OpenAI sends them', () {
+    final parts = ToolCallParts()
+      ..add(
+        toolDelta([
+          {
+            'index': 0,
+            'id': 'call_a',
+            'type': 'function',
+            'function': {'name': 'catalog_search', 'arguments': ''},
+          },
+        ]),
+      )
+      ..add(
+        toolDelta([
+          {
+            'index': 0,
+            'function': {'arguments': '{"term":"Spring'},
+          },
+        ]),
+      )
+      ..add(
+        toolDelta([
+          {
+            'index': 0,
+            'function': {'arguments': ' 2027"}'},
+          },
+          {
+            'index': 1,
+            'id': 'call_b',
+            'function': {'name': 'campus_activities', 'arguments': '{}'},
+          },
+        ]),
+      )
+      ..add('data: [DONE]')
+      ..add(delta({'content': 'no tool_calls here'}));
+    expect(parts.isNotEmpty, isTrue);
+    final calls = parts.take();
+    expect([for (final c in calls) '${c.id} ${c.name} ${c.args}'], ['call_a catalog_search {term: Spring 2027}', 'call_b campus_activities {}']);
+    expect(parts.isNotEmpty, isFalse);
+  });
+
+  test('ToolCallParts accepts a full call in one part, with an object as arguments and no id', () {
+    final parts = ToolCallParts()
+      ..add(
+        toolDelta([
+          {
+            'function': {
+              'name': 'campus_activities',
+              'arguments': {'category': 'Arts'},
+            },
+          },
+        ]),
+      );
+    final call = parts.take().single;
+    expect(
+      [call.id, call.name, call.args],
+      [
+        'call_0',
+        'campus_activities',
+        {'category': 'Arts'},
+      ],
+    );
+    expect(ToolCall('x', 'y', 'not json').args, isEmpty);
+    expect(ToolCall('x', 'y', '').toJson()['function'], {'name': 'y', 'arguments': '{}'});
+  });
+
+  test('chat sends the tools and gives the tool calls at the end', () async {
+    late Map<String, dynamic> sent;
+    final api = CatChat(
+      MockClient.streaming((req, body) async {
+        sent = jsonDecode(await body.bytesToString()) as Map<String, dynamic>;
+        return sse([
+          delta({'content': 'One moment.'}),
+          toolDelta([
+            {
+              'index': 0,
+              'id': 'call_a',
+              'function': {'name': 'campus_activities', 'arguments': '{}'},
+            },
+          ]),
+          'data: [DONE]',
+        ]);
+      }),
+    );
+    final tools = [
+      {
+        'type': 'function',
+        'function': {'name': 'campus_activities'},
+      },
+    ];
+    final events = await api.chat(key: 'k', model: 'm', messages: [], tools: tools).toList();
+    expect(sent['tools'], tools);
+    expect((events.first as TextEvent).text, 'One moment.');
+    expect((events.last as ToolCallsEvent).calls.single.name, 'campus_activities');
+
+    // With no tools, the request has no "tools" field.
+    await api.chat(key: 'k', model: 'm', messages: []).toList();
+    expect(sent.containsKey('tools'), isFalse);
   });
 }

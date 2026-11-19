@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:catai/app_state.dart';
 import 'package:catai/auth.dart';
 import 'package:catai/chats.dart';
+import 'package:catai/demo_tools.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -196,5 +197,126 @@ void main() {
     expect(Chat.create().title, 'New Chat');
     final copy = Chat.decode(chat.encode());
     expect([copy.id, copy.messages.single.text], [chat.id, chat.messages.single.text]);
+  });
+
+  group('demo mode', () {
+    // The replies of CatChat, one for each request. The test reads the requests from chatRequests.
+    late List<String> replies;
+
+    AppState demoApp({bool demo = true}) => AppState(
+      secrets: secrets,
+      store: ChatStore(dir),
+      demo: demo,
+      assets: (path) => File(path).readAsString(),
+      client: MockClient.streaming((req, body) async {
+        if (req.url.path == '/v1/models') {
+          return http.StreamedResponse(
+            Stream.value(
+              utf8.encode(
+                jsonEncode({
+                  'data': [
+                    {'id': 'Qwen3.8-27B'},
+                  ],
+                }),
+              ),
+            ),
+            200,
+          );
+        }
+        chatRequests.add(jsonDecode(await body.bytesToString()) as Map<String, dynamic>);
+        return http.StreamedResponse(Stream.value(utf8.encode(replies.removeAt(0))), 200);
+      }),
+    );
+
+    String toolCall(String name, Map<String, dynamic> args) =>
+        'data: ${jsonEncode({
+          'choices': [
+            {
+              'delta': {
+                'tool_calls': [
+                  {
+                    'index': 0,
+                    'id': 'call_1',
+                    'function': {'name': name, 'arguments': jsonEncode(args)},
+                  },
+                ],
+              },
+            },
+          ],
+        })}\ndata: [DONE]\n';
+
+    Future<AppState> start({bool demo = true}) async {
+      final app = demoApp(demo: demo);
+      await app.load();
+      await app.signIn(Credential(key: 'sk-a', expires: DateTime.now().add(const Duration(days: 100))));
+      return app;
+    }
+
+    test('the model calls a mock tool, the app runs it, and the answer comes', () async {
+      replies = [
+        toolCall('catalog_search', {'term': 'Spring 2027', 'subject': 'CSCI'}),
+        '${delta('Six classes.')}data: [DONE]\n',
+      ];
+      final app = await start();
+      app.send('What classes in computer science are offered next spring?');
+      await idle(app);
+
+      final answer = app.chat.messages.last;
+      expect(answer.text, 'Six classes.');
+      expect(answer.lookups, ['class catalog (Spring 2027, CSCI)']);
+      expect(app.error, isNull);
+
+      // The first request has the tools and the demo prompt.
+      expect((chatRequests.first['tools'] as List).length, DemoTools.specs.length);
+      expect(chatRequests.first['messages'][0]['content'], contains('DEMO MODE'));
+      // The second request has the tool call and the tool result with the mock data.
+      final second = chatRequests[1]['messages'] as List;
+      expect([for (final m in second) m['role']], ['system', 'user', 'assistant', 'tool']);
+      expect(second[2]['tool_calls'][0]['function']['name'], 'catalog_search');
+      expect(second[3]['tool_call_id'], 'call_1');
+      expect(second[3]['content'], startsWith('MOCK DATA'));
+      expect(second[3]['content'], contains('CSCI 468'));
+
+      // The lookup rows are saved with the chat. The tool results are not.
+      final saved = (await ChatStore(dir).list()).single;
+      expect(saved.messages.last.lookups, ['class catalog (Spring 2027, CSCI)']);
+      expect(saved.messages.length, 2);
+    });
+
+    test('text before a tool call stays, and two rounds of tools work', () async {
+      replies = [
+        '${delta('Let me check.')}${toolCall('campus_activities', {'category': 'Arts'})}',
+        toolCall('formal_verification_paths', {}),
+        '${delta('Here it is.')}data: [DONE]\n',
+      ];
+      final app = await start();
+      app.send('Activities and verification?');
+      await idle(app);
+      expect(app.chat.messages.last.text, 'Let me check.\n\nHere it is.');
+      expect(app.chat.messages.last.lookups, ['campus activities (Arts)', 'formal verification classes and labs']);
+      expect(chatRequests.length, 3);
+      expect(chatRequests[1]['messages'][2]['content'], 'Let me check.');
+    });
+
+    test('the app stops after too many rounds of tool calls', () async {
+      replies = List.filled(10, toolCall('campus_activities', {}), growable: true);
+      final app = await start();
+      app.send('Activities?');
+      await idle(app);
+      expect(chatRequests.length, AppState.maxToolRounds);
+      expect(app.error, contains('too many times'));
+      expect(app.busy, isFalse);
+    });
+
+    test('a normal build sends no tools and does not run tool calls', () async {
+      replies = ['${delta('Hello')}${toolCall('campus_activities', {})}'];
+      final app = await start(demo: false);
+      app.send('Hi');
+      await idle(app);
+      expect(chatRequests.single.containsKey('tools'), isFalse);
+      expect(chatRequests.single['messages'][0]['content'], isNot(contains('DEMO')));
+      expect(app.chat.messages.last.lookups, isEmpty);
+      expect(app.demoTools, isNull);
+    });
   });
 }

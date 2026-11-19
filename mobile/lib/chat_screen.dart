@@ -281,14 +281,34 @@ class MessageView extends StatelessWidget {
         ),
       );
     }
+    // Demo mode: one row for each mock tool that the model called.
+    final lookups = [
+      for (final lookup in message.lookups)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 16, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Expanded(child: Text('Looked up: $lookup', style: theme.textTheme.bodySmall)),
+            ],
+          ),
+        ),
+    ];
     if (thinking) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-            const SizedBox(width: 10),
-            Text('Thinking...', style: theme.textTheme.bodyMedium),
+            ...lookups,
+            Row(
+              children: [
+                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                const SizedBox(width: 10),
+                Text('Thinking...', style: theme.textTheme.bodyMedium),
+              ],
+            ),
           ],
         ),
       );
@@ -300,6 +320,7 @@ class MessageView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          ...lookups,
           // SelectionArea makes the text selectable with a long press. With selectable text widgets (selectable: true),
           // a drag on a wide table or a long code line selects text and does not scroll.
           SelectionArea(

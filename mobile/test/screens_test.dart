@@ -312,4 +312,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('DEMO'), findsNWidgets(2));
   });
+
+  testWidgets('an answer shows a row for each mock tool that the model called', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [
+              MessageView(message: Message('assistant', 'Six classes.', lookups: ['class catalog (Spring 2027, CSCI)'])),
+              MessageView(message: Message('assistant', '', lookups: ['campus activities']), thinking: true),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Looked up: class catalog (Spring 2027, CSCI)'), findsOneWidget);
+    expect(find.text('Looked up: campus activities'), findsOneWidget);
+    expect(find.text('Thinking...'), findsOneWidget);
+  });
 }
