@@ -2,6 +2,7 @@
 // See src/md/features/mobile.md and src/md/features/sign-in.md.
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
@@ -88,7 +89,7 @@ class SsoRequest {
   final String state;
   final String verifier;
 
-  // The page that the web view opens.
+  // The page that the sign-in sheet opens.
   Uri get url => Uri.parse('$catchatAccess/connect').replace(
     queryParameters: {
       'name': clientName,
@@ -135,5 +136,99 @@ class SsoRequest {
       expires: DateTime.tryParse('${j['expires_at']}') ?? DateTime.now().add(keyLifetime),
       user: j['key_alias'] as String?,
     );
+  }
+}
+
+// The system sign-in sheet (ASWebAuthenticationSession on iOS, a Custom Tab on Android) can only stop at an app
+// address, but App Connect sends the code to the http redirectUri. While the sheet is open the app listens there
+// and forwards the redirect to appCallbackUri, which closes the sheet. App Connect needs no change.
+
+// The MSU sign-in pages answer only on the MSU network. The system sheet shows only Safari's own error page, so
+// the app checks first. Gives null if the page answers, else the error for the student. It cannot see Safari's
+// iCloud Private Relay: the app's own connection does not use it.
+Future<String?> signInPageProblem(http.Client client) async {
+  try {
+    await client.get(Uri.parse('$catchatAccess/')).timeout(const Duration(seconds: 8));
+    return null;
+  } catch (e) {
+    return 'This phone cannot reach the MSU sign-in page ($e).';
+  }
+}
+
+const appCallbackScheme = 'catai';
+final appCallbackUri = Uri(scheme: appCallbackScheme, host: 'callback');
+
+class LoopbackForwarder {
+  LoopbackForwarder._(this._server, this._redirect);
+  HttpServer _server;
+  final Uri _redirect;
+  bool _closed = false;
+
+  static Future<LoopbackForwarder> start() async {
+    final redirect = Uri.parse(redirectUri);
+    final HttpServer server;
+    try {
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, redirect.port);
+    } on SocketException catch (e) {
+      throw SignInError('The sign-in could not start (port ${redirect.port}: ${e.message}). Close other apps, then try again.');
+    }
+    final forwarder = LoopbackForwarder._(server, redirect).._listen();
+    return forwarder;
+  }
+
+  void _listen() => _server.listen(
+    (req) => _handle(req, _redirect.path),
+    // The socket can fail when iOS takes it back; ensureListening listens again.
+    onError: (Object _) {},
+  );
+
+  // iOS can take back a listening socket while the app is in the background (Apple TN2277), for example while the
+  // student approves the sign-in in the Authenticator app. Then the redirect fails with "cannot connect". Call this
+  // each time the app is active again: it listens again if the socket is gone.
+  Future<void> ensureListening() async {
+    if (_closed) return;
+    try {
+      final probe = await Socket.connect(InternetAddress.loopbackIPv4, _redirect.port, timeout: const Duration(milliseconds: 500));
+      probe.destroy();
+      return;
+    } catch (_) {}
+    try {
+      await _server.close(force: true);
+    } catch (_) {}
+    if (_closed) return;
+    try {
+      _server = await HttpServer.bind(InternetAddress.loopbackIPv4, _redirect.port, shared: true);
+      _listen();
+    } on SocketException {
+      // The redirect then fails, and the student can try again.
+    }
+  }
+
+  // Tests: what iOS does to a suspended app's listening socket.
+  Future<void> dropListenerForTest() => _server.close(force: true);
+
+  void _handle(HttpRequest req, String path) {
+    final res = req.response;
+    if (req.uri.path != path) {
+      res.statusCode = HttpStatus.notFound;
+      res.close();
+      return;
+    }
+    final target = appCallbackUri.replace(query: req.uri.query.isEmpty ? null : req.uri.query).toString();
+    // The link is for a sheet that does not follow the redirect by itself.
+    res
+      ..statusCode = HttpStatus.found
+      ..headers.set(HttpHeaders.locationHeader, target)
+      ..headers.set(HttpHeaders.cacheControlHeader, 'no-store')
+      ..headers.contentType = ContentType.html
+      ..write(
+        '<!doctype html><meta name="viewport" content="width=device-width"><p>Signed in. <a href="${const HtmlEscape().convert(target)}">Return to catai</a></p>',
+      );
+    res.close();
+  }
+
+  Future<void> close() {
+    _closed = true;
+    return _server.close(force: true);
   }
 }

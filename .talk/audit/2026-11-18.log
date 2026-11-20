@@ -1,0 +1,25 @@
+== 21:48:03  harness tool taint add  (session claude-code-495a) ==
+  "mr-klanky: message from Sprocket"
+--
+  result: 858 characters; untrusted input claude-code-495a/1
+
+== 21:48:14  harness tool taint add  (session claude-code-495a) ==
+  "mr-klanky: a note from Sprocket on card-11"
+--
+  result: 2175 characters; untrusted input claude-code-495a/2
+
+== 22:04:29  harness tool taint add  (session claude-code-29b5) ==
+  "mr-klanky: message from Verifier"
+--
+  result: 726 characters; untrusted input claude-code-29b5/1
+
+== 22:18:09  harness tool taint add  (session claude-code-495a) ==
+  "mr-klanky: message from Sprocket"
+--
+  result: 1079 characters; untrusted input claude-code-495a/3
+
+== 22:20:52  harness tool taint add  (session claude-code-29b5) ==
+  "mr-klanky: message from Verifier"
+--
+  result: 641 characters; untrusted input claude-code-29b5/2
+

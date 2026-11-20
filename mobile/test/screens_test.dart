@@ -6,6 +6,7 @@ import 'package:catai/auth.dart';
 import 'package:catai/chat_screen.dart';
 import 'package:catai/chats.dart';
 import 'package:catai/main.dart';
+import 'package:catai/theme.dart';
 // ignore: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -307,6 +308,13 @@ void main() {
     await start(tester);
     expect(find.text('DEMO'), findsOneWidget);
     expect(find.text('Demo: the student data is mock data.'), findsOneWidget);
+    // The starter prompts are the seven demo questions. A tap puts the full question in the message box.
+    expect(find.byType(ActionChip), findsNWidgets(7));
+    expect(find.text('Quiz me'), findsNothing);
+    await tester.tap(find.text('Spring CS classes'));
+    await tester.pump();
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, 'What classes in computer science are offered next spring?');
+    expect(app.chat.messages, isEmpty);
     await shot(tester, 'demo-empty');
     await tester.tap(find.byTooltip('Open navigation menu'));
     await tester.pumpAndSettle();
@@ -329,5 +337,88 @@ void main() {
     expect(find.text('Looked up: class catalog (Spring 2027, CSCI)'), findsOneWidget);
     expect(find.text('Looked up: campus activities'), findsOneWidget);
     expect(find.text('Thinking...'), findsOneWidget);
+  });
+
+  testWidgets('the plan card asks the student, then shows its status', (tester) async {
+    tester.view.physicalSize = const Size(1179, 2556);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    if (shots != null) await tester.runAsync(loadFonts);
+    final plan = <String, dynamic>{
+      'advisor': 'Dr. Sam Lee (mock)',
+      'terms': [
+        {
+          'term': 'Spring 2027',
+          'credits': 9,
+          'courses': [
+            {'course': 'CSCI 460', 'title': 'Operating Systems', 'credits': 3},
+            {'course': 'CSCI 468', 'title': 'Compilers', 'credits': 3},
+            {'course': 'CSCI 476', 'title': 'Computer Security', 'credits': 3},
+          ],
+        },
+      ],
+      'warnings': ['CSCI 476 is full in Spring 2027.'],
+      'message': 'I want an internship in the summer.',
+      'status': 'pending',
+    };
+    bool? answered;
+    Widget card({void Function(bool)? onPlan}) => MaterialApp(
+      theme: msuTheme(Brightness.light),
+      home: Scaffold(
+        body: ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            MessageView(
+              message: Message('assistant', '', plan: plan),
+              complete: false,
+              onPlan: onPlan,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpWidget(card(onPlan: (send) => answered = send));
+    expect(find.text('Send this plan to Dr. Sam Lee (mock)?'), findsOneWidget);
+    expect(find.text('Spring 2027 (9 credits)'), findsOneWidget);
+    expect(find.text('Compilers'), findsOneWidget);
+    expect(find.text('CSCI 476 is full in Spring 2027.'), findsOneWidget);
+    await shot(tester, 'plan-card');
+    await tester.tap(find.text('Send to advisor'));
+    expect(answered, isTrue);
+
+    plan['status'] = 'sent';
+    plan['confirmation'] = 'PLAN-ABC';
+    await tester.pumpWidget(card());
+    expect(find.text('Sent to Dr. Sam Lee (mock). Confirmation PLAN-ABC.'), findsOneWidget);
+    expect(find.text('Send to advisor'), findsNothing);
+
+    // A card that waited when the app closed: no buttons, "Not sent".
+    plan['status'] = 'pending';
+    await tester.pumpWidget(card());
+    expect(find.text('Not sent.'), findsOneWidget);
+  });
+
+  testWidgets('demo mode: Advising in the drawer starts a plan question', (tester) async {
+    app = AppState(secrets: MemorySecrets(), store: ChatStore(dir), client: app.client, demo: true);
+    await start(tester);
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Advising'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, 'Help me plan my classes for Spring 2027.');
+  });
+
+  testWidgets('demo mode: Classes in the drawer opens the Classes screen, and a class starts a question', (tester) async {
+    app = AppState(secrets: MemorySecrets(), store: ChatStore(dir), client: app.client, demo: true, assets: (path) => File(path).readAsString());
+    await start(tester);
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Classes'));
+    await tester.runAsync(() => app.demoTools!.file('classes'));
+    await tester.pumpAndSettle();
+    expect(find.text('My classes'), findsOneWidget);
+    await tester.tap(find.text('CSCI 305  Concepts of Programming Languages'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, 'In CSCI 305: ');
   });
 }

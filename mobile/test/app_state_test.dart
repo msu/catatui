@@ -283,6 +283,14 @@ void main() {
       expect(saved.messages.length, 2);
     });
 
+    test('empty lines before a tool call and at the start of the answer go away', () async {
+      replies = ['${delta('\n\n')}${toolCall('campus_activities', {})}', '${delta('\n')}${delta('  \nWednesday: trivia.')}data: [DONE]\n'];
+      final app = await start();
+      app.send('Activities?');
+      await idle(app);
+      expect(app.chat.messages.last.text, 'Wednesday: trivia.');
+    });
+
     test('text before a tool call stays, and two rounds of tools work', () async {
       replies = [
         '${delta('Let me check.')}${toolCall('campus_activities', {'category': 'Arts'})}',
@@ -317,6 +325,69 @@ void main() {
       expect(chatRequests.single['messages'][0]['content'], isNot(contains('DEMO')));
       expect(app.chat.messages.last.lookups, isEmpty);
       expect(app.demoTools, isNull);
+    });
+
+    final planCall = {
+      'terms': [
+        {
+          'term': 'Spring 2027',
+          'courses': ['CSCI 460', 'CSCI 468'],
+        },
+      ],
+    };
+
+    Future<void> untilWaiting(AppState app) async {
+      for (var i = 0; i < 200 && !app.waitingForPlan; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    }
+
+    test('submit_plan waits for the student, then sends the plan', () async {
+      replies = [toolCall('submit_plan', planCall), '${delta('The plan is with your advisor.')}data: [DONE]\n'];
+      final app = await start();
+      app.send('Send it.');
+      await untilWaiting(app);
+      expect(app.waitingForPlan, isTrue);
+      expect(app.busy, isTrue);
+      expect(app.chat.messages.last.plan!['status'], 'pending');
+      expect(chatRequests.length, 1);
+
+      app.answerPlan(true);
+      await idle(app);
+      final answer = app.chat.messages.last;
+      expect(answer.plan!['status'], 'sent');
+      expect(answer.text, 'The plan is with your advisor.');
+      expect(answer.lookups, ['plan for the advisor (sent)']);
+      final tool = (chatRequests[1]['messages'] as List).last;
+      expect(tool['content'], contains('"submitted": true'));
+      // The card is saved with the chat.
+      final saved = (await ChatStore(dir).list()).single.messages.last.plan!;
+      expect([saved['status'], saved['confirmation']], ['sent', answer.plan!['confirmation']]);
+    });
+
+    test('"Not now" on the plan card tells the model that the plan was not sent', () async {
+      replies = [toolCall('submit_plan', planCall), '${delta('What do you want to change?')}data: [DONE]\n'];
+      final app = await start();
+      app.send('Send it.');
+      await untilWaiting(app);
+      app.answerPlan(false);
+      await idle(app);
+      expect(app.chat.messages.last.plan!['status'], 'declined');
+      expect((chatRequests[1]['messages'] as List).last['content'], contains('chose not to send the plan yet'));
+    });
+
+    test('Stop while the plan card waits gives "Not sent", and the card stays', () async {
+      replies = [toolCall('submit_plan', planCall)];
+      final app = await start();
+      app.send('Send it.');
+      await untilWaiting(app);
+      app.stop();
+      await idle(app);
+      expect(app.waitingForPlan, isFalse);
+      expect(app.busy, isFalse);
+      expect(app.chat.messages.last.plan!['status'], 'declined');
+      expect(chatRequests.length, 1);
+      expect(app.error, isNull);
     });
   });
 }

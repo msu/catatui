@@ -4,17 +4,20 @@ import 'dart:convert';
 import 'dart:io';
 
 class Message {
-  Message(this.role, this.text, {List<String>? lookups}) : lookups = lookups ?? [];
+  Message(this.role, this.text, {List<String>? lookups, this.plan}) : lookups = lookups ?? [];
   final String role; // "user" or "assistant"
   String text;
   // Demo mode: one line for each mock tool that the model called for this answer, for example "catalog (Spring 2027, CSCI)".
   final List<String> lookups;
 
+  // Demo mode: the advising plan that the model asked to send (DemoTools.buildPlan). "status" is pending, sent, or declined.
+  Map<String, dynamic>? plan;
+
   // The message for CatChat.
   Map<String, dynamic> toJson() => {'role': role, 'content': text};
 
   // The message in the chat file.
-  Map<String, dynamic> toFile() => {...toJson(), if (lookups.isNotEmpty) 'lookups': lookups};
+  Map<String, dynamic> toFile() => {...toJson(), if (lookups.isNotEmpty) 'lookups': lookups, 'plan': ?plan};
 }
 
 class Chat {
@@ -42,7 +45,12 @@ class Chat {
       updated: DateTime.parse(j['updated'] as String),
       messages: [
         for (final m in j['messages'] as List<dynamic>)
-          Message(m['role'] as String, m['content'] as String, lookups: (m['lookups'] as List<dynamic>?)?.cast<String>()),
+          Message(
+            m['role'] as String,
+            m['content'] as String,
+            lookups: (m['lookups'] as List<dynamic>?)?.cast<String>(),
+            plan: m['plan'] as Map<String, dynamic>?,
+          ),
       ],
     );
   }

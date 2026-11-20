@@ -1,15 +1,12 @@
-// The sign-in screen: MSU SSO in a web view, or a pasted key. See src/md/features/mobile.md.
+// The sign-in screen: MSU SSO in the system sign-in sheet, or a pasted key. See src/md/features/mobile.md.
 
-import 'dart:async';
-
-import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 
 // flutter_markdown_plus uses the old material library, so the app uses it too. See src/md/features/mobile.md.
 // ignore: deprecated_member_use
 import 'package:flutter/material.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 import 'app_state.dart';
 import 'auth.dart';
@@ -29,7 +26,8 @@ class _SignInScreenState extends State<SignInScreen> {
   bool _busy = false;
   String? _error;
 
-  // Run one sign-in. A SignInError shows under the buttons.
+  // Run one sign-in. Every error shows under the buttons: before, only a SignInError did, and any other error
+  // (for example a reply that is not JSON) stopped the spinner with no message.
   Future<void> _run(Future<Credential?> Function() signIn) async {
     setState(() {
       _busy = true;
@@ -40,16 +38,38 @@ class _SignInScreenState extends State<SignInScreen> {
       if (c != null) await widget.app.signIn(c);
     } on SignInError catch (e) {
       _error = e.message;
+    } catch (e) {
+      _error = 'The sign-in did not finish ($e). Try again.';
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  // The system sheet is Safari (or Chrome), so Paste, password AutoFill and the MSU MFA prompts work as in the
+  // browser. preferEphemeral: no cookies are kept, so a different student can sign in on the same phone, and iOS
+  // does not ask "catai wants to use ... to sign in".
   Future<Credential?> _sso() async {
+    final problem = await signInPageProblem(widget.app.client);
+    if (problem != null) throw SignInError('$problem $networkNote');
     final request = SsoRequest();
-    final redirect = await Navigator.of(context).push<Uri>(MaterialPageRoute(builder: (_) => SsoPage(request: request)));
-    if (redirect == null) return null;
-    return request.exchange(widget.app.client, request.codeFrom(redirect));
+    final forwarder = await LoopbackForwarder.start();
+    // The student may leave the app during the sign-in (the Authenticator app, a password app).
+    final lifecycle = AppLifecycleListener(onResume: () => forwarder.ensureListening());
+    final String result;
+    try {
+      result = await FlutterWebAuth2.authenticate(
+        url: request.url.toString(),
+        callbackUrlScheme: appCallbackScheme,
+        options: const FlutterWebAuth2Options(preferEphemeral: true),
+      );
+    } on PlatformException catch (e) {
+      if (e.code == 'CANCELED') return null;
+      throw SignInError('The sign-in page did not open (${e.message ?? e.code}). Try again.');
+    } finally {
+      lifecycle.dispose();
+      await forwarder.close();
+    }
+    return request.exchange(widget.app.client, request.codeFrom(Uri.parse(result)));
   }
 
   Future<Credential?> _paste() async {
@@ -101,142 +121,6 @@ class _SignInScreenState extends State<SignInScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-// The App Connect page in a web view. The page closes with the redirect address when the web view goes there.
-class SsoPage extends StatefulWidget {
-  const SsoPage({super.key, required this.request});
-  final SsoRequest request;
-
-  @override
-  State<SsoPage> createState() => _SsoPageState();
-}
-
-class _SsoPageState extends State<SsoPage> {
-  // If the page does not start to show in this time, the phone is probably not on the MSU network.
-  static const _timeout = Duration(seconds: 20);
-
-  late final WebViewController _web;
-  Timer? _timer;
-  bool _loading = true;
-  bool _done = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _web = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onNavigationRequest: (req) => _redirect(req.url) ? NavigationDecision.prevent : NavigationDecision.navigate,
-          // Some web views do not ask about a server redirect. Then the load of the redirect address starts (and fails).
-          onPageStarted: (url) {
-            if (_redirect(url)) return;
-            _timer?.cancel();
-            if (mounted) setState(() => _loading = true);
-          },
-          onPageFinished: (_) {
-            _timer?.cancel();
-            if (mounted) setState(() => _loading = false);
-          },
-          onWebResourceError: (e) {
-            // An error of an image or a script on the page is not a problem. The redirect address always fails.
-            if (e.isForMainFrame == false || _done || (e.url != null && _redirect(e.url!))) return;
-            _fail('The page did not load (${e.description}).');
-          },
-        ),
-      );
-    _start();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  // Remove the cookies first, so a different student can sign in on the same phone.
-  // The page load does not wait for this: a slow or failed removal must not stop the sign-in.
-  Future<void> _start() async {
-    setState(() {
-      _error = null;
-      _loading = true;
-    });
-    _timer?.cancel();
-    _timer = Timer(_timeout, () => _fail('The page did not load in ${_timeout.inSeconds} seconds.'));
-    try {
-      await WebViewCookieManager().clearCookies().timeout(const Duration(seconds: 2));
-    } catch (_) {}
-    try {
-      await _web.loadRequest(widget.request.url);
-    } catch (e) {
-      _fail('The page did not load ($e).');
-    }
-  }
-
-  void _fail(String message) {
-    _timer?.cancel();
-    if (!mounted || _done) return;
-    setState(() {
-      _loading = false;
-      _error = '$message $networkNote';
-    });
-  }
-
-  bool _redirect(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null || !widget.request.isRedirect(uri)) return false;
-    if (!_done && mounted) {
-      _done = true;
-      _timer?.cancel();
-      WebViewCookieManager().clearCookies().catchError((_) => false);
-      Navigator.of(context).pop(uri);
-    }
-    return true;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('MSU Sign-In')),
-      body: Column(
-        children: [
-          if (_loading) const LinearProgressIndicator(),
-          Expanded(
-            child: _error == null
-                // The web view gets all gestures. With the default, a long press can go to Flutter, and the Paste menu does not open.
-                ? WebViewWidget(controller: _web, gestureRecognizers: {Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer())})
-                : Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _error!,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: theme.colorScheme.error),
-                          ),
-                          const SizedBox(height: 16),
-                          FilledButton(onPressed: _start, child: const Text('Try Again')),
-                        ],
-                      ),
-                    ),
-                  ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text('Sign in with your MSU account, then tap "Create key". $networkNote', textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -1,0 +1,9 @@
+source: taint add "mr-klanky: message from Sprocket"
+time: 2026-11-18 22:18:09
+
+Sprocket (boss): thanks for card-12, the JSON form is what I need. I add the asset use and the doc line on my side.
+Next, please take **card-19** (demo video), the part with no code: write the shot list and the script as a new doc `src/md/features/mobile-demo-video.md` (STE), and add it to the index in `src/md/README.md`.
+- Read `src/md/features/mobile-demo.md` (the plan, the 7 questions, the video outline) and `mobile.md` (what the app has).
+- For each shot: the screen, what the presenter taps or types (the exact question text, with real names from the mock data: for example CSCI 305, "HW5: A small interpreter", Spring 2027), what the viewer must see, and one or two lines of voice text. Add a setup list (demo build, MSU network, Do Not Disturb, text size, light or dark) and how to record the iPhone screen.
+- Mark each shot that needs a feature that is not built yet (Classes screen card-16, Advising card-17, grade tools).
+- Do not touch `mobile/`. When the doc is done, move the card to Review. The recording itself needs the human, so say that in the review facts.

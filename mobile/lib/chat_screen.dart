@@ -10,7 +10,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'app_state.dart';
 import 'chats.dart';
+import 'classes_screen.dart';
 import 'config.dart';
+import 'demo_tools.dart';
+import 'demo_video.dart';
 import 'markdown.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -138,11 +141,11 @@ class _ChatScreenState extends State<ChatScreen> {
           label: Text(app.model == null ? 'No model' : modelName(app.model!), overflow: TextOverflow.ellipsis),
         ),
         actions: [
-          if (app.demo) const Center(child: DemoBadge()),
+          if (app.demo) const Center(child: DemoBadge(playsVideo: true)),
           IconButton(onPressed: app.newChat, tooltip: 'New Chat', icon: const Icon(Icons.add_comment_outlined)),
         ],
       ),
-      drawer: ChatDrawer(app: app),
+      drawer: ChatDrawer(app: app, onStart: _start),
       body: SafeArea(
         child: Column(
           children: [
@@ -154,7 +157,9 @@ class _ChatScreenState extends State<ChatScreen> {
             Expanded(
               child: messages.isEmpty
                   ? Center(
+                      // reverse: with the keyboard up, the bottom (the starter prompts) stays on the screen, and the logo scrolls off.
                       child: SingleChildScrollView(
+                        reverse: true,
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -168,7 +173,10 @@ class _ChatScreenState extends State<ChatScreen> {
                               alignment: WrapAlignment.center,
                               spacing: 8,
                               runSpacing: 4,
-                              children: [for (final s in _starters.entries) ActionChip(label: Text(s.key), onPressed: () => _start(s.value))],
+                              children: [
+                                for (final s in (app.demo ? demoQuestions : _starters).entries)
+                                  ActionChip(label: Text(s.key), onPressed: () => _start(s.value)),
+                              ],
                             ),
                           ],
                         ),
@@ -185,7 +193,13 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemCount: messages.length,
                         itemBuilder: (_, i) {
                           final m = messages[messages.length - 1 - i];
-                          return MessageView(message: m, thinking: app.busy && i == 0 && m.text.isEmpty, complete: !(app.busy && i == 0));
+                          final waits = i == 0 && app.waitingForPlan;
+                          return MessageView(
+                            message: m,
+                            thinking: app.busy && i == 0 && m.text.isEmpty && !waits,
+                            complete: !(app.busy && i == 0),
+                            onPlan: waits ? app.answerPlan : null,
+                          );
                         },
                       ),
                     ),
@@ -238,34 +252,137 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-// The mark of demo mode: the data on the screen is mock data.
+// The mark of demo mode: the data on the screen is mock data. playsVideo: a tap plays the demo video (demo_video.dart).
 class DemoBadge extends StatelessWidget {
-  const DemoBadge({super.key});
+  const DemoBadge({super.key, this.playsVideo = false});
+  final bool playsVideo;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(color: scheme.secondary, borderRadius: BorderRadius.circular(4)),
+      child: Text(
+        'DEMO',
+        style: TextStyle(color: scheme.onSecondary, fontSize: 12, fontWeight: FontWeight.bold),
+      ),
+    );
+    if (!playsVideo) return Semantics(label: 'Demo mode: mock data', excludeSemantics: true, child: badge);
     return Semantics(
-      label: 'Demo mode: mock data',
+      label: 'Demo mode: mock data. Play the demo video',
+      button: true,
       excludeSemantics: true,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(color: scheme.secondary, borderRadius: BorderRadius.circular(4)),
-        child: Text(
-          'DEMO',
-          style: TextStyle(color: scheme.onSecondary, fontSize: 12, fontWeight: FontWeight.bold),
+      child: Tooltip(
+        message: 'Play the demo video',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => showDemoVideo(context),
+          // A bigger tap area than the small badge.
+          child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12), child: badge),
         ),
       ),
     );
   }
 }
 
+// The advising plan that the model wants to send to the advisor (demo mode). The student decides here.
+// The card stays in the chat with its status.
+class PlanCard extends StatelessWidget {
+  const PlanCard({super.key, required this.plan, this.onAnswer});
+  final Map<String, dynamic> plan;
+  // Not null while the card waits for the student.
+  final void Function(bool send)? onAnswer;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final status = plan['status'];
+    final waits = status == 'pending' && onAnswer != null;
+    final warnings = (plan['warnings'] as List? ?? const []).cast<String>();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.secondary, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(waits ? 'Send this plan to ${plan['advisor']}?' : 'Plan for ${plan['advisor']}', style: theme.textTheme.titleMedium)),
+              const DemoBadge(),
+            ],
+          ),
+          for (final term in (plan['terms'] as List).cast<Map<String, dynamic>>()) ...[
+            const SizedBox(height: 10),
+            Text('${term['term']} (${term['credits']} credits)', style: theme.textTheme.titleSmall),
+            for (final course in (term['courses'] as List).cast<Map<String, dynamic>>())
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 92,
+                      child: Text('${course['course']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                    Expanded(child: Text('${course['title']}')),
+                    Text('${course['credits']} cr'),
+                  ],
+                ),
+              ),
+          ],
+          for (final warning in warnings)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.warning_amber, size: 18, color: theme.colorScheme.error, semanticLabel: 'Warning'),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(warning)),
+                ],
+              ),
+            ),
+          if (plan['message'] != null) ...[const SizedBox(height: 8), Text('Note: ${plan['message']}', style: theme.textTheme.bodySmall)],
+          const SizedBox(height: 10),
+          if (waits)
+            // A Wrap, not a Row: with large text the two buttons go on two lines.
+            Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                children: [
+                  TextButton(onPressed: () => onAnswer!(false), child: const Text('Not now')),
+                  FilledButton(onPressed: () => onAnswer!(true), child: const Text('Send to advisor')),
+                ],
+              ),
+            )
+          else
+            Text(
+              status == 'sent' ? 'Sent to ${plan['advisor']}. Confirmation ${plan['confirmation']}.' : 'Not sent.',
+              style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class MessageView extends StatelessWidget {
-  const MessageView({super.key, required this.message, this.thinking = false, this.complete = true});
+  const MessageView({super.key, required this.message, this.thinking = false, this.complete = true, this.onPlan});
   final Message message;
   final bool thinking;
   // False while the answer comes. A complete answer has a Copy button.
   final bool complete;
+  // Not null while the plan card of this message waits for the student: true sends the plan to the advisor.
+  final void Function(bool send)? onPlan;
 
   @override
   Widget build(BuildContext context) {
@@ -302,6 +419,7 @@ class MessageView extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ...lookups,
+            if (message.plan != null) PlanCard(plan: message.plan!, onAnswer: onPlan),
             Row(
               children: [
                 const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
@@ -321,32 +439,34 @@ class MessageView extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ...lookups,
-          // SelectionArea makes the text selectable with a long press. With selectable text widgets (selectable: true),
-          // a drag on a wide table or a long code line selects text and does not scroll.
-          SelectionArea(
-            child: MarkdownBody(
-              data: fixTables(message.text),
-              builders: {'pre': CodeBlockBuilder()},
-              onTapLink: (_, href, _) {
-                final uri = href == null ? null : Uri.tryParse(href);
-                if (uri != null && (uri.scheme == 'https' || uri.scheme == 'http')) launchUrl(uri, mode: LaunchMode.externalApplication);
-              },
-              styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-                p: theme.textTheme.bodyLarge,
-                code: code,
-                // CodeBlockBuilder draws the box of a code block.
-                codeblockDecoration: const BoxDecoration(),
-                codeblockPadding: EdgeInsets.zero,
-                // A wide table scrolls to the side.
-                tableColumnWidth: const IntrinsicColumnWidth(),
-                tableCellsPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                tableBorder: TableBorder.all(color: theme.dividerColor),
-                tableHead: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
-                tableBody: theme.textTheme.bodyMedium,
+          if (message.plan != null) PlanCard(plan: message.plan!, onAnswer: onPlan),
+          if (message.text.isNotEmpty)
+            // SelectionArea makes the text selectable with a long press. With selectable text widgets (selectable: true),
+            // a drag on a wide table or a long code line selects text and does not scroll.
+            SelectionArea(
+              child: MarkdownBody(
+                data: fixTables(message.text),
+                builders: {'pre': CodeBlockBuilder()},
+                onTapLink: (_, href, _) {
+                  final uri = href == null ? null : Uri.tryParse(href);
+                  if (uri != null && (uri.scheme == 'https' || uri.scheme == 'http')) launchUrl(uri, mode: LaunchMode.externalApplication);
+                },
+                styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                  p: theme.textTheme.bodyLarge,
+                  code: code,
+                  // CodeBlockBuilder draws the box of a code block.
+                  codeblockDecoration: const BoxDecoration(),
+                  codeblockPadding: EdgeInsets.zero,
+                  // A wide table scrolls to the side.
+                  tableColumnWidth: const IntrinsicColumnWidth(),
+                  tableCellsPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  tableBorder: TableBorder.all(color: theme.dividerColor),
+                  tableHead: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+                  tableBody: theme.textTheme.bodyMedium,
+                ),
               ),
             ),
-          ),
-          if (complete)
+          if (complete && message.text.isNotEmpty)
             IconButton(
               onPressed: () => copyText(context, message.text),
               tooltip: 'Copy answer',
@@ -361,8 +481,10 @@ class MessageView extends StatelessWidget {
 }
 
 class ChatDrawer extends StatelessWidget {
-  const ChatDrawer({super.key, required this.app});
+  const ChatDrawer({super.key, required this.app, this.onStart});
   final AppState app;
+  // Puts text in the message box of the chat screen (demo mode: Advising).
+  final void Function(String text)? onStart;
 
   Future<void> _signOut(BuildContext context) async {
     final yes = await showDialog<bool>(
@@ -390,7 +512,7 @@ class ChatDrawer extends StatelessWidget {
               leading: Image.asset('assets/logo.png', height: 40, semanticLabel: 'catai logo'),
               title: Text('catai', style: theme.textTheme.titleLarge),
               subtitle: app.credential?.user == null ? null : Text(app.credential!.user!),
-              trailing: app.demo ? const DemoBadge() : null,
+              trailing: app.demo ? const DemoBadge(playsVideo: true) : null,
             ),
             ListTile(
               leading: const Icon(Icons.add_comment_outlined),
@@ -400,6 +522,30 @@ class ChatDrawer extends StatelessWidget {
                 Navigator.of(context).pop();
               },
             ),
+            if (app.demo)
+              ListTile(
+                leading: const Icon(Icons.menu_book_outlined),
+                title: const Text('Classes'),
+                subtitle: const Text('Grades and work due, mock data'),
+                onTap: () async {
+                  final navigator = Navigator.of(context)..pop();
+                  final course = await navigator.push<String>(MaterialPageRoute(builder: (_) => ClassesScreen(tools: app.demoTools!)));
+                  if (course == null) return;
+                  app.newChat();
+                  onStart?.call('In $course: ');
+                },
+              ),
+            if (app.demo)
+              ListTile(
+                leading: const Icon(Icons.school_outlined),
+                title: const Text('Advising'),
+                subtitle: const Text('Plan your classes with mock data'),
+                onTap: () {
+                  app.newChat();
+                  Navigator.of(context).pop();
+                  onStart?.call('Help me plan my classes for Spring 2027.');
+                },
+              ),
             const Divider(height: 1),
             Expanded(
               child: app.chats.isEmpty

@@ -1,0 +1,8 @@
+source: taint add "mr-klanky: message from Sprocket"
+time: 2026-11-18 21:48:03
+
+Sprocket (boss): please take **card-12** (card_claim): share the desktop mock data with the mobile app.
+- Source of truth: `src/catatui/profile.ts`, `advising.ts`, `classes.ts` (the mock student, transcript, requirements, Spring 2027 sections, 4 classes with assignments). Do not change the data or the desktop behavior.
+- Wanted: a small script (for example `scripts/demo-data.ts`, run with node) that writes JSON to `mobile/assets/demo/` from those files, and a test that the JSON agrees with the TS data. Some values are not exported yet: add `export` where needed, nothing else.
+- Do not touch `mobile/lib/` or `mobile/pubspec.yaml` (I add the asset line later). Branch `mobile-app`. Run `npm test`.
+- Read card-11 first (it has the list of what the old demo has). Use STE in comments. Move the card to Review when done; ask me if something is not clear.

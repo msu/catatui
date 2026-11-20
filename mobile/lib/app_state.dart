@@ -53,6 +53,18 @@ class AppState extends ChangeNotifier {
   String? error;
 
   StreamSubscription<ChatEvent>? _answer;
+  // The student's answer on the plan card (Send to advisor: true). Not null while the card waits.
+  Completer<bool>? _planAnswer;
+
+  bool get waitingForPlan => _planAnswer != null;
+
+  // The tap on the plan card.
+  void answerPlan(bool send) {
+    final waiting = _planAnswer;
+    _planAnswer = null;
+    if (waiting != null && !waiting.isCompleted) waiting.complete(send);
+  }
+
   Message? _answerMessage;
 
   Future<void> load() async {
@@ -172,7 +184,9 @@ class AppState extends ChangeNotifier {
           (event) {
             switch (event) {
               case TextEvent(:final text):
-                answer.text += text;
+                // No empty lines at the start of an answer.
+                final joined = answer.text + text;
+                answer.text = joined.trim().isEmpty ? '' : (answer.text.trim().isEmpty ? joined.trimLeft() : joined);
                 notifyListeners();
               case ToolCallsEvent(calls: final asked):
                 calls = asked;
@@ -189,7 +203,22 @@ class AppState extends ChangeNotifier {
               'tool_calls': [for (final call in calls) call.toJson()],
             });
             for (final call in calls) {
-              final result = await tools.run(call.name, call.args);
+              final ToolResult result;
+              if (call.name == DemoTools.planTool) {
+                // The plan card: the model gets the result only after the student's tap.
+                final plan = await tools.buildPlan(call.args);
+                if (!identical(_answerMessage, answer)) return;
+                var send = false;
+                if (plan['status'] == 'pending') {
+                  answer.plan = plan;
+                  final waiting = _planAnswer = Completer<bool>();
+                  notifyListeners();
+                  send = await waiting.future;
+                }
+                result = tools.planResult(plan, sent: send);
+              } else {
+                result = await tools.run(call.name, call.args);
+              }
               // Stop, a new chat, or sign-out came while the tool ran.
               if (!identical(_answerMessage, answer)) return;
               answer.lookups.add(result.label);
@@ -197,7 +226,7 @@ class AppState extends ChangeNotifier {
               notifyListeners();
             }
             // Text that the model wrote before the tool call stays, on its own lines.
-            if (answer.text.isNotEmpty && !answer.text.endsWith('\n')) answer.text += '\n\n';
+            if (answer.text.trim().isNotEmpty && !answer.text.endsWith('\n')) answer.text += '\n\n';
             _ask(key, model, messages, answer, round + 1);
           },
           cancelOnError: true,
@@ -217,7 +246,10 @@ class AppState extends ChangeNotifier {
     _answer = null;
     _answerMessage = null;
     busy = false;
-    if (answer != null && answer.text.isEmpty) {
+    // A plan card that waits: Stop, a new chat, or an error is "Not sent".
+    if (answer?.plan?['status'] == 'pending') answer!.plan!['status'] = 'declined';
+    answerPlan(false);
+    if (answer != null && answer.text.isEmpty && answer.plan == null) {
       finished.messages.remove(answer);
       if (e == null && !stopped) error = 'CatChat gave an empty answer. Try again.';
     }

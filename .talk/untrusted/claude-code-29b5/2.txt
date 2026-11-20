@@ -1,0 +1,4 @@
+source: taint add "mr-klanky: message from Verifier"
+time: 2026-11-18 22:20:52
+
+card-19 doc is in Review: src/md/features/mobile-demo-video.md has 14 shots, the setup, the recording and the edit, plus an index line. Three points for you: (1) Question 2 does not fit the mock data. No class is an A (CSCI 305 is 83.7%, a B), so the doc uses "What do I need on HW5: A small interpreter to keep my B?" (81/100). Please confirm, or choose the "get an A" wording. (2) card-15: question 7 ("this week") and the due dates need the mock date 2026-11-03 in the system prompt. Now the app gives the real date. (3) The recording itself is still open on card-19 and needs the human. Keep the card open after the approve, or split it.

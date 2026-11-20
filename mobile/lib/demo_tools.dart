@@ -14,16 +14,36 @@ class ToolResult {
 
 // The mock student and the mock date. The same student as src/catatui/profile.ts.
 const demoToday = '2026-11-03';
+const demoWeekday = 'Tuesday';
 const demoSystemPrompt =
     'You are CatChat, an AI assistant for Montana State University students. '
     'Give clear and correct answers. Use markdown, and tables for lists of classes or events.\n\n'
     'The app is in DEMO MODE. All student and university data comes from tools with MOCK DATA. '
-    'Say one time, at the start of the conversation, that the data is mock data for a demo.\n'
+    'Say one time in the conversation, in your answer after the lookups, that the data is mock data for a demo. '
+    'Do not write text before you call a tool.\n'
     'The student is Alex Rivera (mock student), a junior in Computer Science, BS.\n'
-    'Today is $demoToday. "This fall" is Fall 2026 (the current term). "Next spring" is Spring 2027.\n\n'
+    'Today is $demoWeekday, $demoToday. Each date in the tool results has its weekday in a field that ends in "_weekday": use it, and do not calculate weekdays. "This fall" is Fall 2026 (the current term). "Next spring" is Spring 2027.\n\n'
     'For a question about classes, sections, professors, course outlines, a vet school, formal verification, '
     'research labs, clubs, or campus activities, call a tool first. Use only the data from the tools for such facts. '
-    'If the tools do not have the data, say so. Do not invent professors, times, requirements, or events.';
+    'If the tools do not have the data, say so. Do not invent professors, times, requirements, or events.\n'
+    'Use the names of people. For a person whose pronouns you do not know, use they.\n'
+    'Copy course codes, names, and numbers exactly from the tool results (for example "PHSX 220", not "PHYSX 220").\n\n'
+    'Advising: for a plan of classes, read my_transcript, degree_requirements, and next_term_classes first. Check the prerequisites '
+    '(major and math courses need a C- or better), and plan about 15 credits for a term. Show the plan as a table. '
+    'When the student agrees on a plan, offer to send it to the advisor with submit_plan. The student approves it on a card in the app. '
+    'For official decisions, send the student to the advisor.';
+
+// The starter prompts of demo mode: the seven demo questions, with real names from the mock data.
+// A tap puts the question in the message box. See src/md/features/mobile-demo.md.
+const demoQuestions = <String, String>{
+  'My grade in CSCI 305': 'What is my current grade in CSCI 305?',
+  'Score I need on HW5': 'What do I need on HW5: A small interpreter to keep my B in CSCI 305?',
+  'Who teaches CSCI 338?': 'Who is the professor for CSCI 338 this fall?',
+  'Spring CS classes': 'What classes in computer science are offered next spring?',
+  'Vet school': 'I want to get into vet school. What does Cascade Ridge College of Veterinary Medicine require, and what classes here can help me become a qualified applicant?',
+  'Formal verification': 'What classes and labs can I join that will help my career in formal verification?',
+  'Campus activities': 'What activities are happening at Montana State this week?',
+};
 
 Map<String, dynamic> _tool(String name, String description, [Map<String, dynamic> properties = const {}]) => {
   'type': 'function',
@@ -103,14 +123,59 @@ class DemoTools {
       'student_profile',
       'The student (mock): standing, major, college, the contacts (advisor, department chair, dean) with office hours, and the account balance.',
     ),
+    _tool(
+      'next_term_classes',
+      "The classes of next term, Spring 2027 (mock), for the student's plan: days, time, seats, if the class is full, and the student's status for each prerequisite.",
+    ),
+    _tool(
+      'submit_plan',
+      "Send a semester plan to the student's advisor for review (mock). Use it only after the student agrees on the plan. The app shows the plan on a card, and the student approves or declines it there.",
+      {
+        'terms': {
+          'type': 'array',
+          'description': 'The plan, one entry for each term.',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'term': {'type': 'string', 'description': 'For example "Spring 2027".'},
+              'courses': {
+                'type': 'array',
+                'items': {'type': 'string'},
+                'description': 'Course numbers, for example "CSCI 460".',
+              },
+            },
+          },
+        },
+        'message': {'type': 'string', 'description': "A short note to the advisor, in the student's words."},
+      },
+    ),
     _tool('campus_activities', 'Activities at Montana State (mock): events with date, time, place, and cost; student clubs; and recreation.', {
       'category': {'type': 'string', 'description': 'One of: Social, Career, Athletics, Outdoors, Academic, Campus, Clubs, Arts, Recreation. Empty: all.'},
     }),
   ];
 
-  Future<Map<String, dynamic>> _data(String name) async => _cache[name] ??= jsonDecode(await load('assets/demo/$name.json')) as Map<String, dynamic>;
+  // One mock data file, for example "classes". The Classes screen reads it too.
+  Future<Map<String, dynamic>> file(String name) async => _cache[name] ??= jsonDecode(await load('assets/demo/$name.json')) as Map<String, dynamic>;
 
-  static String _text(Object? data) => '$mockNote\n${const JsonEncoder.withIndent(' ').convert(data)}';
+  static String _text(Object? data) => '$mockNote\n${const JsonEncoder.withIndent(' ').convert(withWeekdays(data))}';
+
+  static const _weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  static final _isoDate = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+
+  // A copy of the data with "<key>_weekday" after each date ("2026-11-04" gives "Wednesday").
+  // The model does not calculate weekdays well: in a test it gave the wrong weekday for each event.
+  static Object? withWeekdays(Object? data) {
+    if (data is List) return [for (final item in data) withWeekdays(item)];
+    if (data is! Map) return data;
+    final out = <String, dynamic>{};
+    for (final MapEntry(:key, :value) in data.entries) {
+      out['$key'] = withWeekdays(value);
+      final date = value is String && _isoDate.hasMatch(value) ? DateTime.tryParse(value) : null;
+      if (date != null) out['${key}_weekday'] = _weekdays[date.weekday - 1];
+    }
+    return out;
+  }
+
   static String _arg(Map<String, dynamic> args, String name) => '${args[name] ?? ''}'.trim();
   static String _norm(String s) => s.toUpperCase().replaceAll(RegExp(r'\s+'), '');
 
@@ -121,15 +186,15 @@ class DemoTools {
         case 'catalog_search':
           return await _catalog(_arg(args, 'term'), _arg(args, 'subject'), _arg(args, 'course'));
         case 'vet_school_requirements':
-          final data = Map<String, dynamic>.of(await _data('vet-school'))..remove('mock_note');
+          final data = Map<String, dynamic>.of(await file('vet-school'))..remove('mock_note');
           return ToolResult('vet school requirements', _text(data));
         case 'formal_verification_paths':
-          final data = Map<String, dynamic>.of(await _data('formal-verification'))..remove('mock_note');
+          final data = Map<String, dynamic>.of(await file('formal-verification'))..remove('mock_note');
           return ToolResult('formal verification classes and labs', _text(data));
         case 'campus_activities':
           return await _activities(_arg(args, 'category'));
         case 'my_classes':
-          final data = await _data('classes');
+          final data = await file('classes');
           return ToolResult('my classes', _text({'overview': data['overview'], 'deadlines': data['deadlines']}));
         case 'class_grades':
           final k = await _class(_arg(args, 'course'));
@@ -142,11 +207,13 @@ class DemoTools {
         case 'grade_needed':
           return await _gradeNeeded(_arg(args, 'course'), _arg(args, 'assignment'), _arg(args, 'target'));
         case 'my_transcript':
-          return ToolResult('my transcript', _text((await _data('advising'))['transcript']));
+          return ToolResult('my transcript', _text((await file('advising'))['transcript']));
         case 'degree_requirements':
-          return ToolResult('degree requirements', _text((await _data('advising'))['requirements']));
+          return ToolResult('degree requirements', _text((await file('advising'))['requirements']));
+        case 'next_term_classes':
+          return ToolResult('next term\'s classes', _text((await file('advising'))['next_term']));
         case 'student_profile':
-          final data = Map<String, dynamic>.of(await _data('profile'))..remove('mock_note');
+          final data = Map<String, dynamic>.of(await file('profile'))..remove('mock_note');
           return ToolResult('student profile', _text(data));
       }
       return ToolResult(name, 'There is no tool with the name "$name".');
@@ -156,7 +223,7 @@ class DemoTools {
   }
 
   Future<ToolResult> _catalog(String term, String subject, String course) async {
-    final catalog = await _data('catalog');
+    final catalog = await file('catalog');
     final outlines = catalog['outlines'] as Map<String, dynamic>;
     // "CSCI" is a subject. "CSCI 305" in the subject field is a course.
     if (course.isEmpty && RegExp(r'\d').hasMatch(subject)) {
@@ -184,7 +251,7 @@ class DemoTools {
   }
 
   Future<ToolResult> _activities(String category) async {
-    final data = await _data('activities');
+    final data = await file('activities');
     final events = [
       for (final e in (data['events'] as List).cast<Map<String, dynamic>>())
         if (category.isEmpty || '${e['category']}'.toLowerCase() == category.toLowerCase()) e,
@@ -204,14 +271,14 @@ class DemoTools {
 
   // One of the student's classes, by course code ("CSCI 305", "csci305").
   Future<Map<String, dynamic>?> _class(String course) async {
-    for (final k in ((await _data('classes'))['classes'] as List).cast<Map<String, dynamic>>()) {
+    for (final k in ((await file('classes'))['classes'] as List).cast<Map<String, dynamic>>()) {
       if (_norm(k['code'] as String) == _norm(course)) return k;
     }
     return null;
   }
 
   Future<ToolResult> _noClass(String what, String course) async {
-    final codes = [for (final k in (await _data('classes'))['classes'] as List) k['code']];
+    final codes = [for (final k in (await file('classes'))['classes'] as List) k['code']];
     return ToolResult('$what for $course', _text({'result': 'The student is not in a class "$course" this term.', 'classes_this_term': codes}));
   }
 
@@ -293,6 +360,93 @@ class DemoTools {
             : needed <= 0
             ? 'Each score on this assignment keeps the grade at the target or above.'
             : 'The grade counts only the graded work and this assignment. Later work changes it.',
+      }),
+    );
+  }
+
+  // ---- Advising: the plan card ----
+
+  static const planTool = 'submit_plan';
+
+  // The plan for the card in the chat, from the arguments of submit_plan: titles, credits, and the warnings that the advisor will see.
+  // The same rules as advising_submit_plan on the desktop.
+  Future<Map<String, dynamic>> buildPlan(Map<String, dynamic> args) async {
+    final advising = await file('advising');
+    final student = advising['transcript']['student'] as Map<String, dynamic>;
+    final next = advising['next_term'] as Map<String, dynamic>;
+    final sections = {for (final s in (next['classes'] as List).cast<Map<String, dynamic>>()) _norm(s['course'] as String): s};
+    final titles = {for (final e in (advising['course_titles'] as Map<String, dynamic>).entries) _norm(e.key): e.value as String};
+    // The last grade of each course on the transcript. "IP" is in progress. C- or better is a pass.
+    const pass = {'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-'};
+    final grades = {
+      for (final t in (advising['transcript']['courses'] as List).cast<Map<String, dynamic>>()) _norm(t['course'] as String): t['grade'] as String,
+    };
+
+    final warnings = <String>[];
+    final terms = <Map<String, dynamic>>[];
+    final asked = args['terms'] is List ? args['terms'] as List : const [];
+    for (final t in asked.whereType<Map<String, dynamic>>()) {
+      final term = '${t['term'] ?? ''}'.trim();
+      final courses = <Map<String, dynamic>>[];
+      for (final raw in (t['courses'] is List ? t['courses'] as List : const [])) {
+        final course = '$raw'.trim();
+        final key = _norm(course);
+        final section = sections[key];
+        if (pass.contains(grades[key])) {
+          warnings.add('$course is already complete.');
+        } else if (grades[key] == 'IP') {
+          warnings.add('$course is in progress now.');
+        }
+        if (section != null && _norm(term) == _norm(next['term'] as String) && section['full'] == true) warnings.add('$course is full in $term.');
+        for (final p in (section?['prereq_status'] as List? ?? const []).cast<Map<String, dynamic>>()) {
+          if (p['status'] != 'done' && p['status'] != 'in progress now') warnings.add('$course needs ${p['course']}.');
+        }
+        courses.add({'course': course, 'title': section?['title'] ?? titles[key] ?? '', 'credits': section?['credits'] ?? 3});
+      }
+      if (courses.isNotEmpty) terms.add({'term': term, 'credits': courses.fold<num>(0, (a, c) => a + (c['credits'] as num)), 'courses': courses});
+    }
+    final message = '${args['message'] ?? ''}'.trim();
+    return {
+      'advisor': student['advisor'],
+      'student': student['name'],
+      'terms': terms,
+      if (message.isNotEmpty) 'message': message,
+      'warnings': warnings,
+      'status': terms.isEmpty ? 'declined' : 'pending',
+    };
+  }
+
+  // The tool result for the model, after the student's tap on the plan card.
+  ToolResult planResult(Map<String, dynamic> plan, {required bool sent, DateTime? now}) {
+    if ((plan['terms'] as List).isEmpty) {
+      return ToolResult('plan for the advisor', _text({'submitted': false, 'result': 'The plan has no courses. Give terms with course numbers.'}));
+    }
+    if (!sent) {
+      plan['status'] = 'declined';
+      // Only a tap on "Not now" comes here. After Stop or a new chat, the model gets no result.
+      return ToolResult(
+        'plan for the advisor (not sent)',
+        _text({
+          'submitted': false,
+          'student_choice': 'Not now',
+          'result':
+              'The student tapped "Not now" on the plan card: the student chose not to send the plan yet. '
+              'This is not an error, and nothing failed. Ask if the student wants to change the plan, or to send it later.',
+        }),
+      );
+    }
+    final number = 'PLAN-${(now ?? DateTime.now()).millisecondsSinceEpoch.toRadixString(36).toUpperCase()}';
+    plan['status'] = 'sent';
+    plan['confirmation'] = number;
+    return ToolResult(
+      'plan for the advisor (sent)',
+      _text({
+        'submitted': true,
+        'confirmation': number,
+        'to': plan['advisor'],
+        'reply_expected': 'within 2 business days (mock)',
+        'warnings': plan['warnings'],
+        'next_step': 'Registration opens November 10, 2026 (mock date). The advisor must release the registration hold after the review (mock).',
       }),
     );
   }

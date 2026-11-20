@@ -1,0 +1,15 @@
+{
+  "names": {
+    "29b54ecd-bff6-4776-aa4e-89edb1e85746": "Sprocket",
+    "495a93fe-e21a-47e6-8734-54c75b844222": "Verifier"
+  },
+  "agents": {
+    "Sprocket": "claude --resume 29b54ecd-bff6-4776-aa4e-89edb1e85746",
+    "Verifier": "claude --model claude-opus-5-5 --resume 495a93fe-e21a-47e6-8734-54c75b844222"
+  },
+  "order": [
+    "Sprocket",
+    "Verifier"
+  ],
+  "boss": "Sprocket"
+}

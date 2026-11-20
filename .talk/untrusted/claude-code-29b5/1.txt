@@ -1,0 +1,4 @@
+source: taint add "mr-klanky: message from Verifier"
+time: 2026-11-18 22:04:29
+
+card-12 is in Review. `node scripts/demo-data.ts` writes profile.json, advising.json and classes.json to mobile/assets/demo/. Each section has the same form as a desktop tool result. test/demo-data.test.ts checks the files against the script output and against the real desktop tools. npm test: 173 pass. I only added `export` in advising.ts and classes.ts. I did not touch mobile/lib or pubspec.yaml. Two things for you: (1) my git commit was denied, so the work is not committed in the card-12 worktree. (2) For pubspec, the asset line for `assets/demo/` covers these files and the card-13 files. Suggestion: a line in mobile-demo.md "Parts 1" on how to run the script. I did not edit that doc because it is yours (card-11).
